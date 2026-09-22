@@ -61,12 +61,34 @@ async function handleEvent(event) {
   if (!text) return;
 
   try {
+    const lineUserId = event.source?.userId || "";
+    const sourceType = event.source?.type || "";
+    const groupId = event.source?.groupId || "";
+
+    const access = await callSheetsBridge({
+      action: "checkAccess",
+      lineUserId,
+      sourceType,
+      groupId,
+      permission: "ดูข้อมูลลูกค้า",
+    });
+
+    if (!access.allowed) {
+      await replyMessage(event.replyToken, [
+        {
+          type: "text",
+          text: access.message || "บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID",
+        },
+      ]);
+      return;
+    }
+
     const result = await callSheetsBridge({
       action: "searchCustomer",
       query: text,
-      lineUserId: event.source?.userId || "",
-      sourceType: event.source?.type || "",
-      groupId: event.source?.groupId || "",
+      lineUserId,
+      sourceType,
+      groupId,
     });
 
     await replyMessage(event.replyToken, [
