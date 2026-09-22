@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.js";
 
 function getRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -57,12 +58,32 @@ async function handleEvent(event) {
     return;
   }
 
-  await replyMessage(event.replyToken, [
-    {
-      type: "text",
-      text: "Admin ID Bot เชื่อมต่อ LINE สำเร็จแล้ว\nกำลังเปิดระบบค้นหาลูกค้าและคำสั่งหลังบ้าน",
-    },
-  ]);
+  if (!text) return;
+
+  try {
+    const result = await callSheetsBridge({
+      action: "searchCustomer",
+      query: text,
+      lineUserId: event.source?.userId || "",
+      sourceType: event.source?.type || "",
+      groupId: event.source?.groupId || "",
+    });
+
+    await replyMessage(event.replyToken, [
+      {
+        type: "text",
+        text: formatCustomerMatches(result.matches || []),
+      },
+    ]);
+  } catch (error) {
+    console.error("Sheets bridge error", error);
+    await replyMessage(event.replyToken, [
+      {
+        type: "text",
+        text: "ระบบค้นหาลูกค้ายังไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง",
+      },
+    ]);
+  }
 }
 
 export default async function handler(req, res) {
