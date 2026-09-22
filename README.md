@@ -15,3 +15,4 @@ LINE Messaging API webhook for the Admin ID back-office bot.
 - `SPREADSHEET_ID`
 
 Google Sheets authentication will be added before customer lookup is enabled.
+Deploy trigger
