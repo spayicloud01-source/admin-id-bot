@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.js";
+import { parseCommand, formatCustomerInfo, formatHistory } from "../../lib/commands.js";
 
 function getRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -101,13 +102,14 @@ async function handleEvent(event) {
     const lineUserId = event.source?.userId || "";
     const sourceType = event.source?.type || "";
     const groupId = event.source?.groupId || "";
+    const command = parseCommand(text);
 
     const access = await callSheetsBridge({
       action: "checkAccess",
       lineUserId,
       sourceType,
       groupId,
-      permission: "ดูข้อมูลลูกค้า",
+      permission: command?.permission || "ดูข้อมูลลูกค้า",
     });
 
     if (!access.allowed) {
@@ -117,6 +119,50 @@ async function handleEvent(event) {
           text: access.message || "บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID",
         },
       ]);
+      return;
+    }
+
+    if (command) {
+      if (!command.query) {
+        const usage =
+          command.action === "addNote"
+            ? "รูปแบบ: โน้ต <คำค้น> <ข้อความ>"
+            : `รูปแบบ: ${command.prefix} <คำค้น>`;
+        await replyMessage(event.replyToken, [{ type: "text", text: usage }]);
+        return;
+      }
+
+      const payload = {
+        action: command.action,
+        query: command.query,
+        lineUserId,
+        sourceType,
+        groupId,
+        staffName: access.staffName || "",
+        role: access.role || "",
+      };
+
+      if (command.eventType) payload.eventType = command.eventType;
+      if (command.note) payload.note = command.note;
+
+      const result = await callSheetsBridge(payload);
+
+      let responseText = "";
+      if (result.needsSelection) {
+        responseText = formatCustomerMatches(result.matches || []);
+      } else if (command.action === "getCustomerInfo") {
+        responseText = result.info
+          ? formatCustomerInfo(result.info, command.field)
+          : "ไม่พบข้อมูลลูกค้า";
+      } else if (command.action === "getHistory") {
+        responseText = formatHistory(result.items || []);
+      } else if (command.action === "addNote") {
+        responseText = result.added
+          ? `บันทึกโน้ตแล้ว: ${result.customer?.name || command.query}`
+          : "ไม่พบข้อมูลลูกค้า";
+      }
+
+      await replyMessage(event.replyToken, [{ type: "text", text: responseText || "ดำเนินการแล้ว" }]);
       return;
     }
 
