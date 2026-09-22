@@ -73,6 +73,30 @@ async function handleEvent(event) {
 
   if (!text) return;
 
+  if (text === "ช่วยเหลือ") {
+    await replyMessage(event.replyToken, [
+      {
+        type: "text",
+        text: [
+          "คำสั่ง Admin ID",
+          "• พิมพ์ชื่อ / เบอร์ / คิว / Apple ID เพื่อค้นหา",
+          "• ประวัติ <คำค้น>",
+          "• ดูโน้ต <คำค้น>",
+          "• โน้ต <คำค้น> <ข้อความ>",
+          "• ยอดปิด <คำค้น>",
+          "• ค่าเช่า <คำค้น>",
+          "• วันจ่าย <คำค้น>",
+          "• ยอดค้าง <คำค้น>",
+          "• สถานะ <คำค้น>",
+          "• ยืนยันสลิป <คำค้น>",
+          "• บันทึกชำระ <คำค้น>",
+          "• ปิดยอด <คำค้น>"
+        ].join("\n")
+      },
+    ]);
+    return;
+  }
+
   try {
     const lineUserId = event.source?.userId || "";
     const sourceType = event.source?.type || "";
