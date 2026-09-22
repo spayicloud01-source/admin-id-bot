@@ -58,6 +58,19 @@ async function handleEvent(event) {
     return;
   }
 
+  if (text.toLowerCase() === "myid") {
+    const lineUserId = event.source?.userId || "";
+    await replyMessage(event.replyToken, [
+      {
+        type: "text",
+        text: lineUserId
+          ? `LINE User ID ของคุณ:\n${lineUserId}`
+          : "ไม่พบ LINE User ID",
+      },
+    ]);
+    return;
+  }
+
   if (!text) return;
 
   try {
