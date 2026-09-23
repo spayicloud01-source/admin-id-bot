@@ -263,6 +263,7 @@ async function handleEvent(event) {
       if (command.note) payload.note = command.note;
       if (command.amount != null) payload.amount = command.amount;
       if (command.decision) payload.decision = command.decision;
+      if (command.enabled != null) payload.enabled = command.enabled;
 
       const result = await callSheetsBridge(payload);
 
@@ -346,6 +347,26 @@ async function handleEvent(event) {
             { type: "text", text: staffText }
           ]).catch((error) => {
             console.warn("Review result notification failed", error);
+          });
+        }
+      } else if (command.action === "listStaff") {
+        const items = Array.isArray(result.items) ? result.items : [];
+        responseText = items.length
+          ? "เจ้าหน้าที่:\n" + items.map((x, i) => {
+              const state = x.status || (x.lineBound ? "ยังไม่อนุมัติ" : "ยังไม่ลงทะเบียน");
+              const bot = x.botEnabled ? "บอตเปิด" : "บอตปิด";
+              return (i + 1) + ". " + x.staffName + " | " + (x.role || "พนักงาน") + " | " + state + " | " + bot;
+            }).join("\n")
+          : "ยังไม่มีเจ้าหน้าที่";
+      } else if (command.action === "setStaffEnabled") {
+        responseText = result.message || (result.changed ? "อัปเดตเจ้าหน้าที่แล้ว" : "ไม่สามารถดำเนินการได้");
+
+        if (result.changed && result.staffLineUserId) {
+          const staffText = result.enabled
+            ? "บัญชี Admin ID ของคุณถูกเปิดใช้งานแล้ว"
+            : "บัญชี Admin ID ของคุณถูกระงับการใช้งาน";
+          await pushMessage(result.staffLineUserId, [{ type: "text", text: staffText }]).catch((error) => {
+            console.warn("Staff status notification failed", error);
           });
         }
       } else if (command.action === "listPendingStaff") {
