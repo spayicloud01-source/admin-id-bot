@@ -146,7 +146,11 @@ function setSettingValue_(key, value) {
 }
 
 function setBotSwitch_(body) {
-  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'จัดการเจ้าหน้าที่' });
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    permission: 'จัดการเจ้าหน้าที่',
+    allowSystemControl: true
+  });
   if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
     return { ok: true, changed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
@@ -179,7 +183,11 @@ function setBotSwitch_(body) {
 }
 
 function readinessCheck_(body) {
-  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    permission: 'ดูรายงาน',
+    allowSystemControl: true
+  });
   if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
     return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
@@ -245,11 +253,6 @@ function checkAccess_(body) {
   const lineUserId = String(body.lineUserId || '').trim();
   if (!lineUserId) return { ok: true, allowed: false, message: 'ไม่พบ LINE User ID' };
 
-  const masterEnabled = isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true));
-  const staffBotEnabled = isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true));
-  if (!masterEnabled) return { ok: true, allowed: false, message: 'ระบบปิดใช้งานชั่วคราว' };
-  if (!staffBotEnabled) return { ok: true, allowed: false, message: 'ระบบเจ้าหน้าที่ปิดใช้งานชั่วคราว' };
-
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sheet) return { ok: true, allowed: false, message: 'ไม่พบชีตเจ้าหน้าที่' };
@@ -274,18 +277,33 @@ function checkAccess_(body) {
   for (let i = 0; i < values.length; i++) {
     const row = values[i];
     if (String(row[1] || '').trim() !== lineUserId) continue;
+
     if (String(row[2] || '').trim() !== 'เจ้าหน้าที่') {
       return { ok: true, allowed: false, message: 'บัญชีนี้ยังไม่ได้รับอนุมัติเป็นเจ้าหน้าที่' };
     }
-    if (row[19] !== true) {
+
+    const role = String(row[8] || '').trim();
+    const isOwner = role === 'เจ้าของ';
+    const allowSystemControl = body.allowSystemControl === true && isOwner;
+
+    if (row[19] !== true && !allowSystemControl) {
       return { ok: true, allowed: false, message: 'บัญชีนี้ถูกปิดการใช้งานบอต' };
     }
 
-    const role = String(row[8] || '').trim();
+    const masterEnabled = isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true));
+    const staffBotEnabled = isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true));
+
+    if (!masterEnabled && !allowSystemControl) {
+      return { ok: true, allowed: false, message: 'ระบบปิดใช้งานชั่วคราว' };
+    }
+    if (!staffBotEnabled && !allowSystemControl) {
+      return { ok: true, allowed: false, message: 'ระบบเจ้าหน้าที่ปิดใช้งานชั่วคราว' };
+    }
+
     const sourceType = String(body.sourceType || '').trim();
     const groupId = String(body.groupId || '').trim();
 
-    if ((sourceType === 'group' || sourceType === 'room') && !body.allowGroupSetup) {
+    if ((sourceType === 'group' || sourceType === 'room') && !body.allowGroupSetup && !allowSystemControl) {
       if (!isTrue_(getSettingValue_('BOT_GROUP_ENABLED', true))) {
         return { ok: true, allowed: false, message: 'ระบบกลุ่ม LINE ปิดใช้งานชั่วคราว' };
       }
@@ -294,16 +312,17 @@ function checkAccess_(body) {
         if (!group || !group.botEnabled) {
           return { ok: true, allowed: false, message: 'กลุ่มนี้ยังไม่ได้เปิดใช้งาน Admin ID' };
         }
-        if (!group.replyEnabled && role !== 'เจ้าของ') {
+        if (!group.replyEnabled && !isOwner) {
           return { ok: true, allowed: false, message: 'กลุ่มนี้ปิดการตอบข้อความ' };
         }
       }
     }
 
     const p = String(body.permission || '').trim();
-    if (p && permCol[p] != null && row[permCol[p]] !== true) {
+    if (p && permCol[p] != null && row[permCol[p]] !== true && !allowSystemControl) {
       return { ok: true, allowed: false, message: 'บัญชีนี้ไม่มีสิทธิ์ ' + p };
     }
+
     return {
       ok: true,
       allowed: true,
