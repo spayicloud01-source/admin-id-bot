@@ -156,6 +156,7 @@ function customerSelfQuickReply() {
       ["วันจ่าย", "วันจ่าย"],
       ["ยอดค้าง", "ยอดค้าง"],
       ["สถานะ", "สถานะ"],
+      ["สิทธิ์ส่วนลด", "สิทธิ์ส่วนลด"],
       ["เมนูลูกค้า", "เมนูลูกค้า"],
     ].map(([label, text]) => ({
       type: "action",
@@ -191,6 +192,15 @@ function formatCustomerSelfResult(result, field) {
     }
     if (field === "status") {
       return [head, "สถานะ: " + (x.status || "-"), x.overdueDays > 0 ? "ค้าง " + x.overdueDays + " วัน" : "ยังไม่เกินกำหนด"].join("\n");
+    }
+    if (field === "discount") {
+      return [
+        head,
+        x.discountEligible
+          ? "มีสิทธิ์ลดค่าเช่า " + x.discountPercent + "%"
+          : "ตอนนี้ยังไม่มีสิทธิ์ส่วนลดปิดยอด",
+        "ยอดปิดวันนี้: " + formatMoney(x.calculatedClose) + " บาท"
+      ].join("\n");
     }
     return [
       head,
@@ -298,7 +308,7 @@ async function handleEvent(event) {
 
     if (!access.allowed) {
       if (sourceType === "user" && lineUserId) {
-        const bindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(\S+)$/);
+        const bindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(.+\S)$/);
         const customerFieldMap = {
           "ยอดปิด": "close",
           "ค่าเช่า": "fee",
@@ -306,15 +316,24 @@ async function handleEvent(event) {
           "ยอดค้าง": "outstanding",
           "สถานะ": "status",
           "สถานะทั้งหมด": "status",
+          "สิทธิ์ส่วนลด": "discount",
           "เมนูลูกค้า": "menu",
         };
+
+        if (text === "ผูกบัญชี") {
+          await replyMessage(event.replyToken, [{
+            type: "text",
+            text: "พิมพ์ตามนี้ครับ\nผูกบัญชี <คิว> <ชื่อ นามสกุล>\nตัวอย่าง: ผูกบัญชี 101 สมชาย ใจดี"
+          }]);
+          return;
+        }
 
         if (bindingMatch) {
           const result = await callSheetsBridge({
             action: "requestCustomerBinding",
             lineUserId,
-            phone: bindingMatch[1],
-            queue: bindingMatch[2],
+            queue: bindingMatch[1],
+            fullName: bindingMatch[2].trim(),
           });
 
           if (result.requested && Array.isArray(result.ownerLineUserIds)) {
