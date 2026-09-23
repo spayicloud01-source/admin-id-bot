@@ -44,6 +44,10 @@ function doPost(e) {
     switch (body.action) {
       case 'getBridgeVersion':
         result = { ok: true, version: CONFIG.VERSION }; break;
+      case 'readinessCheck':
+        result = readinessCheck_(body); break;
+      case 'setBotSwitch':
+        result = setBotSwitch_(body); break;
       case 'checkAccess':
         result = checkAccess_(body); break;
       case 'registerStaff':
@@ -123,6 +127,118 @@ function doPost(e) {
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message ? err.message : err) });
   }
+}
+
+function setSettingValue_(key, value) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
+  if (!sh) return false;
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return false;
+  const values = sh.getRange(2, 1, lastRow - 1, 1).getDisplayValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() !== key) continue;
+    sh.getRange(i + 2, 2).setValue(value);
+    sh.getRange(i + 2, 5).setValue(true);
+    return true;
+  }
+  return false;
+}
+
+function setBotSwitch_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'จัดการเจ้าหน้าที่' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, changed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const allowed = {
+    'BOT_MASTER_ENABLED': true,
+    'BOT_STAFF_ENABLED': true,
+    'BOT_GROUP_ENABLED': true
+  };
+  const key = String(body.switchKey || '').trim();
+  if (!allowed[key]) return { ok: true, changed: false, message: 'ไม่อนุญาตให้เปลี่ยนสวิตช์นี้' };
+
+  const enabled = body.enabled === true;
+  const changed = setSettingValue_(key, enabled ? 'TRUE' : 'FALSE');
+  if (!changed) return { ok: true, changed: false, message: 'ไม่พบตัวแปรตั้งค่า ' + key };
+
+  const label = key === 'BOT_MASTER_ENABLED'
+    ? 'ระบบหลัก'
+    : key === 'BOT_STAFF_ENABLED'
+      ? 'ระบบพนักงาน'
+      : 'ระบบกลุ่ม LINE';
+
+  return {
+    ok: true,
+    changed: true,
+    key: key,
+    enabled: enabled,
+    message: (enabled ? 'เปิด' : 'ปิด') + label + 'แล้ว'
+  };
+}
+
+function readinessCheck_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const checks = [];
+  function add(name, pass, detail) {
+    checks.push({ name: name, pass: !!pass, detail: detail || '' });
+  }
+
+  add('Apps Script version', CONFIG.VERSION === '2026.09.23-90', CONFIG.VERSION);
+  add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
+  add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
+
+  const sourceSheet = ss.getSheetByName(CONFIG.SOURCE_SHEET);
+  let enabledSources = 0;
+  if (sourceSheet && sourceSheet.getLastRow() >= 2) {
+    const vals = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1, 3).getValues();
+    enabledSources = vals.filter(function(r){ return String(r[1] || '').trim() && isTrue_(r[2]); }).length;
+  }
+  add('แหล่งข้อมูล', enabledSources >= 8, enabledSources + ' แหล่ง');
+
+  const staffSheet = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  let ownerCount = 0, activeStaff = 0;
+  if (staffSheet && staffSheet.getLastRow() >= 2) {
+    const vals = staffSheet.getRange(2, 1, staffSheet.getLastRow() - 1, 20).getValues();
+    ownerCount = vals.filter(function(r){ return String(r[8] || '').trim() === 'เจ้าของ' && String(r[2] || '').trim() === 'เจ้าหน้าที่' && r[19] === true; }).length;
+    activeStaff = vals.filter(function(r){ return String(r[2] || '').trim() === 'เจ้าหน้าที่' && r[19] === true; }).length;
+  }
+  add('เจ้าของระบบ', ownerCount >= 1, ownerCount + ' คน');
+  add('เจ้าหน้าที่ใช้งาน', activeStaff >= 1, activeStaff + ' คน');
+
+  const history = ss.getSheetByName(CONFIG.HISTORY_SHEET);
+  const log = ss.getSheetByName(CONFIG.LOG_SHEET);
+  const review = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
+  add('ประวัติลูกค้า', !!history, history ? 'พร้อม' : 'ไม่พบชีต');
+  add('Log ระบบ', !!log, log ? 'พร้อม' : 'ไม่พบชีต');
+  add('คิวตรวจสอบ', !!review, review ? 'พร้อม' : 'ไม่พบชีต');
+
+  const reminderTriggers = ScriptApp.getProjectTriggers().filter(function(t) {
+    return t.getHandlerFunction() === 'triggerDailyReminder_';
+  });
+  add('แจ้งเตือนรายวัน', reminderTriggers.length > 0, reminderTriggers.length ? 'ติดตั้งแล้ว' : 'ยังไม่ติดตั้ง');
+
+  const writesEnabled = isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false));
+  add('Safety: เขียนต้นทางปิด', writesEnabled === false, writesEnabled ? 'เปิดอยู่' : 'ปิดอยู่');
+
+  const okSlipEnabled = isTrue_(getSettingValue_('OKSLIP_ENABLED', false));
+  add('OK Slip', okSlipEnabled, okSlipEnabled ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม');
+
+  const passed = checks.filter(function(x){ return x.pass; }).length;
+  return {
+    ok: true,
+    version: CONFIG.VERSION,
+    passed: passed,
+    total: checks.length,
+    percent: Math.round((passed / checks.length) * 100),
+    checks: checks
+  };
 }
 
 function checkAccess_(body) {
