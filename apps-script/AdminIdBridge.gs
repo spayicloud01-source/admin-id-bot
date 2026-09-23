@@ -67,6 +67,8 @@ function doPost(e) {
         result = getReminderTriggerStatus_(body); break;
       case 'getReminderBatch':
         result = getReminderBatch_(body); break;
+      case 'markReminderSent':
+        result = markReminderSent_(body); break;
       case 'searchCustomer':
         result = { ok: true, matches: searchCustomer_(String(body.query || '').trim()) }; break;
       case 'getCustomerInfo':
@@ -420,7 +422,49 @@ function getReminderGroupIds_() {
   }).map(function(r){ return String(r[1] || '').trim(); });
 }
 
+function reminderDayKey_() {
+  return Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+}
+
+function getReminderDeliveryState_() {
+  const props = PropertiesService.getScriptProperties();
+  return {
+    lastDay: String(props.getProperty('LAST_REMINDER_SENT_DAY') || ''),
+    lastAt: String(props.getProperty('LAST_REMINDER_SENT_AT') || '')
+  };
+}
+
+function markReminderSent_(body) {
+  const sent = Number(body.sent || 0);
+  const failed = Number(body.failed || 0);
+  const props = PropertiesService.getScriptProperties();
+  props.setProperty('LAST_REMINDER_SENT_DAY', reminderDayKey_());
+  props.setProperty('LAST_REMINDER_SENT_AT', new Date().toISOString());
+  props.setProperty('LAST_REMINDER_SENT_COUNT', String(sent));
+  props.setProperty('LAST_REMINDER_FAILED_COUNT', String(failed));
+  return {
+    ok: true,
+    marked: true,
+    day: reminderDayKey_(),
+    sent: sent,
+    failed: failed
+  };
+}
+
 function getReminderBatch_(body) {
+  const deliveryState = getReminderDeliveryState_();
+  const todayKey = reminderDayKey_();
+  const alreadySent = deliveryState.lastDay === todayKey;
+  if (alreadySent && body.force !== true) {
+    return {
+      ok: true,
+      alreadySent: true,
+      lastSentAt: deliveryState.lastAt,
+      recipients: [],
+      digest: null
+    };
+  }
+
   const owners = getReminderOwnerLineIds_();
   if (!owners.length) return { ok: true, recipients: [], digest: null };
 
@@ -432,6 +476,8 @@ function getReminderBatch_(body) {
 
   return {
     ok: true,
+    alreadySent: alreadySent,
+    lastSentAt: deliveryState.lastAt,
     recipients: owners.concat(getReminderGroupIds_()).filter(function(v, i, a){ return a.indexOf(v) === i; }),
     digest: {
       upcoming: (upcoming.items || []).slice(0, 10),
