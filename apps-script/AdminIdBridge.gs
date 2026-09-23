@@ -1309,7 +1309,7 @@ function parseDateFlexible_(value) {
   let m = text.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
   if (m) {
     let y = Number(m[3]);
-    if (y < 100) y += 2500;
+    if (y < 100) y += (y >= 50 ? 2500 : 2000);
     if (y > 2400) y -= 543;
     return new Date(y, Number(m[2]) - 1, Number(m[1]));
   }
@@ -1335,7 +1335,7 @@ function parseDateFlexible_(value) {
     if (month == null) month = months[key.replace(/\./g,'')];
     if (month != null) {
       let y = Number(m[3]);
-      if (y < 100) y += 2500;
+      if (y < 100) y += (y >= 50 ? 2500 : 2000);
       if (y > 2400) y -= 543;
       return new Date(y, month, Number(m[1]));
     }
