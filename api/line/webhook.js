@@ -439,6 +439,21 @@ async function handleEvent(event) {
             )
           );
         }
+      } else if (command.action === "cancelReviewQueue") {
+        responseText = result.message || (result.cancelled ? "ยกเลิกคิวแล้ว" : "ยกเลิกคิวไม่ได้");
+      } else if (command.action === "planSourceWrite") {
+        const p = result.plan;
+        responseText = p ? [
+          "จำลองบันทึก #" + p.reviewRowNo,
+          "ประเภท: " + (p.type || "-"),
+          "ต้นทาง: " + (p.source || "-") + " / " + (p.sheet || "-") + " แถว " + (p.sourceRow || "-"),
+          "ลูกค้า: " + (p.name || "-") + (p.queue ? " | คิว " + p.queue : ""),
+          "สถานะล่าสุด: " + (p.currentStatus || "-"),
+          p.requestedAmount ? "ยอดที่ขอ: " + p.requestedAmount : null,
+          "เขียนต้นทางจริง: " + (p.writesEnabled ? "เปิด" : "ปิดเพื่อความปลอดภัย"),
+          "",
+          ...(p.proposed || []).map((x) => "• " + x)
+        ].filter(Boolean).join("\n") : (result.message || "จำลองไม่ได้");
       } else if (command.action === "getReviewQueueItem") {
         const x = result.item;
         const live = result.liveCustomer;
