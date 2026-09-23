@@ -1140,6 +1140,8 @@ function systemStatus_(body) {
       groupEnabled: isTrue_(getSettingValue_('BOT_GROUP_ENABLED', true)),
       okSlipEnabled: isTrue_(getSettingValue_('OKSLIP_ENABLED', false)),
       webhookStatus: String(getSettingValue_('WEBHOOK_STATUS', 'ยังไม่เชื่อม')),
+      financialSourceWrites: isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false)),
+      reminderInternalOnly: isTrue_(getSettingValue_('REMINDER_INTERNAL_ONLY', true)),
       enabledSources: enabledSources
     }
   };
