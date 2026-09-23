@@ -66,6 +66,17 @@ async function pushMessage(to, messages) {
   }
 }
 
+async function safeLogAction(payload) {
+  try {
+    await callSheetsBridge({
+      action: "logAction",
+      ...payload,
+    });
+  } catch (error) {
+    console.warn("Audit log failed", error);
+  }
+}
+
 async function startLoading(chatId, loadingSeconds = 60) {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token || !chatId) return;
@@ -300,6 +311,19 @@ async function handleEvent(event) {
       }
 
       await replyMessage(event.replyToken, [{ type: "text", text: responseText || "ดำเนินการแล้ว" }]);
+
+      await safeLogAction({
+        lineUserId,
+        staffName: access.staffName || "",
+        role: access.role || "",
+        command: command.prefix || text,
+        query: command.query || "",
+        source: sourceType,
+        result: result?.needsSelection ? "หลายรายการ" : (result?.ok === false ? "ผิดพลาด" : "สำเร็จ"),
+        actionName: command.action || "",
+        status: result?.ok === false ? "ผิดพลาด" : "สำเร็จ",
+        note: ""
+      });
       return;
     }
 
@@ -317,6 +341,19 @@ async function handleEvent(event) {
         text: formatCustomerMatches(result.matches || []),
       },
     ]);
+
+    await safeLogAction({
+      lineUserId,
+      staffName: access.staffName || "",
+      role: access.role || "",
+      command: "ค้นหา",
+      query: text,
+      source: sourceType,
+      result: Array.isArray(result.matches) ? String(result.matches.length) + " รายการ" : "0 รายการ",
+      actionName: "searchCustomer",
+      status: "สำเร็จ",
+      note: ""
+    });
   } catch (error) {
     console.error("Sheets bridge error", error);
     await replyMessage(event.replyToken, [
