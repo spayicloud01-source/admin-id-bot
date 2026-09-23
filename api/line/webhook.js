@@ -258,6 +258,11 @@ async function handleEvent(event) {
         responseText = result.added
           ? `บันทึกโน้ตแล้ว: ${result.customer?.name || command.query}`
           : "ไม่พบข้อมูลลูกค้า";
+      } else if (command.action === "listPendingStaff") {
+        const items = Array.isArray(result.items) ? result.items : [];
+        responseText = items.length
+          ? "รออนุมัติ:\n" + items.map((x, i) => `${i + 1}. ${x.staffName}${x.registeredAt ? " | " + x.registeredAt : ""}`).join("\n")
+          : "ไม่มีเจ้าหน้าที่รออนุมัติ";
       } else if (command.action === "approveStaff") {
         responseText = result.message || (result.approved ? "อนุมัติเจ้าหน้าที่แล้ว" : "ไม่สามารถอนุมัติได้");
 
