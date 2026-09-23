@@ -8,11 +8,13 @@ LINE OA -> Vercel -> Google Apps Script -> Google Sheets
 
 ## Endpoints
 
-- `GET /api/health`
+- `GET /api/health` — production/environment + Apps Script version handshake + post-deploy selftest
 - `GET /api/line/webhook`
 - `POST /api/line/webhook`
+- `GET /api/commands/selftest` — command parser regression test
+- `GET /api/rules/selftest` — business-rule regression test
+- `POST /api/reminders/run` — secret-protected internal reminder delivery
 - `GET /api/sheets/health`
-- `GET /api/sheets/selftest`
 - `GET /api/sheets/diagnostics`
 
 ## Required Vercel environment variables
@@ -51,13 +53,16 @@ It supports:
 - `addNote`
 - `logAction`
 
-## Manual steps still required
+## One manual deployment step remains
 
-1. Copy `apps-script/AdminIdBridge.gs` into the bound Google Apps Script project as `รหัส.gs`.
-2. Save and deploy a **New version** of the existing Web App deployment.
-3. Resolve the Vercel Hobby/private-repository deployment block so the latest GitHub commit can reach Production.
-4. After deployment, test `/api/sheets/diagnostics` and then test LINE read-only commands.
-5. Only after read-only tests pass, enable write workflows such as payment recording, close-out, and slip confirmation.
+The code side is complete for the safe rollout. Copy the latest `apps-script/AdminIdBridge.gs` into the bound Apps Script project and deploy a **New version** of the existing Web App.
+
+After deployment:
+1. Run `เวอร์ชันระบบ`; expected `2026.09.23-100`.
+2. Run `เช็กพร้อมใช้`.
+3. Run `ตรวจชีตต้นทาง` and `ตรวจเขียนต้นทาง`.
+4. Run `ทดสอบแจ้งเตือน`.
+5. Keep real financial source writes disabled until live source mapping is reviewed.
 
 ## Safety
 
