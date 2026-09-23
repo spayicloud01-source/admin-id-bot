@@ -47,6 +47,32 @@ async function replyMessage(replyToken, messages) {
   }
 }
 
+async function startLoading(chatId, loadingSeconds = 60) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token || !chatId) return;
+
+  try {
+    const response = await fetch("https://api.line.me/v2/bot/chat/loading/start", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        chatId,
+        loadingSeconds,
+      }),
+    });
+
+    if (!response.ok) {
+      const text = await response.text();
+      console.warn(`LINE loading failed: ${response.status} ${text}`);
+    }
+  } catch (error) {
+    console.warn("LINE loading error", error);
+  }
+}
+
 async function handleEvent(event) {
   if (event.type !== "message" || event.message?.type !== "text") return;
 
@@ -78,6 +104,11 @@ async function handleEvent(event) {
     const lineUserId = event.source?.userId || "";
     const sourceType = event.source?.type || "";
     const groupId = event.source?.groupId || "";
+
+    if (sourceType === "user" && lineUserId) {
+      await startLoading(lineUserId, 60);
+    }
+
     const command = parseCommand(text);
 
     const access = await callSheetsBridge({
