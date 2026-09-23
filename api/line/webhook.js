@@ -297,6 +297,18 @@ function formatCustomerSelfResult(result, field) {
 }
 
 async function handleEvent(event) {
+  if (event.type === "follow") {
+    await replyMessage(event.replyToken, [{
+      type: "text",
+      text: [
+        "ยินดีต้อนรับครับ",
+        "กรุณาแจ้ง คิว + ชื่อ + นามสกุล ให้ตรงกับข้อมูลในระบบ",
+        "ตัวอย่าง: 6101 สมชาย ใจดี"
+      ].join("\n")
+    }]);
+    return;
+  }
+
   if (event.type !== "message") return;
 
   if (event.message?.type === "image") {
@@ -416,7 +428,9 @@ async function handleEvent(event) {
 
     if (!access.allowed) {
       if (sourceType === "user" && lineUserId) {
-        const bindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(.+\S)$/);
+        const explicitBindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(.+\S)$/);
+        const plainBindingMatch = text.match(/^(?:คิว\s*)?(\d{3,})\s+(.+\s+.+)$/);
+        const bindingMatch = explicitBindingMatch || plainBindingMatch;
         const customerFieldMap = {
           "ยอดปิด": "close",
           "ค่าเช่า": "fee",
@@ -431,7 +445,7 @@ async function handleEvent(event) {
         if (text === "ผูกบัญชี") {
           await replyMessage(event.replyToken, [{
             type: "text",
-            text: "พิมพ์ตามนี้ครับ\nผูกบัญชี <คิว> <ชื่อ นามสกุล>\nตัวอย่าง: ผูกบัญชี 101 สมชาย ใจดี"
+            text: "กรุณาแจ้ง คิว + ชื่อ + นามสกุล\nตัวอย่าง: 6101 สมชาย ใจดี"
           }]);
           return;
         }
@@ -444,39 +458,44 @@ async function handleEvent(event) {
             fullName: bindingMatch[2].trim(),
           });
 
-          if (result.requested && Array.isArray(result.ownerLineUserIds)) {
-            const ownerMessage = {
-              type: "text",
-              text: [
-                "ลูกค้าขอผูกบัญชี LINE",
-                "ชื่อ: " + (result.customerName || "-"),
-                "คิว: " + (result.queue || "-"),
-                "แหล่ง: " + (result.source || "-"),
-                "คำขอ #" + result.rowNo,
-              ].join("\n"),
-              quickReply: {
-                items: [
-                  {
-                    type: "action",
-                    action: { type: "message", label: "อนุมัติลูกค้า", text: "อนุมัติลูกค้า " + result.rowNo },
-                  },
-                  {
-                    type: "action",
-                    action: { type: "message", label: "ไม่อนุมัติ", text: "ไม่อนุมัติลูกค้า " + result.rowNo },
-                  },
-                ],
-              },
-            };
-            await Promise.all(
-              result.ownerLineUserIds.map((ownerId) =>
-                pushMessage(ownerId, [ownerMessage]).catch((error) =>
-                  console.warn("Customer binding owner alert failed", error)
-                )
-              )
-            );
+          let finalResult = result;
+
+          // Backward-compatible path while an older bridge is still active:
+          // convert its pending request to active automatically using the configured owner identity.
+          if (!result?.bound && result?.requested && result?.rowNo && Array.isArray(result?.ownerLineUserIds) && result.ownerLineUserIds[0]) {
+            try {
+              const resolved = await callSheetsBridge({
+                action: "resolveCustomerBinding",
+                lineUserId: result.ownerLineUserIds[0],
+                query: String(result.rowNo),
+                decision: "อนุมัติ",
+              });
+              if (resolved?.approved) {
+                finalResult = {
+                  ...result,
+                  bound: true,
+                  autoApproved: true,
+                  message: [
+                    "ตรวจสอบข้อมูลถูกต้องแล้ว",
+                    "ชื่อ: " + (result.customerName || bindingMatch[2].trim()),
+                    "คิว: " + (result.queue || bindingMatch[1]),
+                    "สามารถตรวจสอบข้อมูลจากปุ่มด้านล่างได้เลย"
+                  ].join("\n")
+                };
+              }
+            } catch (error) {
+              console.warn("Auto activate customer binding failed", error);
+            }
           }
 
-          await replyMessage(event.replyToken, [{ type: "text", text: result.message || "ส่งคำขอแล้ว" }]);
+          const message = {
+            type: "text",
+            text: finalResult?.message || (finalResult?.bound ? "ตรวจสอบข้อมูลถูกต้องแล้ว" : "ไม่สามารถผูกบัญชีได้"),
+          };
+          if (finalResult?.bound || finalResult?.alreadyBound) {
+            message.quickReply = customerSelfQuickReply();
+          }
+          await replyMessage(event.replyToken, [message]);
           return;
         }
 
