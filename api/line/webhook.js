@@ -66,6 +66,21 @@ async function pushMessage(to, messages) {
   }
 }
 
+async function getGroupSummary(groupId) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token || !groupId) return null;
+  try {
+    const response = await fetch("https://api.line.me/v2/bot/group/" + encodeURIComponent(groupId) + "/summary", {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (error) {
+    console.warn("LINE group summary failed", error);
+    return null;
+  }
+}
+
 async function safeLogAction(payload) {
   try {
     await callSheetsBridge({
@@ -147,6 +162,7 @@ async function handleEvent(event) {
       sourceType,
       groupId,
       permission: command?.permission || "ดูข้อมูลลูกค้า",
+      allowGroupSetup: ["setGroupEnabled", "getGroupStatus"].includes(command?.action),
     });
 
     if (!access.allowed) {
@@ -252,6 +268,12 @@ async function handleEvent(event) {
         return;
       }
 
+      let groupName = "";
+      if (sourceType === "group" && ["setGroupEnabled", "getGroupStatus"].includes(command.action)) {
+        const groupSummary = await getGroupSummary(groupId);
+        groupName = groupSummary?.groupName || "";
+      }
+
       const payload = {
         action: command.action,
         query: command.query,
@@ -260,6 +282,7 @@ async function handleEvent(event) {
         groupId,
         staffName: access.staffName || "",
         role: access.role || "",
+        groupName,
       };
 
       if (command.eventType) payload.eventType = command.eventType;
@@ -397,6 +420,17 @@ async function handleEvent(event) {
             console.warn("Review result notification failed", error);
           });
         }
+      } else if (command.action === "setGroupEnabled") {
+        responseText = result.message || (result.changed ? "อัปเดตกลุ่มแล้ว" : "ไม่สามารถดำเนินการได้");
+      } else if (command.action === "getGroupStatus") {
+        const g = result.group;
+        responseText = g ? [
+          "สถานะกลุ่ม: " + (g.name || "-"),
+          "บอต: " + (g.botEnabled ? "เปิด" : "ปิด"),
+          "ตอบข้อความ: " + (g.replyEnabled ? "เปิด" : "ปิด"),
+          "แจ้งเตือน: " + (g.notificationsEnabled ? "เปิด" : "ปิด"),
+          "โหมด: " + (g.mode || "-")
+        ].join("\n") : (result.message || "ไม่พบข้อมูลกลุ่ม");
       } else if (command.action === "listStaff") {
         const items = Array.isArray(result.items) ? result.items : [];
         responseText = items.length
