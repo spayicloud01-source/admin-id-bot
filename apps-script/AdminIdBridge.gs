@@ -7,6 +7,7 @@ const CONFIG = {
   MAX_ROWS_PER_TAB: 3000,
   HEADER_SCAN_ROWS: 20,
   HEADER_SCAN_COLS: 40,
+  SEARCH_CACHE_SECONDS: 300,
   EXCLUDED_TAB_PATTERNS: [
     /^LINE แจ้งค่าเช่า$/i,
     /สรุป/i,
@@ -111,6 +112,17 @@ function getCustomerInfo_(body) {
 }
 
 function searchCustomer_(query, includeDetails) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'customer-search:' + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, normalizeGeneral_(query))
+  );
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (err) {}
+  }
+
   const backend = SpreadsheetApp.getActiveSpreadsheet();
   const sourceSheet = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!sourceSheet) throw new Error('ไม่พบชีต "' + CONFIG.SOURCE_SHEET + '"');
@@ -139,11 +151,16 @@ function searchCustomer_(query, includeDetails) {
       if (!searchAllTabs) tabs = tabs.slice(0, 1);
 
       for (let t = 0; t < tabs.length && results.length < CONFIG.MAX_RESULTS; t++) {
-        searchTab_(tabs[t], sourceName, query, results, !!includeDetails);
+        searchTab_(tabs[t], sourceName, query, results, true);
       }
     } catch (err) {
       console.log('ค้นไม่ได้: ' + sourceName + ' / ' + err.message);
     }
+  }
+  try {
+    cache.put(cacheKey, JSON.stringify(results), CONFIG.SEARCH_CACHE_SECONDS);
+  } catch (err) {
+    console.log('cache put failed: ' + err.message);
   }
   return results;
 }
