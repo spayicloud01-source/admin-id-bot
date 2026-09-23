@@ -263,7 +263,9 @@ async function handleEvent(event) {
             ? "รูปแบบ: โน้ต <คำค้น> <ข้อความ>"
             : command.action === "queuePayment"
               ? "รูปแบบ: บันทึกชำระ <คำค้น> <ยอด>"
-              : `รูปแบบ: ${command.prefix} <คำค้น>`;
+              : command.action === "setStaffPermission"
+                ? "รูปแบบ: " + command.prefix + " <ชื่อ> <สิทธิ์>"
+                : `รูปแบบ: ${command.prefix} <คำค้น>`;
         await replyMessage(event.replyToken, [{ type: "text", text: usage }]);
         return;
       }
@@ -291,6 +293,8 @@ async function handleEvent(event) {
       if (command.decision) payload.decision = command.decision;
       if (command.enabled != null) payload.enabled = command.enabled;
       if (command.dueMode) payload.dueMode = command.dueMode;
+      if (command.targetPermission) payload.targetPermission = command.targetPermission;
+      if (command.permissionEnabled != null) payload.permissionEnabled = command.permissionEnabled;
 
       const result = await callSheetsBridge(payload);
 
@@ -468,6 +472,29 @@ async function handleEvent(event) {
           "แจ้งเตือน: " + (g.notificationsEnabled ? "เปิด" : "ปิด"),
           "โหมด: " + (g.mode || "-")
         ].join("\n") : (result.message || "ไม่พบข้อมูลกลุ่ม");
+      } else if (command.action === "getStaffPermissions") {
+        if (!result.permissions) {
+          responseText = result.message || "ไม่พบข้อมูลสิทธิ์";
+        } else {
+          const enabled = Object.entries(result.permissions).filter(([,v]) => v).map(([k]) => "✓ " + k);
+          const disabled = Object.entries(result.permissions).filter(([,v]) => !v).map(([k]) => "− " + k);
+          responseText = [
+            "สิทธิ์: " + (result.staffName || "-"),
+            "สถานะ: " + (result.status || "-"),
+            "เปิดอยู่:",
+            ...(enabled.length ? enabled : ["ไม่มี"]),
+            "ปิดอยู่:",
+            ...(disabled.length ? disabled : ["ไม่มี"])
+          ].join("\n");
+        }
+      } else if (command.action === "setStaffPermission") {
+        responseText = result.message || (result.changed ? "อัปเดตสิทธิ์แล้ว" : "ไม่สามารถอัปเดตสิทธิ์ได้");
+        if (result.changed && result.staffLineUserId) {
+          await pushMessage(result.staffLineUserId, [{
+            type: "text",
+            text: (result.enabled ? "ได้รับสิทธิ์: " : "ถูกถอนสิทธิ์: ") + result.permissionName
+          }]).catch((error) => console.warn("Permission notification failed", error));
+        }
       } else if (command.action === "listStaff") {
         const items = Array.isArray(result.items) ? result.items : [];
         responseText = items.length
