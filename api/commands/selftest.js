@@ -8,6 +8,9 @@ export default async function handler(req, res) {
 
   const cases = [
     ["คิวตรวจสอบ", "listReviewQueue", ""],
+    ["ลูกค้ารออนุมัติ", "listPendingCustomerBindings", ""],
+    ["อนุมัติลูกค้า 12", "resolveCustomerBinding", "12"],
+    ["ไม่อนุมัติลูกค้า 12", "resolveCustomerBinding", "12"],
     ["รออนุมัติ", "listPendingStaff", ""],
     ["สรุปยอด 101", "getCalculatedSummary", "101"],
     ["สิทธิ์ส่วนลด 101", "getCalculatedSummary", "101"],
