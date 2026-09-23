@@ -162,7 +162,7 @@ async function handleEvent(event) {
           const ownerText = [
             "มีเจ้าหน้าที่ขออนุมัติ",
             "ชื่อ: " + staffName
-          ].join("\n");
+          ].filter(Boolean).join("\n");
 
           const ownerMessage = {
             type: "text",
@@ -226,11 +226,14 @@ async function handleEvent(event) {
             "• ประวัติ <คำค้น>",
             "• ดูโน้ต <คำค้น>",
             "• โน้ต <คำค้น> <ข้อความ>",
+            "• สรุปยอด <คำค้น>",
+            "• สิทธิ์ส่วนลด <คำค้น>",
             "• ยอดปิด <คำค้น>",
             "• ค่าเช่า <คำค้น>",
             "• วันจ่าย <คำค้น>",
             "• ยอดค้าง <คำค้น>",
-            "• สถานะ <คำค้น>"
+            "• สถานะ <คำค้น>",
+            access.role === "เจ้าของ" ? "• รายงานวันนี้ / สถานะระบบ / คิวตรวจสอบ / เจ้าหน้าที่" : null
           ].join("\n")
         },
       ]);
@@ -276,6 +279,51 @@ async function handleEvent(event) {
         responseText = result.info
           ? formatCustomerInfo(result.info, command.field)
           : "ไม่พบข้อมูลลูกค้า";
+      } else if (command.action === "getCalculatedSummary") {
+        const s = result.summary;
+        if (!s) {
+          responseText = "ไม่พบข้อมูลลูกค้า";
+        } else if (command.summaryField === "discount") {
+          responseText = [
+            (s.customer?.name || "-") + (s.customer?.queue ? " / คิว " + s.customer.queue : ""),
+            "สิทธิ์ส่วนลด: " + (s.discountEligible ? "มีสิทธิ์" : "ไม่มีสิทธิ์"),
+            s.discountEligible ? "ส่วนลดค่าเช่า: " + s.discountPercent + "%" : null,
+            s.discountStartDate ? "เริ่มนับสิทธิ์: " + s.discountStartDate : null,
+            s.crossCycleOutstanding ? "มีรายการข้ามรอบ จึงงดส่วนลด" : null
+          ].filter(Boolean).join("\n");
+        } else {
+          responseText = [
+            (s.customer?.name || "-") + (s.customer?.queue ? " / คิว " + s.customer.queue : ""),
+            "เงินต้น: " + Number(s.principal || 0).toLocaleString("th-TH"),
+            "ค่าเช่ารวมรอบ: " + Number(s.accumulatedFee || 0).toLocaleString("th-TH"),
+            "ค้าง: " + Number(s.overdueDays || 0) + " วัน",
+            "ค่าปรับ: " + Number(s.lateFee || 0).toLocaleString("th-TH"),
+            "สิทธิ์ลด: " + (s.discountEligible ? s.discountPercent + "%" : "ไม่มี"),
+            "ยอดปิดคำนวณ: " + Number(s.calculatedClose || 0).toLocaleString("th-TH"),
+            "คำนวณ ณ " + s.calculatedAt
+          ].join("\n");
+        }
+      } else if (command.action === "dailyOwnerReport") {
+        const r = result.report;
+        responseText = r ? [
+          "รายงานวันนี้",
+          "ใช้งานคำสั่ง: " + r.commandCount,
+          "ค้นลูกค้า: " + r.searchCount,
+          "ผิดพลาด: " + r.errorCount,
+          "คิวรอตรวจ: " + r.pendingReview,
+          "เจ้าหน้าที่รออนุมัติ: " + r.pendingStaff
+        ].join("\n") : (result.message || "ไม่พบรายงาน");
+      } else if (command.action === "systemStatus") {
+        const x = result.status;
+        responseText = x ? [
+          "สถานะระบบ " + x.botName,
+          "บอตหลัก: " + (x.masterEnabled ? "เปิด" : "ปิด"),
+          "เจ้าหน้าที่: " + (x.staffEnabled ? "เปิด" : "ปิด"),
+          "กลุ่ม LINE: " + (x.groupEnabled ? "เปิด" : "ปิด"),
+          "แหล่งข้อมูลเปิดใช้: " + x.enabledSources,
+          "OK Slip: " + (x.okSlipEnabled ? "เปิด" : "ยังไม่เชื่อม"),
+          "Webhook: " + x.webhookStatus
+        ].join("\n") : (result.message || "ไม่พบสถานะระบบ");
       } else if (command.action === "getHistory") {
         responseText = formatHistory(result.items || []);
       } else if (command.action === "addNote") {
