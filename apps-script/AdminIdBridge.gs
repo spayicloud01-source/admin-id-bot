@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.24-103',
+  VERSION: '2026.09.24-104',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   SOURCE_SHEET: 'ลิ้งชีต',
@@ -92,6 +92,8 @@ function doPost(e) {
         result = markCustomerReminderSent_(body); break;
       case 'listCustomerNotificationSheets':
         result = listCustomerNotificationSheets_(body); break;
+      case 'setCustomerAutoReminderSheet':
+        result = setCustomerAutoReminderSheet_(body); break;
       case 'buildCustomerNotificationBatch':
         result = buildCustomerNotificationBatch_(body); break;
       case 'getCustomerContactRecipients':
@@ -179,7 +181,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.23-102', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.24-104', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -323,7 +325,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.23-102', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.24-104', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -794,6 +796,60 @@ function ownerAccessForCustomerNotification_(body) {
     : null;
 }
 
+function customerNotificationSheetKey_(source, sheet) {
+  return String(source || '').trim() + '|' + String(sheet || '').trim();
+}
+
+function getCustomerAutoReminderSheetKeys_() {
+  const props = PropertiesService.getScriptProperties();
+  const raw = String(props.getProperty('CUSTOMER_AUTO_REMINDER_SHEETS') || '').trim();
+  const keys = raw
+    ? raw.split(',').map(function(x){ return String(x || '').trim(); }).filter(Boolean)
+    : [customerNotificationSheetKey_(CONFIG.CUSTOMER_PILOT_SOURCE, CONFIG.CUSTOMER_PILOT_SHEET)];
+  return keys.filter(function(v, i, a){ return a.indexOf(v) === i; });
+}
+
+function setCustomerAutoReminderSheet_(body) {
+  const access = ownerAccessForCustomerNotification_(body);
+  if (!access) return { ok: true, allowed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+
+  const source = String(body.source || '').trim();
+  const sheet = String(body.sheet || '').trim();
+  if (!source || !sheet) return { ok: true, allowed: true, changed: false, message: 'กรุณาเลือกชีตก่อน' };
+
+  const key = customerNotificationSheetKey_(source, sheet);
+  let keys = getCustomerAutoReminderSheetKeys_();
+  const enabled = body.enabled === true;
+
+  if (enabled && keys.indexOf(key) === -1) keys.push(key);
+  if (!enabled) keys = keys.filter(function(x){ return x !== key; });
+
+  PropertiesService.getScriptProperties().setProperty('CUSTOMER_AUTO_REMINDER_SHEETS', keys.join(','));
+
+  logAction_({
+    lineUserId: body.lineUserId || '',
+    staffName: access.staffName || '',
+    role: 'เจ้าของ',
+    command: enabled ? 'เปิดแจ้งอัตโนมัติ' : 'ปิดแจ้งอัตโนมัติ',
+    query: source + '/' + sheet,
+    source: source + '/' + sheet,
+    result: enabled ? 'เปิดแล้ว' : 'ปิดแล้ว',
+    actionName: 'customerAutoReminderSheet',
+    status: 'สำเร็จ',
+    note: ''
+  });
+
+  return {
+    ok: true,
+    allowed: true,
+    changed: true,
+    enabled: enabled,
+    source: source,
+    sheet: sheet,
+    message: (enabled ? 'เปิด' : 'ปิด') + 'แจ้งเตือนอัตโนมัติแล้ว\nชีต: ' + sheet
+  };
+}
+
 function listCustomerNotificationSheets_(body) {
   const access = ownerAccessForCustomerNotification_(body);
   if (!access) return { ok: true, allowed: false, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
@@ -811,10 +867,14 @@ function listCustomerNotificationSheets_(body) {
     if (!map[key]) map[key] = { source: source, sheet: sheet, count: 0 };
     map[key].count++;
   });
+  const autoKeys = getCustomerAutoReminderSheetKeys_();
   return {
     ok: true,
     allowed: true,
-    items: Object.keys(map).sort().map(function(k){ return map[k]; })
+    items: Object.keys(map).sort().map(function(k){
+      map[k].autoEnabled = autoKeys.indexOf(k) !== -1;
+      return map[k];
+    })
   };
 }
 
@@ -992,9 +1052,13 @@ function getCustomerReminderBatch_(body) {
   const notifySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
 
-  const pilotSource = String(CONFIG.CUSTOMER_PILOT_SOURCE || '').trim();
-  const pilotSheet = String(CONFIG.CUSTOMER_PILOT_SHEET || '').trim();
-  const todayKey = reminderDayKey_();
+  const enabledKeys = getCustomerAutoReminderSheetKeys_();
+  const enabledMap = {};
+  enabledKeys.forEach(function(k){ enabledMap[k] = true; });
+
+  const todayText = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+  const todayParts = todayText.split('-').map(Number);
+  const todaySerial = Math.floor(Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]) / 86400000);
   const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
 
   const existing = notifySheet.getLastRow() >= 2
@@ -1021,29 +1085,41 @@ function getCustomerReminderBatch_(body) {
     const r = bindings[i];
     if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
     if (!isTrue_(r[10])) continue;
-    if (String(r[4] || '').trim() !== pilotSource) continue;
-    if (String(r[5] || '').trim() !== pilotSheet) continue;
+
+    const source = String(r[4] || '').trim();
+    const sheet = String(r[5] || '').trim();
+    const sheetKey = customerNotificationSheetKey_(source, sheet);
+    if (!enabledMap[sheetKey]) continue;
 
     const lineUserId = String(r[1] || '').trim();
-    if (!lineUserId) continue;
+    const queue = String(r[6] || '').trim();
+    if (!lineUserId || !queue) continue;
 
-    const c = findCustomerIdentity_(pilotSource, pilotSheet, String(r[6] || '').trim());
+    const c = findCustomerIdentity_(source, sheet, queue);
     if (!c) continue;
     const due = parseDateFlexible_(c.dueDate);
     if (!due) continue;
-    const dueKey = Utilities.formatDate(due, 'Asia/Bangkok', 'yyyy-MM-dd');
-    if (dueKey !== todayKey) continue;
 
-    const dueDisplay = formatThaiDate_(due);
-    const key = [pilotSource, normalizeGeneral_(c.queue), lineUserId, dueDisplay].join('|');
+    const dueText = Utilities.formatDate(due, 'Asia/Bangkok', 'yyyy-MM-dd');
+    const dueParts = dueText.split('-').map(Number);
+    const dueSerial = Math.floor(Date.UTC(dueParts[0], dueParts[1] - 1, dueParts[2]) / 86400000);
+    const daysFromDue = todaySerial - dueSerial;
+
+    // The payment cycle is anchored to the source due date and repeats every 10 days.
+    if (daysFromDue < 0 || daysFromDue % 10 !== 0) continue;
+
+    const cycleDate = new Date(todayParts[0], todayParts[1] - 1, todayParts[2]);
+    const cycleDisplay = formatThaiDate_(cycleDate);
+    const sourceKey = source + '/' + sheet;
+    const key = [sourceKey, normalizeGeneral_(c.queue), lineUserId, cycleDisplay].join('|');
     const found = existingMap[key];
     if (found && found.status === 'ส่งแล้ว') continue;
 
     const message = [
-      'แจ้งเตือนกำหนดครบวันชำระ',
+      'แจ้งเตือนวันครบกำหนดชำระ',
       'ชื่อ: ' + String(c.name || '').trim(),
       'คิว: ' + String(c.queue || '').trim(),
-      'กำหนดครบวันชำระวันนี้: ' + dueDisplay,
+      'วันครบกำหนดชำระ: ' + cycleDisplay,
       '',
       'กดปุ่มด้านล่างเพื่อตรวจสอบยอดและรายละเอียด'
     ].join('\n');
@@ -1056,12 +1132,12 @@ function getCustomerReminderBatch_(body) {
         String(c.queue || '').trim(),
         String(c.name || '').trim(),
         lineUserId,
-        dueDisplay,
+        cycleDisplay,
         parseMoney_(c.fee),
         message,
         'รอส่ง',
         '',
-        pilotSource
+        sourceKey
       ]);
       rowNo = notifySheet.getLastRow();
       existingMap[key] = { rowNo: rowNo, status: 'รอส่ง' };
@@ -1075,8 +1151,10 @@ function getCustomerReminderBatch_(body) {
       lineUserId: lineUserId,
       queue: String(c.queue || '').trim(),
       name: String(c.name || '').trim(),
-      dueDate: dueDisplay,
+      dueDate: cycleDisplay,
       fee: parseMoney_(c.fee),
+      source: source,
+      sheet: sheet,
       message: message
     });
   }
@@ -1084,6 +1162,7 @@ function getCustomerReminderBatch_(body) {
   return {
     ok: true,
     items: items,
+    enabledSheets: enabledKeys,
     generatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
   };
 }
