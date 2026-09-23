@@ -78,6 +78,8 @@ function doPost(e) {
         result = queueFinancialReview_(body, 'ปิดยอด'); break;
       case 'listReviewQueue':
         result = listReviewQueue_(body); break;
+      case 'getReviewQueueItem':
+        result = getReviewQueueItem_(body); break;
       case 'resolveReviewQueue':
         result = resolveReviewQueue_(body); break;
       case 'logAction':
@@ -1105,6 +1107,77 @@ function addNote_(body) {
   return { ok: true, added: true, customer: m };
 }
 
+function getReviewQueueItem_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, item: null, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const rowNo = Number(String(body.query || '').trim());
+  if (!Number.isInteger(rowNo) || rowNo < 2) {
+    return { ok: true, item: null, message: 'รูปแบบ: ดูคิว <เลขคิว>' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
+  if (!sh || rowNo > sh.getLastRow()) return { ok: true, item: null, message: 'ไม่พบคิวนี้' };
+
+  const row = sh.getRange(rowNo, 1, 1, 12).getDisplayValues()[0];
+  return {
+    ok: true,
+    item: {
+      rowNo: rowNo,
+      dateTime: row[0],
+      type: row[1],
+      queue: row[2],
+      name: row[3],
+      source: row[4],
+      detail: row[5],
+      amount: row[6],
+      slipRef: row[7],
+      status: row[8],
+      staff: row[9],
+      closedAt: row[10],
+      note: row[11]
+    }
+  };
+}
+
+function appendHistoryFromApprovedReview_(reviewRow, reviewRowNo, approver) {
+  const type = String(reviewRow[1] || '').trim();
+  if (type !== 'บันทึกชำระ' && type !== 'ปิดยอด') return false;
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
+  if (!sh) return false;
+
+  const sourceParts = String(reviewRow[4] || '').split(' / ');
+  const source = String(sourceParts[0] || '').trim();
+  const sourceSheet = sourceParts.slice(1).join(' / ').trim();
+  const eventType = type === 'ปิดยอด' ? 'ปิดยอด' : 'ชำระค่าเช่า';
+  const note = 'อนุมัติจากคิวตรวจสอบ #' + reviewRowNo + ' (ยังไม่ซิงก์ชีตต้นทาง)';
+
+  sh.appendRow([
+    new Date(),
+    source,
+    sourceSheet,
+    String(reviewRow[2] || '').trim(),
+    String(reviewRow[3] || '').trim(),
+    '',
+    '',
+    '',
+    eventType,
+    '',
+    '',
+    '',
+    '',
+    reviewRow[6] || '',
+    approver || '',
+    note
+  ]);
+  return true;
+}
+
 function listReviewQueue_(body) {
   const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
   if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
@@ -1158,6 +1231,16 @@ function resolveReviewQueue_(body) {
   sh.getRange(rowNo, 10).setValue(access.staffName || 'เจ้าของ');
   sh.getRange(rowNo, 11).setValue(new Date());
 
+  let historyRecorded = false;
+  if (decision === 'ผ่าน') {
+    historyRecorded = appendHistoryFromApprovedReview_(row, rowNo, access.staffName || 'เจ้าของ');
+    sh.getRange(rowNo, 12).setValue(
+      historyRecorded
+        ? 'บันทึกประวัติแล้ว / ยังไม่ซิงก์ชีตต้นทาง'
+        : (String(row[11] || '').trim() || 'ตรวจสอบแล้ว')
+    );
+  }
+
   const staffSheet = ss.getSheetByName(CONFIG.STAFF_SHEET);
   let requesterLineUserId = '';
   if (staffSheet && staffSheet.getLastRow() >= 2) {
@@ -1174,6 +1257,7 @@ function resolveReviewQueue_(body) {
     ok: true, resolved: true, decision: decision, rowNo: rowNo,
     type: row[1], name: row[3], queue: row[2], amount: row[6],
     requesterLineUserId: requesterLineUserId,
+    historyRecorded: historyRecorded,
     message: (decision === 'ผ่าน' ? 'คิว #' + rowNo + ' ผ่านการตรวจสอบแล้ว' : 'คิว #' + rowNo + ' ไม่ผ่านการตรวจสอบ')
   };
 }
