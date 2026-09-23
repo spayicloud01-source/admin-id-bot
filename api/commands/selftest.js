@@ -25,6 +25,14 @@ export default async function handler(req, res) {
     ["ปิดกลุ่ม", "setGroupEnabled", ""],
     ["ทดสอบแจ้งเตือน", "getReminderBatch", ""],
     ["ตรวจชีตต้นทาง", "auditSourceSchemas", ""],
+    ["ตรวจเขียนต้นทาง", "auditSourceWriteCapabilities", ""],
+    ["เช็กพร้อมใช้", "readinessCheck", ""],
+    ["เวอร์ชันระบบ", "getBridgeVersion", ""],
+    ["กิจกรรมวันนี้", "getStaffActivity", ""],
+    ["ยกเลิกคิว 12", "cancelReviewQueue", "12"],
+    ["จำลองบันทึก 12", "planSourceWrite", "12"],
+    ["เปิดระบบ", "setBotSwitch", ""],
+    ["ปิดระบบ", "setBotSwitch", ""],
   ];
 
   const tests = cases.map(([input, action, query]) => {
