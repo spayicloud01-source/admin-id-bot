@@ -242,7 +242,9 @@ async function handleEvent(event) {
         const usage =
           command.action === "addNote"
             ? "รูปแบบ: โน้ต <คำค้น> <ข้อความ>"
-            : `รูปแบบ: ${command.prefix} <คำค้น>`;
+            : command.action === "queuePayment"
+              ? "รูปแบบ: บันทึกชำระ <คำค้น> <ยอด>"
+              : `รูปแบบ: ${command.prefix} <คำค้น>`;
         await replyMessage(event.replyToken, [{ type: "text", text: usage }]);
         return;
       }
@@ -259,6 +261,7 @@ async function handleEvent(event) {
 
       if (command.eventType) payload.eventType = command.eventType;
       if (command.note) payload.note = command.note;
+      if (command.amount != null) payload.amount = command.amount;
 
       const result = await callSheetsBridge(payload);
 
@@ -277,6 +280,8 @@ async function handleEvent(event) {
         responseText = result.added
           ? `บันทึกโน้ตแล้ว: ${result.customer?.name || command.query}`
           : "ไม่พบข้อมูลลูกค้า";
+      } else if (["queuePayment", "queueSlipReview", "queueClose"].includes(command.action)) {
+        responseText = result.message || (result.queued ? "ส่งเข้าคิวตรวจสอบแล้ว" : "ไม่สามารถดำเนินการได้");
       } else if (command.action === "listPendingStaff") {
         const items = Array.isArray(result.items) ? result.items : [];
         responseText = items.length
