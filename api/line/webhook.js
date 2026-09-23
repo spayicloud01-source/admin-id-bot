@@ -217,15 +217,28 @@ async function handleEvent(event) {
 
     const command = parseCommand(text);
 
-    const access = await callSheetsBridge({
-      action: "checkAccess",
-      lineUserId,
-      sourceType,
-      groupId,
-      permission: command?.permission || "ดูข้อมูลลูกค้า",
-      allowGroupSetup: ["setGroupEnabled", "getGroupStatus", "setGroupNotification"].includes(command?.action),
-      allowSystemControl: ["setBotSwitch", "readinessCheck", "getBridgeVersion"].includes(command?.action),
-    });
+    const directOwnerValidatedActions = new Set(["readinessCheck"]);
+    let access;
+
+    if (directOwnerValidatedActions.has(command?.action)) {
+      // readinessCheck performs its own owner validation in Apps Script.
+      // Avoid a second pre-check that can incorrectly route the owner into registration fallback.
+      access = {
+        allowed: true,
+        staffName: "",
+        role: "เจ้าของ",
+      };
+    } else {
+      access = await callSheetsBridge({
+        action: "checkAccess",
+        lineUserId,
+        sourceType,
+        groupId,
+        permission: command?.permission || "ดูข้อมูลลูกค้า",
+        allowGroupSetup: ["setGroupEnabled", "getGroupStatus", "setGroupNotification"].includes(command?.action),
+        allowSystemControl: ["setBotSwitch", "getBridgeVersion"].includes(command?.action),
+      });
+    }
 
     if (!access.allowed) {
       const registration = await callSheetsBridge({
