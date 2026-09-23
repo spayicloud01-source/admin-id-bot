@@ -34,6 +34,8 @@ function doPost(e) {
     switch (body.action) {
       case 'checkAccess':
         result = checkAccess_(body); break;
+      case 'registerStaff':
+        result = registerStaff_(body); break;
       case 'searchCustomer':
         result = { ok: true, matches: searchCustomer_(String(body.query || '').trim()) }; break;
       case 'getCustomerInfo':
@@ -100,6 +102,61 @@ function checkAccess_(body) {
   }
 
   return { ok: true, allowed: false, message: 'บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID' };
+}
+
+function registerStaff_(body) {
+  const lineUserId = String(body.lineUserId || '').trim();
+  const staffName = String(body.staffName || '').trim();
+  if (!lineUserId || !staffName) {
+    return { ok: true, registered: false, message: 'กรุณาพิมพ์ชื่อเจ้าหน้าที่ให้ตรงกับที่ลงทะเบียนไว้' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  if (!sh) return { ok: false, error: 'ไม่พบชีตเจ้าหน้าที่' };
+
+  const lastRow = Math.max(sh.getLastRow(), 2);
+  const values = sh.getRange(2, 1, lastRow - 1, 20).getValues();
+
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const name = String(row[0] || '').trim();
+    const existingId = String(row[1] || '').trim();
+    if (existingId === lineUserId) {
+      return {
+        ok: true,
+        registered: false,
+        alreadyRegistered: true,
+        message: String(row[2] || '') === 'เจ้าหน้าที่'
+          ? 'LINE นี้ลงทะเบียนเป็นเจ้าหน้าที่แล้ว'
+          : 'LINE นี้ลงทะเบียนแล้ว และกำลังรออนุมัติ'
+      };
+    }
+    if (name !== staffName) continue;
+    if (existingId && existingId !== lineUserId) {
+      return { ok: true, registered: false, message: 'ชื่อนี้ถูกผูกกับ LINE อื่นแล้ว' };
+    }
+
+    const rowNo = i + 2;
+    sh.getRange(rowNo, 2).setValue(lineUserId);
+    sh.getRange(rowNo, 3).setValue('รอยืนยัน');
+    sh.getRange(rowNo, 5).setValue(new Date());
+    sh.getRange(rowNo, 9).setValue(sh.getRange(rowNo, 9).getValue() || 'พนักงาน');
+    sh.getRange(rowNo, 20).setValue(false);
+
+    return {
+      ok: true,
+      registered: true,
+      staffName: staffName,
+      message: 'ลงทะเบียนแล้ว รอเจ้าของอนุมัติ'
+    };
+  }
+
+  return {
+    ok: true,
+    registered: false,
+    message: 'ไม่พบชื่อเจ้าหน้าที่นี้ในรายการที่เจ้าของเตรียมไว้'
+  };
 }
 
 function getCustomerInfo_(body) {
