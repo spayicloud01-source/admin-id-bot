@@ -146,10 +146,20 @@ function registerStaff_(body) {
     sh.getRange(rowNo, 9).setValue(sh.getRange(rowNo, 9).getValue() || 'พนักงาน');
     sh.getRange(rowNo, 20).setValue(false);
 
+    const ownerLineUserIds = values
+      .filter(function(r) {
+        return String(r[8] || '').trim() === 'เจ้าของ' &&
+          String(r[2] || '').trim() === 'เจ้าหน้าที่' &&
+          r[19] === true &&
+          String(r[1] || '').trim();
+      })
+      .map(function(r) { return String(r[1] || '').trim(); });
+
     return {
       ok: true,
       registered: true,
       staffName: staffName,
+      ownerLineUserIds: ownerLineUserIds,
       message: 'ลงทะเบียนแล้ว รอเจ้าของอนุมัติ'
     };
   }
