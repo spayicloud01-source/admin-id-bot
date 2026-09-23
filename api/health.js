@@ -1,6 +1,6 @@
 import { callSheetsBridge } from "../lib/sheetsBridge.js";
 
-const EXPECTED_BRIDGE_VERSION = "2026.09.23-90";
+const EXPECTED_BRIDGE_VERSION = "2026.09.23-100";
 
 export default async function handler(req, res) {
   let bridge = {
@@ -11,10 +11,21 @@ export default async function handler(req, res) {
 
   try {
     const result = await callSheetsBridge({ action: "getBridgeVersion" });
+    let selfTest = null;
+    try {
+      selfTest = await callSheetsBridge({ action: "postDeploySelfTest" });
+    } catch (error) {
+      selfTest = {
+        ok: false,
+        error: String(error?.message || error).slice(0, 160),
+      };
+    }
+
     bridge = {
       reachable: true,
       version: result?.version || null,
       matchesExpected: result?.version === EXPECTED_BRIDGE_VERSION,
+      selfTest,
     };
   } catch (error) {
     bridge.error = String(error?.message || error).slice(0, 160);
@@ -33,10 +44,14 @@ export default async function handler(req, res) {
   return res.status(200).json({
     ok: envReady && bridge.reachable,
     service: "Admin ID",
-    appVersion: "2026.09.23-90",
+    appVersion: "2026.09.23-100",
     expectedBridgeVersion: EXPECTED_BRIDGE_VERSION,
     environment,
     bridge,
-    readyForFullTest: envReady && bridge.reachable && bridge.matchesExpected,
+    readyForFullTest:
+      envReady &&
+      bridge.reachable &&
+      bridge.matchesExpected &&
+      bridge.selfTest?.ok === true,
   });
 }
