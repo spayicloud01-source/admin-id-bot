@@ -89,6 +89,8 @@ function doPost(e) {
         result = queueFinancialReview_(body, 'บันทึกชำระ'); break;
       case 'queueSlipReview':
         result = queueFinancialReview_(body, 'ตรวจสลิป'); break;
+      case 'rememberSlipMessage':
+        result = rememberSlipMessage_(body); break;
       case 'queueClose':
         result = queueFinancialReview_(body, 'ปิดยอด'); break;
       case 'listReviewQueue':
@@ -1785,6 +1787,53 @@ function resolveReviewQueue_(body) {
   };
 }
 
+function slipCacheKey_(lineUserId) {
+  const raw = String(lineUserId || '').trim();
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw);
+  return 'recent-slip:' + Utilities.base64EncodeWebSafe(digest).slice(0, 40);
+}
+
+function rememberSlipMessage_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    sourceType: body.sourceType,
+    groupId: body.groupId,
+    permission: 'ยืนยันสลิป'
+  });
+  if (!access.allowed) {
+    return { ok: true, remembered: false, message: access.message || 'ไม่มีสิทธิ์ยืนยันสลิป' };
+  }
+
+  const messageId = String(body.messageId || '').trim();
+  if (!messageId) return { ok: true, remembered: false, message: 'ไม่พบรหัสรูปสลิป' };
+
+  CacheService.getScriptCache().put(
+    slipCacheKey_(body.lineUserId),
+    JSON.stringify({
+      messageId: messageId,
+      receivedAt: new Date().toISOString()
+    }),
+    600
+  );
+
+  return {
+    ok: true,
+    remembered: true,
+    staffName: access.staffName || '',
+    message: 'รับรูปสลิปแล้ว'
+  };
+}
+
+function getRecentSlipMessage_(lineUserId) {
+  const value = CacheService.getScriptCache().get(slipCacheKey_(lineUserId));
+  if (!value) return null;
+  try { return JSON.parse(value); } catch (err) { return null; }
+}
+
+function clearRecentSlipMessage_(lineUserId) {
+  CacheService.getScriptCache().remove(slipCacheKey_(lineUserId));
+}
+
 function queueFinancialReview_(body, type) {
   const permissionMap = {
     'บันทึกชำระ': 'บันทึกชำระ',
@@ -1809,6 +1858,18 @@ function queueFinancialReview_(body, type) {
   }
 
   const customer = matches[0];
+  let recentSlip = null;
+  if (type === 'ตรวจสลิป') {
+    recentSlip = getRecentSlipMessage_(body.lineUserId);
+    if (!recentSlip || !recentSlip.messageId) {
+      return {
+        ok: true,
+        queued: false,
+        message: 'ยังไม่พบรูปสลิปล่าสุด กรุณาส่งรูปสลิปก่อน แล้วพิมพ์ ยืนยันสลิป <คำค้น> ภายใน 10 นาที'
+      };
+    }
+  }
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh) return { ok: false, error: 'ไม่พบชีตคิวตรวจสอบ' };
@@ -1839,7 +1900,7 @@ function queueFinancialReview_(body, type) {
     (customer.source || '') + (customer.sheet ? ' / ' + customer.sheet : ''),
     detail,
     amount,
-    '',
+    recentSlip && recentSlip.messageId ? recentSlip.messageId : '',
     'รอตรวจ',
     access.staffName || '',
     '',
@@ -1847,6 +1908,7 @@ function queueFinancialReview_(body, type) {
   ]);
 
   const rowNo = sh.getLastRow();
+  if (type === 'ตรวจสลิป') clearRecentSlipMessage_(body.lineUserId);
   const staffSheet = ss.getSheetByName(CONFIG.STAFF_SHEET);
   const staffValues = staffSheet && staffSheet.getLastRow() >= 2
     ? staffSheet.getRange(2, 1, staffSheet.getLastRow() - 1, 20).getValues()
