@@ -167,6 +167,7 @@ function postDeploySelfTest_() {
   add('ตั้งค่าบอต', !!ss.getSheetByName(CONFIG.SETTINGS_SHEET), CONFIG.SETTINGS_SHEET, true);
   add('กลุ่ม LINE', !!ss.getSheetByName(CONFIG.GROUP_SHEET), CONFIG.GROUP_SHEET, false);
   add('คิวแจ้งเตือน', !!ss.getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET), CONFIG.NOTIFICATION_QUEUE_SHEET, false);
+  add('ลูกค้า LINE', !!ss.getSheetByName(CONFIG.CUSTOMER_LINE_SHEET), CONFIG.CUSTOMER_LINE_SHEET, true);
 
   const src = ss.getSheetByName(CONFIG.SOURCE_SHEET);
   let enabledSources = 0;
@@ -199,6 +200,7 @@ function postDeploySelfTest_() {
 
   add('BOT_MASTER_ENABLED', master, String(master), true);
   add('BOT_STAFF_ENABLED', staffEnabled, String(staffEnabled), true);
+  add('BOT_CUSTOMER_ENABLED', isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true)), String(getSettingValue_('BOT_CUSTOMER_ENABLED', true)), true);
   add('Safety เขียนต้นทางปิด', writesEnabled === false, writesEnabled ? 'เปิด' : 'ปิด', true);
   add('แจ้งเตือนภายใน', reminderInternal === true, reminderInternal ? 'ภายในเท่านั้น' : 'ส่งลูกค้าได้', false);
   add('OK Slip', okSlip, okSlip ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม', false);
