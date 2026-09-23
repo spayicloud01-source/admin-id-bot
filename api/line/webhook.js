@@ -335,11 +335,25 @@ async function handleEvent(event) {
       if (command.permissionEnabled != null) payload.permissionEnabled = command.permissionEnabled;
       if (command.action === "getReminderBatch") payload.force = true;
       if (command.activityToday) payload.activityToday = true;
+      if (command.switchKey) payload.switchKey = command.switchKey;
 
       const result = await callSheetsBridge(payload);
 
       let responseText = "";
-      if (command.action === "getBridgeVersion") {
+      if (command.action === "readinessCheck") {
+        if (!Array.isArray(result.checks)) {
+          responseText = result.message || "ตรวจความพร้อมไม่ได้";
+        } else {
+          responseText = [
+            "เช็กพร้อมใช้ Admin ID",
+            "ผ่าน " + result.passed + "/" + result.total + " (" + result.percent + "%)",
+            "",
+            ...result.checks.map((x) => (x.pass ? "✓ " : "✗ ") + x.name + (x.detail ? " | " + x.detail : ""))
+          ].join("\n");
+        }
+      } else if (command.action === "setBotSwitch") {
+        responseText = result.message || (result.changed ? "อัปเดตระบบแล้ว" : "อัปเดตระบบไม่ได้");
+      } else if (command.action === "getBridgeVersion") {
         responseText = "Admin ID\nApps Script version: " + (result.version || "ไม่ทราบ");
       } else if (result.needsSelection) {
         responseText =
