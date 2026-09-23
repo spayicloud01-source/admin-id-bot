@@ -6,7 +6,15 @@ const CONFIG = {
   MAX_RESULTS: 20,
   MAX_ROWS_PER_TAB: 3000,
   HEADER_SCAN_ROWS: 20,
-  HEADER_SCAN_COLS: 40
+  HEADER_SCAN_COLS: 40,
+  EXCLUDED_TAB_PATTERNS: [
+    /^LINE/i,
+    /แจ้งค่าเช่า/i,
+    /สรุป/i,
+    /^Mail/i,
+    /รายงาน/i,
+    /Dashboard/i
+  ]
 };
 
 function doGet() {
@@ -125,8 +133,11 @@ function searchCustomer_(query, includeDetails) {
       const id = extractSpreadsheetId_(url);
       if (!id) continue;
       const ss = SpreadsheetApp.openById(id);
-      let tabs = ss.getSheets();
-      if (!searchAllTabs) tabs = tabs.filter(s => !s.isSheetHidden()).slice(0, 1);
+      let tabs = ss.getSheets().filter(function(sh) {
+        if (sh.isSheetHidden()) return false;
+        return !CONFIG.EXCLUDED_TAB_PATTERNS.some(function(rx) { return rx.test(sh.getName()); });
+      });
+      if (!searchAllTabs) tabs = tabs.slice(0, 1);
 
       for (let t = 0; t < tabs.length && results.length < CONFIG.MAX_RESULTS; t++) {
         searchTab_(tabs[t], sourceName, query, results, !!includeDetails);
@@ -135,7 +146,25 @@ function searchCustomer_(query, includeDetails) {
       console.log('ค้นไม่ได้: ' + sourceName + ' / ' + err.message);
     }
   }
-  return results;
+  return dedupeResults_(results);
+}
+
+function dedupeResults_(items) {
+  const seen = {};
+  const out = [];
+  items.forEach(function(x) {
+    const key = [
+      normalizeGeneral_(x.source),
+      normalizeGeneral_(x.sheet),
+      normalizeGeneral_(x.queue),
+      normalizePhone_(x.phone),
+      normalizeApple_(x.appleId)
+    ].join('|');
+    if (seen[key]) return;
+    seen[key] = true;
+    out.push(x);
+  });
+  return out;
 }
 
 function searchTab_(sheet, sourceName, query, results, includeDetails) {
@@ -219,7 +248,7 @@ function detectHeaders_(sheet) {
       principal: findHeader_(headers, ['ยอด','ยอดขายฝาก','ยอดฝาก','เงินต้น','principal']),
       fee: findHeader_(headers, ['ค่าเช่า','ค่่าเช่า','ดอก','เช่า','fee','rent']),
       saleDate: findHeader_(headers, ['วันขายฝาก','วันฝาก','วันรับ','วันที่ขาย','saledate']),
-      dueDate: findHeader_(headers, ['วันจ่าย','กำหนดวันจ่ายถัดไปจ่าย','กำหนดจ่าย','วันส่ง','due']),
+      dueDate: findHeader_(headers, ['กำหนดวันจ่ายถัดไปจ่าย','กำหนดจ่าย','วันจ่าย','due','วันส่ง']),
       outstanding: findHeader_(headers, ['ยอดค้าง','ยอดที่ต้องจ่าย','ค้างชำระ','outstanding']),
       closeAmount: findHeader_(headers, ['ยอดปิด','ปิดยอด','closeamount']),
       note: findHeader_(headers, ['โน๊ต','โน็ต','หมายเหตุ','note'])
