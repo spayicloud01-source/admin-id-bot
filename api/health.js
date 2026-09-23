@@ -1,3 +1,4 @@
+// release-sync: customer-id-ocr
 const HEALTH_SCHEMA_VERSION = 1;
 import { callSheetsBridge } from "../lib/sheetsBridge.js";
 
