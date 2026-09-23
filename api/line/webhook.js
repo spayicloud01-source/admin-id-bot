@@ -449,6 +449,14 @@ async function handleEvent(event) {
             console.warn("Review result notification failed", error);
           });
         }
+      } else if (command.action === "setGroupNotification") {
+        responseText = result.message || (result.changed ? "อัปเดตการแจ้งเตือนกลุ่มแล้ว" : "ไม่สามารถดำเนินการได้");
+      } else if (command.action === "installReminderTrigger") {
+        responseText = result.message || (result.installed ? "ติดตั้งแจ้งเตือนแล้ว" : "ติดตั้งไม่สำเร็จ");
+      } else if (command.action === "getReminderTriggerStatus") {
+        responseText = result.installed
+          ? "แจ้งเตือนรายวัน: ติดตั้งแล้ว\nเวลาเป้าหมาย: " + (result.remindTime || "09:00")
+          : "แจ้งเตือนรายวัน: ยังไม่ได้ติดตั้ง";
       } else if (command.action === "setGroupEnabled") {
         responseText = result.message || (result.changed ? "อัปเดตกลุ่มแล้ว" : "ไม่สามารถดำเนินการได้");
       } else if (command.action === "getGroupStatus") {
