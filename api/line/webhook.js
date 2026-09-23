@@ -433,6 +433,38 @@ async function handleEvent(event) {
         const queue = bindingMatch[1];
         const fullName = bindingMatch[2].trim();
 
+        // If this LINE account is already bound, lock it to that customer before any new lookup.
+        const currentBinding = await callSheetsBridge({
+          action: "getCustomerSelf",
+          lineUserId,
+          field: "status",
+        }).catch(() => null);
+
+        if (currentBinding?.bound && Array.isArray(currentBinding.items) && currentBinding.items.length) {
+          const bound = currentBinding.items[0];
+          const sameQueue = String(bound?.queue || "").replace(/\s+/g, "").toLowerCase() === String(queue).replace(/\s+/g, "").toLowerCase();
+          const sameName = String(bound?.name || "").replace(/\s+/g, "").toLowerCase() === String(fullName).replace(/\s+/g, "").toLowerCase();
+
+          const message = {
+            type: "text",
+            text: sameQueue && sameName
+              ? [
+                  "บัญชี LINE นี้ผูกกับข้อมูลลูกค้าเรียบร้อยแล้ว",
+                  "ชื่อ: " + (bound.name || "-"),
+                  "คิว: " + (bound.queue || "-")
+                ].join("\n")
+              : [
+                  "บัญชี LINE นี้ผูกกับลูกค้าแล้ว",
+                  "ชื่อ: " + (bound.name || "-"),
+                  "คิว: " + (bound.queue || "-"),
+                  "ไม่สามารถใช้ LINE นี้ตรวจสอบชื่อหรือคิวอื่นได้"
+                ].join("\n"),
+            quickReply: customerSelfQuickReply(),
+          };
+          await replyMessage(event.replyToken, [message]);
+          return;
+        }
+
         const pilotSearch = await callSheetsBridge({
           action: "searchCustomer",
           query: "v6:" + queue,
