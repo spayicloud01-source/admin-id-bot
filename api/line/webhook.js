@@ -262,6 +262,7 @@ async function handleEvent(event) {
       if (command.eventType) payload.eventType = command.eventType;
       if (command.note) payload.note = command.note;
       if (command.amount != null) payload.amount = command.amount;
+      if (command.decision) payload.decision = command.decision;
 
       const result = await callSheetsBridge(payload);
 
@@ -282,6 +283,16 @@ async function handleEvent(event) {
           : "ไม่พบข้อมูลลูกค้า";
       } else if (["queuePayment", "queueSlipReview", "queueClose"].includes(command.action)) {
         responseText = result.message || (result.queued ? "ส่งเข้าคิวตรวจสอบแล้ว" : "ไม่สามารถดำเนินการได้");
+      } else if (command.action === "listReviewQueue") {
+        const items = Array.isArray(result.items) ? result.items : [];
+        responseText = items.length
+          ? "คิวตรวจสอบ:\n" + items.map((x) => {
+              const parts = ["#" + x.rowNo, x.type || "-", x.name || "-", x.queue ? "คิว " + x.queue : "", x.amount ? "ยอด " + x.amount : "", x.staff ? "โดย " + x.staff : ""].filter(Boolean);
+              return parts.join(" | ");
+            }).join("\n")
+          : "ไม่มีคิวรอตรวจ";
+      } else if (command.action === "resolveReviewQueue") {
+        responseText = result.message || (result.resolved ? "อัปเดตคิวแล้ว" : "ไม่สามารถดำเนินการได้");
       } else if (command.action === "listPendingStaff") {
         const items = Array.isArray(result.items) ? result.items : [];
         responseText = items.length
