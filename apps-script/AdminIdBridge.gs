@@ -3,6 +3,7 @@ const CONFIG = {
   STAFF_SHEET: 'เจ้าหน้าที่',
   HISTORY_SHEET: 'ประวัติลูกค้า',
   LOG_SHEET: 'Log ระบบ',
+  REVIEW_QUEUE_SHEET: 'คิวตรวจสอบ',
   MAX_RESULTS: 20,
   MAX_ROWS_PER_TAB: 3000,
   HEADER_SCAN_ROWS: 20,
@@ -50,6 +51,12 @@ function doPost(e) {
         result = getHistory_(body); break;
       case 'addNote':
         result = addNote_(body); break;
+      case 'queuePayment':
+        result = queueFinancialReview_(body, 'บันทึกชำระ'); break;
+      case 'queueSlipReview':
+        result = queueFinancialReview_(body, 'ตรวจสลิป'); break;
+      case 'queueClose':
+        result = queueFinancialReview_(body, 'ปิดยอด'); break;
       case 'logAction':
         result = logAction_(body); break;
       default:
@@ -543,6 +550,66 @@ function addNote_(body) {
   ]);
 
   return { ok: true, added: true, customer: m };
+}
+
+function queueFinancialReview_(body, type) {
+  const permissionMap = {
+    'บันทึกชำระ': 'บันทึกชำระ',
+    'ตรวจสลิป': 'ยืนยันสลิป',
+    'ปิดยอด': 'ปิดยอด'
+  };
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    permission: permissionMap[type] || ''
+  });
+  if (!access.allowed) {
+    return { ok: true, queued: false, message: access.message || 'ไม่มีสิทธิ์ดำเนินการ' };
+  }
+
+  const query = String(body.query || '').trim();
+  if (!query) return { ok: true, queued: false, message: 'กรุณาระบุคำค้นลูกค้า' };
+
+  const matches = searchCustomer_(query, true);
+  if (!matches.length) return { ok: true, queued: false, message: 'ไม่พบข้อมูลลูกค้า' };
+  if (matches.length > 1) {
+    return { ok: true, queued: false, needsSelection: true, matches: matches.slice(0, 10) };
+  }
+
+  const customer = matches[0];
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
+  if (!sh) return { ok: false, error: 'ไม่พบชีตคิวตรวจสอบ' };
+
+  const amount = body.amount == null ? '' : Number(body.amount);
+  const detail = type === 'บันทึกชำระ'
+    ? 'คำขอบันทึกชำระจาก LINE'
+    : type === 'ปิดยอด'
+      ? 'คำขอปิดยอดจาก LINE'
+      : 'คำขอตรวจสลิปจาก LINE';
+
+  sh.appendRow([
+    new Date(),
+    type,
+    customer.queue || '',
+    customer.name || '',
+    (customer.source || '') + (customer.sheet ? ' / ' + customer.sheet : ''),
+    detail,
+    amount,
+    '',
+    'รอตรวจ',
+    access.staffName || '',
+    '',
+    ''
+  ]);
+
+  return {
+    ok: true,
+    queued: true,
+    type: type,
+    customer: customer,
+    amount: amount,
+    message: 'ส่งเข้าคิวตรวจสอบแล้ว'
+  };
 }
 
 function logAction_(body) {
