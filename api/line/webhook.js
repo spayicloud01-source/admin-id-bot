@@ -193,6 +193,7 @@ function menuQuickReply(role) {
   ];
 
   const ownerOnly = [
+    ["ส่งแจ้งลูกค้า", "ส่งแจ้งลูกค้า"],
     ["เจ้าหน้าที่", "เจ้าหน้าที่"],
     ["ลูกค้ารออนุมัติ", "ลูกค้ารออนุมัติ"],
     ["กิจกรรมวันนี้", "กิจกรรมวันนี้"],
@@ -235,12 +236,25 @@ function customerSelfQuickReply() {
   return {
     items: [
       ["ยอดปิด", "ยอดปิด"],
-      ["ค่าเช่า", "ค่าเช่า"],
-      ["วันจ่าย", "วันจ่าย"],
+      ["วันครบกำหนดชำระ", "วันครบกำหนดชำระ"],
       ["ยอดค้าง", "ยอดค้าง"],
       ["สถานะ", "สถานะ"],
       ["สิทธิ์ส่วนลด", "สิทธิ์ส่วนลด"],
-      ["เมนูลูกค้า", "เมนูลูกค้า"],
+      ["ติดต่อแอดมิน", "ติดต่อแอดมิน"],
+    ].map(([label, text]) => ({
+      type: "action",
+      action: { type: "message", label, text },
+    })),
+  };
+}
+
+function ownerNotificationFieldQuickReply(source, sheet) {
+  const key = source + "|" + sheet;
+  return {
+    items: [
+      ["ยอดปิด", "ส่งแจ้ง " + key + " close"],
+      ["ยอดค้าง", "ส่งแจ้ง " + key + " outstanding"],
+      ["กำหนดชำระ", "ส่งแจ้ง " + key + " due"],
     ].map(([label, text]) => ({
       type: "action",
       action: { type: "message", label, text },
@@ -267,7 +281,7 @@ function formatCustomerSelfResult(result, field) {
       return [head, "ค่าเช่า: " + formatMoney(x.accumulatedFee) + " บาท", x.lateFee ? "ค่าปรับ: " + formatMoney(x.lateFee) + " บาท" : null].filter(Boolean).join("\n");
     }
     if (field === "due") {
-      return [head, "วันจ่าย: " + (x.dueDate || "-"), x.overdueDays > 0 ? "เกินกำหนด " + x.overdueDays + " วัน" : null].filter(Boolean).join("\n");
+      return [head, "วันครบกำหนดชำระ: " + (x.dueDate || "-"), x.overdueDays > 0 ? "เกินกำหนด " + x.overdueDays + " วัน" : null].filter(Boolean).join("\n");
     }
     if (field === "outstanding") {
       const outstanding = Number(x.outstanding || 0) > 0 ? Number(x.outstanding || 0) : Number(x.accumulatedFee || 0) + Number(x.lateFee || 0);
@@ -408,13 +422,12 @@ async function handleEvent(event) {
     if (sourceType === "user" && lineUserId) {
       const customerFieldMap = {
         "ยอดปิด": "close",
-        "ค่าเช่า": "fee",
+        "วันครบกำหนดชำระ": "due",
         "วันจ่าย": "due",
         "ยอดค้าง": "outstanding",
         "สถานะ": "status",
         "สถานะทั้งหมด": "status",
         "สิทธิ์ส่วนลด": "discount",
-        "เมนูลูกค้า": "menu",
       };
 
       const explicitBindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(.+\S)$/);
@@ -538,6 +551,39 @@ async function handleEvent(event) {
         return;
       }
 
+      if (text === "ติดต่อแอดมิน") {
+        const result = await callSheetsBridge({
+          action: "getCustomerContactRecipients",
+          lineUserId,
+        });
+        if (!result?.bound) {
+          await replyMessage(event.replyToken, [{ type: "text", text: result?.message || "ยังไม่ได้ผูกบัญชี" }]);
+          return;
+        }
+        const c = result.customer || {};
+        const alertText = [
+          "ลูกค้าต้องการติดต่อแอดมิน",
+          "ชื่อ: " + (c.name || "-"),
+          "คิว: " + (c.queue || "-"),
+          "ชีต: " + [c.source, c.sheet].filter(Boolean).join(" / "),
+          "LINE User ID: " + (c.lineUserId || lineUserId),
+        ].join("\n");
+        await Promise.all(
+          (result.recipients || []).map((id) =>
+            pushMessage(id, [{ type: "text", text: alertText }]).catch((error) => {
+              console.warn("Customer contact admin push failed", error);
+            })
+          )
+        );
+        await replyMessage(event.replyToken, [{
+          type: "text",
+          text: (result.recipients || []).length
+            ? "ส่งแจ้งแอดมินแล้วครับ กรุณารอสักครู่"
+            : "ยังไม่พบแอดมินที่พร้อมรับแจ้งเตือน"
+        }]);
+        return;
+      }
+
       if (customerFieldMap[text]) {
         const field = customerFieldMap[text];
         const result = await callSheetsBridge({
@@ -642,6 +688,108 @@ async function handleEvent(event) {
           text: access.message || registration?.message || "บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID",
         },
       ]);
+      return;
+    }
+
+    if (access.role === "เจ้าของ" && text === "ส่งแจ้งลูกค้า") {
+      const result = await callSheetsBridge({
+        action: "listCustomerNotificationSheets",
+        lineUserId,
+        sourceType,
+        groupId,
+      });
+      const items = (result.items || []).slice(0, 13).map((x) => ({
+        type: "action",
+        action: {
+          type: "message",
+          label: String(x.sheet || x.source || "ชีต").slice(0, 20),
+          text: "แจ้งชีต " + x.source + "|" + x.sheet
+        }
+      }));
+      await replyMessage(event.replyToken, [{
+        type: "text",
+        text: items.length
+          ? "เลือกชีตที่จะส่งแจ้งลูกค้า"
+          : "ยังไม่มีลูกค้าที่ผูก LINE ในชีต",
+        ...(items.length ? { quickReply: { items } } : {})
+      }]);
+      return;
+    }
+
+    if (access.role === "เจ้าของ" && text.startsWith("แจ้งชีต ")) {
+      const key = text.slice("แจ้งชีต ".length).trim();
+      const p = key.indexOf("|");
+      if (p <= 0) {
+        await replyMessage(event.replyToken, [{ type: "text", text: "รูปแบบชีตไม่ถูกต้อง" }]);
+        return;
+      }
+      const source = key.slice(0, p);
+      const sheet = key.slice(p + 1);
+      await replyMessage(event.replyToken, [{
+        type: "text",
+        text: "เลือกข้อมูลที่จะส่ง\nชีต: " + sheet,
+        quickReply: ownerNotificationFieldQuickReply(source, sheet)
+      }]);
+      return;
+    }
+
+    if (access.role === "เจ้าของ" && text.startsWith("ส่งแจ้ง ")) {
+      const args = text.slice("ส่งแจ้ง ".length).trim().split(/\s+/);
+      const key = args.shift() || "";
+      const field = args.shift() || "";
+      const queue = args.shift() || "";
+      const p = key.indexOf("|");
+      if (p <= 0 || !["close","outstanding","due"].includes(field)) {
+        await replyMessage(event.replyToken, [{ type: "text", text: "เลือกรายการส่งใหม่จากปุ่ม ส่งแจ้งลูกค้า" }]);
+        return;
+      }
+      const source = key.slice(0, p);
+      const sheet = key.slice(p + 1);
+      const batch = await callSheetsBridge({
+        action: "buildCustomerNotificationBatch",
+        lineUserId,
+        sourceType,
+        groupId,
+        source,
+        sheet,
+        field,
+        queue,
+      });
+      const sentResults = await Promise.all((batch.items || []).map(async (item) => {
+        try {
+          await pushMessage(item.lineUserId, [{
+            type: "text",
+            text: item.message,
+            quickReply: customerSelfQuickReply(),
+          }]);
+          await callSheetsBridge({ action: "markCustomerReminderSent", rowNo: item.rowNo, sent: true });
+          return true;
+        } catch (error) {
+          console.warn("Manual customer notification failed", error);
+          await callSheetsBridge({ action: "markCustomerReminderSent", rowNo: item.rowNo, sent: false }).catch(() => null);
+          return false;
+        }
+      }));
+      const sent = sentResults.filter(Boolean).length;
+      const failed = sentResults.length - sent;
+      await safeLogAction({
+        lineUserId,
+        staffName: access.staffName || "",
+        role: "เจ้าของ",
+        command: "ส่งแจ้งลูกค้า",
+        query: source + "/" + sheet + " " + field + (queue ? " " + queue : " ทั้งหมด"),
+        source: source + "/" + sheet,
+        result: "ส่งสำเร็จ " + sent + " / ไม่สำเร็จ " + failed,
+        actionName: "manualCustomerNotification",
+        status: failed ? "บางส่วน" : "สำเร็จ",
+        note: "",
+      });
+      await replyMessage(event.replyToken, [{
+        type: "text",
+        text: batch.items?.length
+          ? "ส่งแจ้งลูกค้าแล้ว " + sent + " ราย" + (failed ? "\nส่งไม่สำเร็จ " + failed + " ราย" : "")
+          : (batch.message || "ไม่พบลูกค้าที่ผูก LINE ในชีตนี้")
+      }]);
       return;
     }
 
