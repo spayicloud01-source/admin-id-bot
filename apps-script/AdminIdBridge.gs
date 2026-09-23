@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.23-102',
+  VERSION: '2026.09.24-103',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   SOURCE_SHEET: 'ลิ้งชีต',
@@ -90,6 +90,12 @@ function doPost(e) {
         result = getCustomerReminderBatch_(body); break;
       case 'markCustomerReminderSent':
         result = markCustomerReminderSent_(body); break;
+      case 'listCustomerNotificationSheets':
+        result = listCustomerNotificationSheets_(body); break;
+      case 'buildCustomerNotificationBatch':
+        result = buildCustomerNotificationBatch_(body); break;
+      case 'getCustomerContactRecipients':
+        result = getCustomerContactRecipients_(body); break;
       case 'requestCustomerBinding':
         result = requestCustomerBinding_(body); break;
       case 'getCustomerSelf':
@@ -759,6 +765,221 @@ function getReminderBatch_(body) {
   };
 }
 
+
+function getAllActiveStaffLineIds_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
+  return values.filter(function(r) {
+    return String(r[2] || '').trim() === 'เจ้าหน้าที่' &&
+      r[19] === true &&
+      String(r[1] || '').trim();
+  }).map(function(r) {
+    return String(r[1] || '').trim();
+  }).filter(function(v, i, a) {
+    return a.indexOf(v) === i;
+  });
+}
+
+function ownerAccessForCustomerNotification_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    sourceType: body.sourceType || 'user',
+    groupId: body.groupId || '',
+    permission: 'ดูรายงาน'
+  });
+  return access && access.allowed && String(access.role || '').trim() === 'เจ้าของ'
+    ? access
+    : null;
+}
+
+function listCustomerNotificationSheets_(body) {
+  const access = ownerAccessForCustomerNotification_(body);
+  if (!access) return { ok: true, allowed: false, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+
+  const sh = customerLineSheet_();
+  if (sh.getLastRow() < 2) return { ok: true, allowed: true, items: [] };
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues();
+  const map = {};
+  rows.forEach(function(r) {
+    if (String(r[7] || '').trim() !== 'ใช้งาน') return;
+    const source = String(r[4] || '').trim();
+    const sheet = String(r[5] || '').trim();
+    if (!source || !sheet) return;
+    const key = source + '|' + sheet;
+    if (!map[key]) map[key] = { source: source, sheet: sheet, count: 0 };
+    map[key].count++;
+  });
+  return {
+    ok: true,
+    allowed: true,
+    items: Object.keys(map).sort().map(function(k){ return map[k]; })
+  };
+}
+
+function notificationFieldLabel_(field) {
+  if (field === 'close') return 'ยอดปิด';
+  if (field === 'outstanding') return 'ยอดค้าง';
+  if (field === 'due') return 'กำหนดครบวันชำระ';
+  return '';
+}
+
+function buildCustomerNotificationMessage_(summary, field) {
+  const head = 'แจ้งข้อมูลลูกค้า';
+  const name = String(summary.name || '').trim();
+  const queue = String(summary.queue || '').trim();
+  if (field === 'close') {
+    return [
+      head,
+      'ชื่อ: ' + name,
+      'คิว: ' + queue,
+      'ยอดปิดวันนี้: ' + Number(summary.calculatedClose || 0).toLocaleString('th-TH') + ' บาท',
+      summary.discountEligible ? 'สิทธิ์ส่วนลด: ลดค่าเช่า ' + summary.discountPercent + '%' : ''
+    ].filter(Boolean).join('\n');
+  }
+  if (field === 'outstanding') {
+    const outstanding = Number(summary.outstanding || 0) > 0
+      ? Number(summary.outstanding || 0)
+      : Number(summary.accumulatedFee || 0) + Number(summary.lateFee || 0);
+    return [
+      head,
+      'ชื่อ: ' + name,
+      'คิว: ' + queue,
+      'ยอดค้าง: ' + outstanding.toLocaleString('th-TH') + ' บาท'
+    ].join('\n');
+  }
+  return [
+    head,
+    'ชื่อ: ' + name,
+    'คิว: ' + queue,
+    'กำหนดครบวันชำระ: ' + (summary.dueDate || '-'),
+    summary.overdueDays > 0 ? 'เกินกำหนด ' + summary.overdueDays + ' วัน' : ''
+  ].filter(Boolean).join('\n');
+}
+
+function buildCustomerNotificationBatch_(body) {
+  const access = ownerAccessForCustomerNotification_(body);
+  if (!access) return { ok: true, allowed: false, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+
+  const source = String(body.source || '').trim();
+  const sheet = String(body.sheet || '').trim();
+  const field = String(body.field || '').trim();
+  const queueFilter = normalizeGeneral_(body.queue || '');
+  if (!source || !sheet) return { ok: true, allowed: true, items: [], message: 'กรุณาเลือกชีตก่อน' };
+  if (['close','outstanding','due'].indexOf(field) === -1) {
+    return { ok: true, allowed: true, items: [], message: 'เลือกได้เฉพาะ ยอดปิด / ยอดค้าง / กำหนดครบวันชำระ' };
+  }
+
+  const lineSheet = customerLineSheet_();
+  if (lineSheet.getLastRow() < 2) return { ok: true, allowed: true, items: [] };
+  const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
+  const notifySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
+  if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
+
+  const items = [];
+  const seen = {};
+  for (let i = 0; i < bindings.length; i++) {
+    const r = bindings[i];
+    if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
+    if (String(r[4] || '').trim() !== source || String(r[5] || '').trim() !== sheet) continue;
+    if (queueFilter && normalizeGeneral_(r[6]) !== queueFilter) continue;
+
+    const lineUserId = String(r[1] || '').trim();
+    const queue = String(r[6] || '').trim();
+    if (!lineUserId || !queue) continue;
+    const uniqueKey = lineUserId + '|' + normalizeGeneral_(queue);
+    if (seen[uniqueKey]) continue;
+    seen[uniqueKey] = true;
+
+    const c = findCustomerIdentity_(source, sheet, queue);
+    if (!c) continue;
+    const summary = calculateCustomerSelfSummary_(c);
+    const message = buildCustomerNotificationMessage_(summary, field);
+    notifySheet.appendRow([
+      new Date(),
+      'เจ้าของ-' + notificationFieldLabel_(field),
+      queue,
+      summary.name || '',
+      lineUserId,
+      summary.dueDate || '',
+      field === 'close' ? summary.calculatedClose : (field === 'outstanding' ? (Number(summary.outstanding || 0) || Number(summary.accumulatedFee || 0) + Number(summary.lateFee || 0)) : ''),
+      message,
+      'รอส่ง',
+      '',
+      source + '/' + sheet
+    ]);
+    items.push({
+      rowNo: notifySheet.getLastRow(),
+      lineUserId: lineUserId,
+      queue: queue,
+      name: summary.name || '',
+      field: field,
+      message: message
+    });
+  }
+
+  logAction_({
+    lineUserId: body.lineUserId || '',
+    staffName: access.staffName || '',
+    role: 'เจ้าของ',
+    command: 'ส่งแจ้งลูกค้า',
+    query: source + '/' + sheet + ' ' + notificationFieldLabel_(field) + (queueFilter ? ' ' + body.queue : ' ทั้งหมด'),
+    source: source + '/' + sheet,
+    result: 'เตรียมส่ง ' + items.length + ' ราย',
+    actionName: 'customerNotificationBatch',
+    status: 'เตรียมส่ง',
+    note: ''
+  });
+
+  return {
+    ok: true,
+    allowed: true,
+    items: items,
+    count: items.length,
+    source: source,
+    sheet: sheet,
+    field: field,
+    message: items.length ? 'เตรียมส่ง ' + items.length + ' ราย' : 'ไม่พบลูกค้าที่ผูก LINE ในชีตนี้'
+  };
+}
+
+function getCustomerContactRecipients_(body) {
+  const lineUserId = String(body.lineUserId || '').trim();
+  const bindings = getActiveCustomerBindings_(lineUserId);
+  if (!bindings.length) {
+    return { ok: true, bound: false, recipients: [], message: 'ยังไม่ได้ผูกบัญชี' };
+  }
+  const b = bindings[0];
+  let c = null;
+  try { c = findCustomerIdentity_(b.source, b.sheet, b.queue); } catch (err) {}
+  const recipients = getAllActiveStaffLineIds_();
+  logAction_({
+    lineUserId: lineUserId,
+    staffName: c ? c.name : b.name,
+    role: 'ลูกค้า',
+    command: 'ติดต่อแอดมิน',
+    query: b.queue,
+    source: b.source + '/' + b.sheet,
+    result: 'แจ้งเจ้าหน้าที่ ' + recipients.length + ' คน',
+    actionName: 'customerContactAdmin',
+    status: recipients.length ? 'สำเร็จ' : 'ไม่พบผู้รับ',
+    note: ''
+  });
+  return {
+    ok: true,
+    bound: true,
+    recipients: recipients,
+    customer: {
+      name: c ? c.name : b.name,
+      queue: b.queue,
+      source: b.source,
+      sheet: b.sheet,
+      lineUserId: lineUserId
+    }
+  };
+}
+
 function getCustomerReminderBatch_(body) {
   if (!isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)) ||
       !isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true))) {
@@ -819,11 +1040,10 @@ function getCustomerReminderBatch_(body) {
     if (found && found.status === 'ส่งแล้ว') continue;
 
     const message = [
-      'แจ้งเตือนวันชำระ',
+      'แจ้งเตือนกำหนดครบวันชำระ',
       'ชื่อ: ' + String(c.name || '').trim(),
       'คิว: ' + String(c.queue || '').trim(),
-      'ครบกำหนดวันนี้: ' + dueDisplay,
-      'ค่าเช่า: ' + parseMoney_(c.fee).toLocaleString('th-TH') + ' บาท',
+      'กำหนดครบวันชำระวันนี้: ' + dueDisplay,
       '',
       'กดปุ่มด้านล่างเพื่อตรวจสอบยอดและรายละเอียด'
     ].join('\n');
