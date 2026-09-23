@@ -118,6 +118,35 @@ async function startLoading(chatId, loadingSeconds = 60) {
   }
 }
 
+function menuQuickReply(role) {
+  const base = [
+    ["ค้นลูกค้า", "ช่วยเหลือ"],
+    ["ครบกำหนดวันนี้", "ครบกำหนดวันนี้"],
+    ["ใกล้ครบกำหนด", "ใกล้ครบกำหนด"],
+    ["ค้างชำระ", "ค้างชำระทั้งหมด"],
+    ["คิวตรวจสอบ", "คิวตรวจสอบ"],
+    ["รายงานวันนี้", "รายงานวันนี้"],
+  ];
+
+  const ownerOnly = [
+    ["เจ้าหน้าที่", "เจ้าหน้าที่"],
+    ["กิจกรรมวันนี้", "กิจกรรมวันนี้"],
+    ["สถานะระบบ", "สถานะระบบ"],
+    ["เช็กพร้อมใช้", "เช็กพร้อมใช้"],
+    ["ตรวจชีต", "ตรวจชีตต้นทาง"],
+    ["แจ้งเตือน", "สถานะแจ้งเตือน"],
+  ];
+
+  const items = (role === "เจ้าของ" ? base.concat(ownerOnly) : base)
+    .slice(0, 13)
+    .map(([label, text]) => ({
+      type: "action",
+      action: { type: "message", label, text },
+    }));
+
+  return { items };
+}
+
 async function handleEvent(event) {
   if (event.type !== "message") return;
 
@@ -262,6 +291,15 @@ async function handleEvent(event) {
           text: access.message || registration?.message || "บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID",
         },
       ]);
+      return;
+    }
+
+    if (text === "เมนู") {
+      await replyMessage(event.replyToken, [{
+        type: "text",
+        text: access.role === "เจ้าของ" ? "เมนูเจ้าของ Admin ID" : "เมนู Admin ID",
+        quickReply: menuQuickReply(access.role || "")
+      }]);
       return;
     }
 
