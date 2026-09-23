@@ -248,13 +248,14 @@ function customerSelfQuickReply() {
   };
 }
 
-function ownerNotificationFieldQuickReply(source, sheet) {
+function ownerNotificationFieldQuickReply(source, sheet, autoEnabled = false) {
   const key = source + "|" + sheet;
   return {
     items: [
-      ["ยอดปิด", "ส่งแจ้ง " + key + " close"],
-      ["ยอดค้าง", "ส่งแจ้ง " + key + " outstanding"],
-      ["กำหนดชำระ", "ส่งแจ้ง " + key + " due"],
+      ["ยอดปิดทั้งหมด", "ส่งแจ้ง " + key + " close"],
+      ["ยอดค้างทั้งหมด", "ส่งแจ้ง " + key + " outstanding"],
+      ["กำหนดชำระทั้งหมด", "ส่งแจ้ง " + key + " due"],
+      [autoEnabled ? "ปิดแจ้งอัตโนมัติ" : "เปิดแจ้งอัตโนมัติ", "แจ้งอัตโนมัติ " + key + " " + (autoEnabled ? "ปิด" : "เปิด")],
     ].map(([label, text]) => ({
       type: "action",
       action: { type: "message", label, text },
@@ -457,6 +458,21 @@ async function handleEvent(event) {
           const bound = currentBinding.items[0];
           const sameQueue = String(bound?.queue || "").replace(/\s+/g, "").toLowerCase() === String(queue).replace(/\s+/g, "").toLowerCase();
           const sameName = String(bound?.name || "").replace(/\s+/g, "").toLowerCase() === String(fullName).replace(/\s+/g, "").toLowerCase();
+
+          if (!(sameQueue && sameName)) {
+            await safeLogAction({
+              lineUserId,
+              staffName: bound?.name || "",
+              role: "ลูกค้า",
+              command: "ตรวจชื่อใหม่หลังผูกแล้ว",
+              query: queue + " " + fullName,
+              source: [bound?.source, bound?.sheet].filter(Boolean).join("/"),
+              result: "ปฏิเสธ",
+              actionName: "customerBindingLocked",
+              status: "ปฏิเสธ",
+              note: "LINE นี้ผูกกับคิว " + (bound?.queue || "-"),
+            });
+          }
 
           const message = {
             type: "text",
@@ -725,10 +741,53 @@ async function handleEvent(event) {
       }
       const source = key.slice(0, p);
       const sheet = key.slice(p + 1);
+      const sheetList = await callSheetsBridge({
+        action: "listCustomerNotificationSheets",
+        lineUserId,
+        sourceType,
+        groupId,
+      });
+      const selected = (sheetList.items || []).find((x) => x.source === source && x.sheet === sheet) || {};
       await replyMessage(event.replyToken, [{
         type: "text",
-        text: "เลือกข้อมูลที่จะส่ง\nชีต: " + sheet,
-        quickReply: ownerNotificationFieldQuickReply(source, sheet)
+        text: [
+          "ชีต: " + sheet,
+          "ลูกค้าที่ผูก LINE: " + (selected.count || 0) + " ราย",
+          "แจ้งอัตโนมัติ: " + (selected.autoEnabled ? "เปิด" : "ปิด"),
+          "",
+          "ปุ่มด้านล่าง = ส่งทุกคนในชีต",
+          "ส่งรายคน พิมพ์: ส่งแจ้ง " + key + " due <คิว>",
+          "เปลี่ยน due เป็น close หรือ outstanding ได้"
+        ].join("\n"),
+        quickReply: ownerNotificationFieldQuickReply(source, sheet, !!selected.autoEnabled)
+      }]);
+      return;
+    }
+
+    if (access.role === "เจ้าของ" && text.startsWith("แจ้งอัตโนมัติ ")) {
+      const args = text.slice("แจ้งอัตโนมัติ ".length).trim().split(/\s+/);
+      const key = args.shift() || "";
+      const mode = args.shift() || "";
+      const p = key.indexOf("|");
+      if (p <= 0 || !["เปิด","ปิด"].includes(mode)) {
+        await replyMessage(event.replyToken, [{ type: "text", text: "กรุณาเลือกชีตใหม่จากปุ่ม ส่งแจ้งลูกค้า" }]);
+        return;
+      }
+      const source = key.slice(0, p);
+      const sheet = key.slice(p + 1);
+      const result = await callSheetsBridge({
+        action: "setCustomerAutoReminderSheet",
+        lineUserId,
+        sourceType,
+        groupId,
+        source,
+        sheet,
+        enabled: mode === "เปิด",
+      });
+      await replyMessage(event.replyToken, [{
+        type: "text",
+        text: result.message || "ดำเนินการแล้ว",
+        quickReply: ownerNotificationFieldQuickReply(source, sheet, mode === "เปิด")
       }]);
       return;
     }
