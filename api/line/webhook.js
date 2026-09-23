@@ -403,6 +403,126 @@ async function handleEvent(event) {
 
     const command = parseCommand(text);
 
+    // Customer self-service is public in 1:1 chat during the V6/10-69 pilot.
+    // Do not require staff permissions before verifying queue + exact full name.
+    if (sourceType === "user" && lineUserId) {
+      const customerFieldMap = {
+        "ยอดปิด": "close",
+        "ค่าเช่า": "fee",
+        "วันจ่าย": "due",
+        "ยอดค้าง": "outstanding",
+        "สถานะ": "status",
+        "สถานะทั้งหมด": "status",
+        "สิทธิ์ส่วนลด": "discount",
+        "เมนูลูกค้า": "menu",
+      };
+
+      const explicitBindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(.+\S)$/);
+      const plainBindingMatch = text.match(/^(?:คิว\s*)?(\d{3,})\s+(.+\s+.+)$/);
+      const bindingMatch = explicitBindingMatch || plainBindingMatch;
+
+      if (text === "ผูกบัญชี") {
+        await replyMessage(event.replyToken, [{
+          type: "text",
+          text: "กรุณาแจ้ง คิว + ชื่อ + นามสกุล\nตัวอย่าง: 6101 สมชาย ใจดี"
+        }]);
+        return;
+      }
+
+      if (bindingMatch) {
+        const queue = bindingMatch[1];
+        const fullName = bindingMatch[2].trim();
+
+        const pilotSearch = await callSheetsBridge({
+          action: "searchCustomer",
+          query: "v6:" + queue,
+        });
+
+        const exactPilotMatches = (pilotSearch?.matches || []).filter((x) =>
+          String(x?.source || "").trim() === "v6" &&
+          String(x?.sheet || "").trim() === "V6/10-69" &&
+          String(x?.queue || "").replace(/\s+/g, "").toLowerCase() === String(queue).replace(/\s+/g, "").toLowerCase() &&
+          String(x?.name || "").replace(/\s+/g, "").toLowerCase() === String(fullName).replace(/\s+/g, "").toLowerCase()
+        );
+
+        if (exactPilotMatches.length !== 1) {
+          await replyMessage(event.replyToken, [{
+            type: "text",
+            text: exactPilotMatches.length > 1
+              ? "พบข้อมูลซ้ำมากกว่า 1 รายการ กรุณาติดต่อเจ้าหน้าที่"
+              : "ข้อมูลไม่ตรงหรือไม่พบใน V6/10-69 กรุณาตรวจสอบคิว ชื่อ และนามสกุลอีกครั้ง"
+          }]);
+          return;
+        }
+
+        const result = await callSheetsBridge({
+          action: "requestCustomerBinding",
+          lineUserId,
+          queue,
+          fullName,
+        });
+
+        let finalResult = result;
+        if (!result?.bound && result?.requested && result?.rowNo && Array.isArray(result?.ownerLineUserIds) && result.ownerLineUserIds[0]) {
+          try {
+            const resolved = await callSheetsBridge({
+              action: "resolveCustomerBinding",
+              lineUserId: result.ownerLineUserIds[0],
+              query: String(result.rowNo),
+              decision: "อนุมัติ",
+            });
+            if (resolved?.approved) {
+              finalResult = {
+                ...result,
+                bound: true,
+                autoApproved: true,
+                message: [
+                  "ตรวจสอบข้อมูลถูกต้องแล้ว",
+                  "ชื่อ: " + (result.customerName || fullName),
+                  "คิว: " + (result.queue || queue),
+                  "สามารถตรวจสอบข้อมูลจากปุ่มด้านล่างได้เลย"
+                ].join("\n")
+              };
+            }
+          } catch (error) {
+            console.warn("Auto activate customer binding failed", error);
+          }
+        }
+
+        const message = {
+          type: "text",
+          text: finalResult?.message || (finalResult?.bound ? "ตรวจสอบข้อมูลถูกต้องแล้ว" : "ไม่สามารถผูกบัญชีได้"),
+        };
+        if (finalResult?.bound || finalResult?.alreadyBound) {
+          message.quickReply = customerSelfQuickReply();
+        }
+        await replyMessage(event.replyToken, [message]);
+        return;
+      }
+
+      if (text === "ยกเลิกผูกบัญชี") {
+        const result = await callSheetsBridge({ action: "cancelCustomerBindings", lineUserId });
+        await replyMessage(event.replyToken, [{ type: "text", text: result.message || "ดำเนินการแล้ว" }]);
+        return;
+      }
+
+      if (customerFieldMap[text]) {
+        const field = customerFieldMap[text];
+        const result = await callSheetsBridge({
+          action: "getCustomerSelf",
+          lineUserId,
+          field,
+        });
+        const message = {
+          type: "text",
+          text: formatCustomerSelfResult(result, field),
+        };
+        if (result.bound) message.quickReply = customerSelfQuickReply();
+        await replyMessage(event.replyToken, [message]);
+        return;
+      }
+    }
+
     const directOwnerValidatedActions = new Set(["readinessCheck"]);
     let access;
 
@@ -427,127 +547,6 @@ async function handleEvent(event) {
     }
 
     if (!access.allowed) {
-      if (sourceType === "user" && lineUserId) {
-        const explicitBindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(.+\S)$/);
-        const plainBindingMatch = text.match(/^(?:คิว\s*)?(\d{3,})\s+(.+\s+.+)$/);
-        const bindingMatch = explicitBindingMatch || plainBindingMatch;
-        const customerFieldMap = {
-          "ยอดปิด": "close",
-          "ค่าเช่า": "fee",
-          "วันจ่าย": "due",
-          "ยอดค้าง": "outstanding",
-          "สถานะ": "status",
-          "สถานะทั้งหมด": "status",
-          "สิทธิ์ส่วนลด": "discount",
-          "เมนูลูกค้า": "menu",
-        };
-
-        if (text === "ผูกบัญชี") {
-          await replyMessage(event.replyToken, [{
-            type: "text",
-            text: "กรุณาแจ้ง คิว + ชื่อ + นามสกุล\nตัวอย่าง: 6101 สมชาย ใจดี"
-          }]);
-          return;
-        }
-
-        if (bindingMatch) {
-          const queue = bindingMatch[1];
-          const fullName = bindingMatch[2].trim();
-
-          // Pilot launch: only V6/10-69 is allowed to self-bind.
-          const pilotSearch = await callSheetsBridge({
-            action: "searchCustomer",
-            query: "v6:" + queue,
-          });
-          const exactPilotMatches = (pilotSearch?.matches || []).filter((x) =>
-            String(x?.source || "").trim() === "v6" &&
-            String(x?.sheet || "").trim() === "V6/10-69" &&
-            String(x?.queue || "").replace(/\s+/g, "").toLowerCase() === String(queue).replace(/\s+/g, "").toLowerCase() &&
-            String(x?.name || "").replace(/\s+/g, "").toLowerCase() === String(fullName).replace(/\s+/g, "").toLowerCase()
-          );
-
-          if (exactPilotMatches.length !== 1) {
-            await replyMessage(event.replyToken, [{
-              type: "text",
-              text: exactPilotMatches.length > 1
-                ? "พบข้อมูลซ้ำมากกว่า 1 รายการ กรุณาติดต่อเจ้าหน้าที่"
-                : "ข้อมูลไม่ตรงหรือไม่พบใน V6/10-69 กรุณาตรวจสอบคิว ชื่อ และนามสกุลอีกครั้ง"
-            }]);
-            return;
-          }
-
-          const result = await callSheetsBridge({
-            action: "requestCustomerBinding",
-            lineUserId,
-            queue,
-            fullName,
-          });
-
-          let finalResult = result;
-
-          // Backward-compatible path while an older bridge is still active:
-          // convert its pending request to active automatically using the configured owner identity.
-          if (!result?.bound && result?.requested && result?.rowNo && Array.isArray(result?.ownerLineUserIds) && result.ownerLineUserIds[0]) {
-            try {
-              const resolved = await callSheetsBridge({
-                action: "resolveCustomerBinding",
-                lineUserId: result.ownerLineUserIds[0],
-                query: String(result.rowNo),
-                decision: "อนุมัติ",
-              });
-              if (resolved?.approved) {
-                finalResult = {
-                  ...result,
-                  bound: true,
-                  autoApproved: true,
-                  message: [
-                    "ตรวจสอบข้อมูลถูกต้องแล้ว",
-                    "ชื่อ: " + (result.customerName || bindingMatch[2].trim()),
-                    "คิว: " + (result.queue || bindingMatch[1]),
-                    "สามารถตรวจสอบข้อมูลจากปุ่มด้านล่างได้เลย"
-                  ].join("\n")
-                };
-              }
-            } catch (error) {
-              console.warn("Auto activate customer binding failed", error);
-            }
-          }
-
-          const message = {
-            type: "text",
-            text: finalResult?.message || (finalResult?.bound ? "ตรวจสอบข้อมูลถูกต้องแล้ว" : "ไม่สามารถผูกบัญชีได้"),
-          };
-          if (finalResult?.bound || finalResult?.alreadyBound) {
-            message.quickReply = customerSelfQuickReply();
-          }
-          await replyMessage(event.replyToken, [message]);
-          return;
-        }
-
-        if (text === "ยกเลิกผูกบัญชี") {
-          const result = await callSheetsBridge({ action: "cancelCustomerBindings", lineUserId });
-          await replyMessage(event.replyToken, [{ type: "text", text: result.message || "ดำเนินการแล้ว" }]);
-          return;
-        }
-
-        if (customerFieldMap[text]) {
-          const field = customerFieldMap[text];
-          const result = await callSheetsBridge({
-            action: "getCustomerSelf",
-            lineUserId,
-            field,
-          });
-
-          const message = {
-            type: "text",
-            text: field === "menu" ? formatCustomerSelfResult(result, "menu") : formatCustomerSelfResult(result, field),
-          };
-          if (result.bound) message.quickReply = customerSelfQuickReply();
-          await replyMessage(event.replyToken, [message]);
-          return;
-        }
-      }
-
       const registration = await callSheetsBridge({
         action: "registerStaff",
         lineUserId,
