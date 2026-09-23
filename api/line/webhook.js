@@ -332,6 +332,7 @@ async function handleEvent(event) {
       if (command.dueMode) payload.dueMode = command.dueMode;
       if (command.targetPermission) payload.targetPermission = command.targetPermission;
       if (command.permissionEnabled != null) payload.permissionEnabled = command.permissionEnabled;
+      if (command.action === "getReminderBatch") payload.force = true;
 
       const result = await callSheetsBridge(payload);
 
