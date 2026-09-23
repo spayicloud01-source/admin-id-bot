@@ -166,7 +166,7 @@ async function handleEvent(event) {
         await replyMessage(event.replyToken, [
           {
             type: "text",
-            text: registration.message || "ลงทะเบียนแล้ว รอเจ้าของอนุมัติ",
+            text: registration.message || "รออนุมัติ",
           },
         ]);
         return;
