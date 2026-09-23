@@ -364,6 +364,25 @@ async function handleEvent(event) {
         responseText = result.info
           ? formatCustomerInfo(result.info, command.field)
           : "ไม่พบข้อมูลลูกค้า";
+      } else if (command.action === "auditSourceWriteCapabilities") {
+        const a = result.summary;
+        if (!a) {
+          responseText = result.message || "ตรวจความพร้อมเขียนต้นทางไม่ได้";
+        } else {
+          const notReady = (result.items || []).filter((x) => !x.paymentReady || !x.closeReady).slice(0, 8);
+          responseText = [
+            "ตรวจเขียนต้นทาง",
+            "แท็บทั้งหมด: " + a.tabs,
+            "อ่านข้อมูลหลักพร้อม: " + a.safeRead,
+            "พร้อม mapping ชำระ: " + a.paymentReady,
+            "พร้อม mapping ปิดยอด: " + a.closeReady,
+            "เขียนจริง: " + (result.writesEnabled ? "เปิด" : "ปิดเพื่อความปลอดภัย"),
+            ...(notReady.length ? ["", "ยังต้องตรวจ:", ...notReady.map((x) =>
+              "• " + x.source + (x.sheet ? " / " + x.sheet : "") +
+              " | พบ " + ((x.fields || []).join(", ") || "หัวตารางไม่ครบ")
+            )] : [])
+          ].join("\n");
+        }
       } else if (command.action === "auditSourceSchemas") {
         const a = result.summary;
         if (!a) {
@@ -516,6 +535,7 @@ async function handleEvent(event) {
           "สถานะล่าสุด: " + (p.currentStatus || "-"),
           p.requestedAmount ? "ยอดที่ขอ: " + p.requestedAmount : null,
           "เขียนต้นทางจริง: " + (p.writesEnabled ? "เปิด" : "ปิดเพื่อความปลอดภัย"),
+          "ฟิลด์ต้นทางที่ตรวจพบ: " + ((p.detectedFields || []).join(", ") || "ไม่พบ"),
           "",
           ...(p.proposed || []).map((x) => "• " + x)
         ].filter(Boolean).join("\n") : (result.message || "จำลองไม่ได้");
