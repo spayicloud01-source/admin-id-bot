@@ -94,6 +94,8 @@ function doPost(e) {
         result = systemStatus_(body); break;
       case 'auditSourceSchemas':
         result = auditSourceSchemas_(body); break;
+      case 'auditSourceWriteCapabilities':
+        result = auditSourceWriteCapabilities_(body); break;
       case 'listDueCustomers':
         result = listDueCustomers_(body); break;
       case 'getHistory':
@@ -1623,6 +1625,106 @@ function addNote_(body) {
   return { ok: true, added: true, customer: m };
 }
 
+function auditSourceWriteCapabilities_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น', items: [] };
+  }
+
+  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
+  if (!src || src.getLastRow() < 2) {
+    return { ok: true, items: [], summary: { tabs: 0, safeRead: 0, paymentReady: 0, closeReady: 0 } };
+  }
+
+  const rows = src.getRange(2, 1, src.getLastRow() - 1, 7).getValues();
+  const items = [];
+  let tabCount = 0, safeRead = 0, paymentReady = 0, closeReady = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    if (!isTrue_(rows[i][2]) || !String(rows[i][1] || '').trim()) continue;
+    const sourceName = String(rows[i][0] || '').trim();
+
+    try {
+      const id = extractSpreadsheetId_(rows[i][1]);
+      const ss = SpreadsheetApp.openById(id);
+      let tabs = ss.getSheets().filter(function(sh) {
+        return !sh.isSheetHidden() &&
+          !CONFIG.EXCLUDED_TAB_PATTERNS.some(function(rx){ return rx.test(sh.getName()); });
+      });
+      if (!isTrue_(rows[i][3])) tabs = tabs.slice(0, 1);
+
+      for (let t = 0; t < tabs.length; t++) {
+        tabCount++;
+        const h = detectHeaders_(tabs[t]);
+        if (!h) {
+          items.push({
+            source: sourceName,
+            sheet: tabs[t].getName(),
+            safeRead: false,
+            paymentReady: false,
+            closeReady: false,
+            fields: []
+          });
+          continue;
+        }
+
+        const fields = [];
+        if (h.queue) fields.push('คิว');
+        if (h.name) fields.push('ชื่อ');
+        if (h.status) fields.push('สถานะ');
+        if (h.principal) fields.push('ยอด');
+        if (h.fee) fields.push('ค่าเช่า/ดอก');
+        if (h.saleDate) fields.push('วันเริ่ม');
+        if (h.dueDate) fields.push('วันจ่าย');
+        if (h.outstanding) fields.push('ยอดค้าง');
+        if (h.closeAmount) fields.push('ยอดปิด');
+        if (h.note) fields.push('โน้ต');
+
+        const readOk = !!(h.queue && h.name && h.principal && h.fee && h.dueDate);
+        const paymentOk = !!(readOk && h.status && h.note && h.dueDate);
+        const closeOk = !!(readOk && h.status && h.note);
+
+        if (readOk) safeRead++;
+        if (paymentOk) paymentReady++;
+        if (closeOk) closeReady++;
+
+        items.push({
+          source: sourceName,
+          sheet: tabs[t].getName(),
+          safeRead: readOk,
+          paymentReady: paymentOk,
+          closeReady: closeOk,
+          fields: fields
+        });
+      }
+    } catch (err) {
+      tabCount++;
+      items.push({
+        source: sourceName,
+        sheet: '',
+        safeRead: false,
+        paymentReady: false,
+        closeReady: false,
+        fields: [],
+        error: String(err.message || err)
+      });
+    }
+  }
+
+  return {
+    ok: true,
+    writesEnabled: isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false)),
+    summary: {
+      tabs: tabCount,
+      safeRead: safeRead,
+      paymentReady: paymentReady,
+      closeReady: closeReady
+    },
+    items: items.slice(0, 80)
+  };
+}
+
 function findCustomerIdentity_(sourceName, sheetName, queueValue) {
   const backend = SpreadsheetApp.getActiveSpreadsheet();
   const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
@@ -1809,6 +1911,34 @@ function planSourceWrite_(body) {
   }
 
   const writesEnabled = isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false));
+  const detectedFields = [];
+  try {
+    const backend = SpreadsheetApp.getActiveSpreadsheet();
+    const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
+    const srcRows = src && src.getLastRow() >= 2
+      ? src.getRange(2, 1, src.getLastRow() - 1, 7).getValues()
+      : [];
+    let sourceUrl = '';
+    for (let i = 0; i < srcRows.length; i++) {
+      if (String(srcRows[i][0] || '').trim() === sourceName) {
+        sourceUrl = String(srcRows[i][1] || '').trim();
+        break;
+      }
+    }
+    if (sourceUrl) {
+      const sourceSs = SpreadsheetApp.openById(extractSpreadsheetId_(sourceUrl));
+      const sourceSh = sourceSs.getSheetByName(sourceSheet);
+      const headers = sourceSh ? detectHeaders_(sourceSh) : null;
+      if (headers) {
+        if (headers.status) detectedFields.push('สถานะ');
+        if (headers.dueDate) detectedFields.push('วันจ่าย');
+        if (headers.outstanding) detectedFields.push('ยอดค้าง');
+        if (headers.closeAmount) detectedFields.push('ยอดปิด');
+        if (headers.note) detectedFields.push('โน้ต');
+      }
+    }
+  } catch (err) {}
+
   const proposed = [];
   if (type === 'บันทึกชำระ') {
     proposed.push('บันทึกเหตุการณ์ชำระลงประวัติลูกค้า');
@@ -1838,6 +1968,7 @@ function planSourceWrite_(body) {
       currentDueDate: live.dueDate,
       requestedAmount: row[6],
       writesEnabled: writesEnabled,
+      detectedFields: detectedFields,
       proposed: proposed
     }
   };
