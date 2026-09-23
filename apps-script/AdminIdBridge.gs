@@ -64,6 +64,8 @@ function doPost(e) {
         result = dailyOwnerReport_(body); break;
       case 'systemStatus':
         result = systemStatus_(body); break;
+      case 'listDueCustomers':
+        result = listDueCustomers_(body); break;
       case 'getHistory':
         result = getHistory_(body); break;
       case 'addNote':
@@ -716,6 +718,101 @@ function getCalculatedSummary_(body) {
       calculatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
     }
   };
+}
+
+function listDueCustomers_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    sourceType: body.sourceType,
+    groupId: body.groupId,
+    permission: 'ดูรายงาน'
+  });
+  if (!access.allowed) return { ok: true, items: [], message: access.message || 'ไม่มีสิทธิ์ดูรายงาน' };
+
+  const mode = String(body.dueMode || 'today').trim();
+  const remindDays = Number(getSettingValue_('REMIND_BEFORE_DAYS', 1)) || 1;
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'due-list:' + mode + ':' + remindDays;
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    try { return JSON.parse(cached); } catch (err) {}
+  }
+
+  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const sourceSheet = backend.getSheetByName(CONFIG.SOURCE_SHEET);
+  if (!sourceSheet || sourceSheet.getLastRow() < 2) return { ok: true, items: [] };
+
+  const todayRaw = new Date();
+  const today = new Date(todayRaw.getFullYear(), todayRaw.getMonth(), todayRaw.getDate());
+  const sources = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1, 7).getValues();
+  const items = [];
+
+  for (let i = 0; i < sources.length && items.length < 50; i++) {
+    const sourceName = String(sources[i][0] || '').trim();
+    const url = String(sources[i][1] || '').trim();
+    if (!isTrue_(sources[i][2]) || !url) continue;
+    try {
+      const id = extractSpreadsheetId_(url);
+      if (!id) continue;
+      const ss = SpreadsheetApp.openById(id);
+      let tabs = ss.getSheets().filter(function(sh) {
+        if (sh.isSheetHidden()) return false;
+        return !CONFIG.EXCLUDED_TAB_PATTERNS.some(function(rx){ return rx.test(sh.getName()); });
+      });
+      if (!isTrue_(sources[i][3])) tabs = tabs.slice(0, 1);
+
+      for (let t = 0; t < tabs.length && items.length < 50; t++) {
+        const sh = tabs[t];
+        const h = detectHeaders_(sh);
+        if (!h || !h.dueDate) continue;
+        const lastRow = sh.getLastRow();
+        const startRow = h.headerRow + 1;
+        if (startRow > lastRow) continue;
+        const rowCount = Math.min(lastRow - h.headerRow, CONFIG.MAX_ROWS_PER_TAB);
+        const maxCol = Math.max.apply(null, Object.keys(h).filter(function(k){return k !== 'headerRow';}).map(function(k){return h[k];}).filter(function(v){return v > 0;}));
+        const values = sh.getRange(startRow, 1, rowCount, maxCol).getDisplayValues();
+
+        for (let r = 0; r < values.length && items.length < 50; r++) {
+          const row = values[r];
+          const dueText = getCell_(row, h.dueDate);
+          const due = parseDateFlexible_(dueText);
+          if (!due) continue;
+          const delta = daysBetween_(due, today);
+          let include = false;
+          if (mode === 'today') include = delta === 0;
+          else if (mode === 'upcoming') include = delta > 0 && delta <= remindDays;
+          else if (mode === 'overdue') include = delta < 0;
+          if (!include) continue;
+
+          items.push({
+            source: sourceName,
+            sheet: sh.getName(),
+            row: startRow + r,
+            queue: getCell_(row, h.queue),
+            name: getCell_(row, h.name),
+            phone: getCell_(row, h.phone),
+            dueDate: dueText,
+            daysDelta: delta,
+            principal: getCell_(row, h.principal),
+            fee: getCell_(row, h.fee),
+            status: getCell_(row, h.status)
+          });
+        }
+      }
+    } catch (err) {
+      console.log('due scan failed: ' + sourceName + ' / ' + err.message);
+    }
+  }
+
+  if (mode === 'overdue') {
+    items.sort(function(a,b){ return a.daysDelta - b.daysDelta; });
+  } else {
+    items.sort(function(a,b){ return a.daysDelta - b.daysDelta; });
+  }
+
+  const result = { ok: true, mode: mode, items: items.slice(0, 50), totalShown: Math.min(items.length, 50) };
+  try { cache.put(cacheKey, JSON.stringify(result), CONFIG.SEARCH_CACHE_SECONDS); } catch (err) {}
+  return result;
 }
 
 function dailyOwnerReport_(body) {
