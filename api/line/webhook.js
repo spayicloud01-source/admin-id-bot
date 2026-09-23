@@ -334,6 +334,7 @@ async function handleEvent(event) {
       if (command.targetPermission) payload.targetPermission = command.targetPermission;
       if (command.permissionEnabled != null) payload.permissionEnabled = command.permissionEnabled;
       if (command.action === "getReminderBatch") payload.force = true;
+      if (command.activityToday) payload.activityToday = true;
 
       const result = await callSheetsBridge(payload);
 
@@ -398,6 +399,19 @@ async function handleEvent(event) {
             "คำนวณ ณ " + s.calculatedAt
           ].join("\n");
         }
+      } else if (command.action === "getStaffActivity") {
+        const items = Array.isArray(result.items) ? result.items : [];
+        const title = command.activityToday
+          ? "กิจกรรมวันนี้"
+          : "กิจกรรม " + (result.targetName || command.query || "");
+        responseText = items.length
+          ? title + "\n" + items.slice(0, 10).map((x, i) => {
+              return (i + 1) + ". " + (x.dateTime || "-") + " | " + (x.staffName || "-") +
+                " | " + (x.command || x.actionName || "-") +
+                (x.query ? " | " + x.query : "") +
+                " | " + (x.status || x.result || "-");
+            }).join("\n") + (items.length > 10 ? "\nแสดง 10 รายการล่าสุด" : "")
+          : (result.message || "ไม่พบกิจกรรม");
       } else if (command.action === "dailyOwnerReport") {
         const r = result.report;
         responseText = r ? [
