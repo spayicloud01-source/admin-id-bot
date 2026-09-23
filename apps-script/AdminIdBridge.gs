@@ -2,6 +2,7 @@ const CONFIG = {
   SOURCE_SHEET: 'ลิ้งชีต',
   STAFF_SHEET: 'เจ้าหน้าที่',
   HISTORY_SHEET: 'ประวัติลูกค้า',
+  SETTINGS_SHEET: 'ตั้งค่าบอต',
   LOG_SHEET: 'Log ระบบ',
   REVIEW_QUEUE_SHEET: 'คิวตรวจสอบ',
   MAX_RESULTS: 20,
@@ -51,6 +52,12 @@ function doPost(e) {
         result = { ok: true, matches: searchCustomer_(String(body.query || '').trim()) }; break;
       case 'getCustomerInfo':
         result = getCustomerInfo_(body); break;
+      case 'getCalculatedSummary':
+        result = getCalculatedSummary_(body); break;
+      case 'dailyOwnerReport':
+        result = dailyOwnerReport_(body); break;
+      case 'systemStatus':
+        result = systemStatus_(body); break;
       case 'getHistory':
         result = getHistory_(body); break;
       case 'addNote':
@@ -424,6 +431,236 @@ function approveStaff_(body) {
     staffName: staffName,
     staffLineUserId: String(row[1] || '').trim(),
     message: 'อนุมัติ ' + staffName + ' แล้ว\nสิทธิ์: ดูข้อมูลลูกค้า + ดูประวัติ\nยังไม่เปิดสิทธิ์การเงิน'
+  };
+}
+
+function getSettingValue_(key, fallback) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
+  if (!sh || sh.getLastRow() < 2) return fallback;
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() !== key) continue;
+    if (values[i][4] === false) return fallback;
+    return values[i][1] == null || values[i][1] === '' ? fallback : values[i][1];
+  }
+  return fallback;
+}
+
+function parseMoney_(value) {
+  const n = Number(String(value == null ? '' : value).replace(/,/g, '').replace(/[^0-9.\-]/g, ''));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function parseDateFlexible_(value) {
+  if (value instanceof Date && !isNaN(value.getTime())) return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+  const text = String(value || '').trim();
+  if (!text) return null;
+
+  let m = text.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})$/);
+  if (m) {
+    let y = Number(m[3]);
+    if (y < 100) y += 2500;
+    if (y > 2400) y -= 543;
+    return new Date(y, Number(m[2]) - 1, Number(m[1]));
+  }
+
+  const months = {
+    'ม.ค.':0,'มค':0,'มกราคม':0,
+    'ก.พ.':1,'กพ':1,'กุมภาพันธ์':1,
+    'มี.ค.':2,'มีค':2,'มีนาคม':2,
+    'เม.ย.':3,'เมย':3,'เมษายน':3,
+    'พ.ค.':4,'พค':4,'พฤษภาคม':4,
+    'มิ.ย.':5,'มิย':5,'มิถุนายน':5,
+    'ก.ค.':6,'กค':6,'กรกฎาคม':6,
+    'ส.ค.':7,'สค':7,'สิงหาคม':7,
+    'ก.ย.':8,'กย':8,'กันยายน':8,
+    'ต.ค.':9,'ตค':9,'ตุลาคม':9,
+    'พ.ย.':10,'พย':10,'พฤศจิกายน':10,
+    'ธ.ค.':11,'ธค':11,'ธันวาคม':11
+  };
+  m = text.match(/^(\d{1,2})\s+([^\s]+)\s+(\d{2,4})$/);
+  if (m) {
+    let key = m[2].replace(/\s+/g, '');
+    let month = months[key];
+    if (month == null) month = months[key.replace(/\./g,'')];
+    if (month != null) {
+      let y = Number(m[3]);
+      if (y < 100) y += 2500;
+      if (y > 2400) y -= 543;
+      return new Date(y, month, Number(m[1]));
+    }
+  }
+
+  const d = new Date(text);
+  return isNaN(d.getTime()) ? null : new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+function daysBetween_(later, earlier) {
+  const ms = 24 * 60 * 60 * 1000;
+  return Math.floor((later.getTime() - earlier.getTime()) / ms);
+}
+
+function formatThaiDate_(d) {
+  if (!d) return '';
+  return Utilities.formatDate(d, 'Asia/Bangkok', 'dd/MM/yyyy');
+}
+
+function latestDiscountStart_(customer, fallbackDate) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
+  if (!sh || sh.getLastRow() < 2) return fallbackDate;
+
+  const raw = sh.getRange(2, 1, sh.getLastRow() - 1, 16).getValues();
+  const display = sh.getRange(2, 1, sh.getLastRow() - 1, 16).getDisplayValues();
+  const allowed = { 'ชำระค่าเช่า': true, 'ค่าปรับ': true, 'ต่อรอบ': true };
+
+  for (let i = raw.length - 1; i >= 0; i--) {
+    const row = display[i];
+    const sameSource = String(row[1] || '').trim() === String(customer.source || '').trim();
+    const sameSheet = String(row[2] || '').trim() === String(customer.sheet || '').trim();
+    const sameQueue = String(row[3] || '').trim() === String(customer.queue || '').trim();
+    if (!(sameSource && sameSheet && sameQueue)) continue;
+    if (!allowed[String(row[8] || '').trim()]) continue;
+    const d = parseDateFlexible_(raw[i][0]) || parseDateFlexible_(row[0]);
+    if (d) return d;
+  }
+  return fallbackDate;
+}
+
+function getCalculatedSummary_(body) {
+  const query = String(body.query || '').trim();
+  if (!query) return { ok: false, error: 'กรุณาระบุคำค้น' };
+
+  const matches = searchCustomer_(query, true);
+  if (!matches.length) return { ok: true, matches: [], summary: null };
+  if (matches.length > 1) return { ok: true, needsSelection: true, matches: matches.slice(0, 10) };
+
+  const c = matches[0];
+  const principal = parseMoney_(c.principal);
+  const fee = parseMoney_(c.fee);
+  const saleDate = parseDateFlexible_(c.saleDate);
+  const dueDate = parseDateFlexible_(c.dueDate);
+  const today = new Date();
+  const asOf = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+
+  const latePerDay = Number(getSettingValue_('LATE_FEE_PER_DAY', 50)) || 50;
+  const discountDays = Number(getSettingValue_('CLOSE_DISCOUNT_DAYS', 5)) || 5;
+  const discountPercent = Number(getSettingValue_('CLOSE_FEE_DISCOUNT_PERCENT', 50)) || 50;
+  const cycleDays = 10;
+
+  const overdueDays = dueDate ? Math.max(0, daysBetween_(asOf, dueDate)) : 0;
+  const cyclesCrossed = overdueDays > 0 ? Math.floor(overdueDays / cycleDays) : 0;
+  const crossCycle = cyclesCrossed >= 1;
+  const accumulatedFee = fee * (1 + cyclesCrossed);
+  const lateFee = overdueDays * latePerDay;
+
+  const discountStart = latestDiscountStart_(c, saleDate);
+  const daysFromDiscountStart = discountStart ? daysBetween_(asOf, discountStart) : null;
+  const discountEligible = !!discountStart && !crossCycle &&
+    daysFromDiscountStart >= 0 && daysFromDiscountStart <= discountDays;
+
+  const feeApplied = discountEligible
+    ? accumulatedFee * (1 - discountPercent / 100)
+    : accumulatedFee;
+  const calculatedClose = principal + feeApplied + lateFee;
+
+  return {
+    ok: true,
+    summary: {
+      customer: c,
+      principal: principal,
+      fee: fee,
+      dueDate: dueDate ? formatThaiDate_(dueDate) : String(c.dueDate || ''),
+      overdueDays: overdueDays,
+      lateFee: lateFee,
+      cyclesCrossed: cyclesCrossed,
+      accumulatedFee: accumulatedFee,
+      crossCycleOutstanding: crossCycle,
+      discountEligible: discountEligible,
+      discountPercent: discountEligible ? discountPercent : 0,
+      discountStartDate: discountStart ? formatThaiDate_(discountStart) : '',
+      calculatedClose: calculatedClose,
+      sourceCloseAmount: parseMoney_(c.closeAmount),
+      calculatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
+    }
+  };
+}
+
+function dailyOwnerReport_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, allowed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const tz = 'Asia/Bangkok';
+  const todayKey = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+
+  let commandCount = 0, searchCount = 0, errorCount = 0;
+  const log = ss.getSheetByName(CONFIG.LOG_SHEET);
+  if (log && log.getLastRow() >= 2) {
+    const vals = log.getRange(2, 1, log.getLastRow() - 1, 11).getValues();
+    for (let i = 0; i < vals.length; i++) {
+      const d = vals[i][0] instanceof Date ? vals[i][0] : new Date(vals[i][0]);
+      if (isNaN(d.getTime()) || Utilities.formatDate(d, tz, 'yyyy-MM-dd') !== todayKey) continue;
+      commandCount++;
+      if (String(vals[i][8] || '').trim() === 'searchCustomer') searchCount++;
+      if (String(vals[i][9] || '').trim() === 'ผิดพลาด') errorCount++;
+    }
+  }
+
+  let pendingReview = 0;
+  const rq = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
+  if (rq && rq.getLastRow() >= 2) {
+    const vals = rq.getRange(2, 9, rq.getLastRow() - 1, 1).getDisplayValues();
+    pendingReview = vals.filter(function(r){ return String(r[0] || '').trim() === 'รอตรวจ'; }).length;
+  }
+
+  let pendingStaff = 0;
+  const st = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  if (st && st.getLastRow() >= 2) {
+    const vals = st.getRange(2, 3, st.getLastRow() - 1, 1).getDisplayValues();
+    pendingStaff = vals.filter(function(r){ return String(r[0] || '').trim() === 'รอยืนยัน'; }).length;
+  }
+
+  return {
+    ok: true,
+    report: {
+      commandCount: commandCount,
+      searchCount: searchCount,
+      errorCount: errorCount,
+      pendingReview: pendingReview,
+      pendingStaff: pendingStaff
+    }
+  };
+}
+
+function systemStatus_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, allowed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const src = ss.getSheetByName(CONFIG.SOURCE_SHEET);
+  let enabledSources = 0;
+  if (src && src.getLastRow() >= 2) {
+    const vals = src.getRange(2, 1, src.getLastRow() - 1, 3).getValues();
+    enabledSources = vals.filter(function(r){ return String(r[1] || '').trim() && isTrue_(r[2]); }).length;
+  }
+
+  return {
+    ok: true,
+    status: {
+      botName: String(getSettingValue_('BOT_NAME', 'Admin ID')),
+      masterEnabled: isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)),
+      staffEnabled: isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)),
+      groupEnabled: isTrue_(getSettingValue_('BOT_GROUP_ENABLED', true)),
+      okSlipEnabled: isTrue_(getSettingValue_('OKSLIP_ENABLED', false)),
+      webhookStatus: String(getSettingValue_('WEBHOOK_STATUS', 'ยังไม่เชื่อม')),
+      enabledSources: enabledSources
+    }
   };
 }
 
