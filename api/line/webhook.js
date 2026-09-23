@@ -413,6 +413,19 @@ async function handleEvent(event) {
             )
           );
         }
+      } else if (command.action === "getReviewQueueItem") {
+        const x = result.item;
+        responseText = x ? [
+          "คิวตรวจสอบ #" + x.rowNo,
+          "ประเภท: " + (x.type || "-"),
+          "ลูกค้า: " + (x.name || "-"),
+          x.queue ? "คิวลูกค้า: " + x.queue : null,
+          x.amount ? "ยอด: " + x.amount : null,
+          "แหล่ง: " + (x.source || "-"),
+          "ผู้ส่ง: " + (x.staff || "-"),
+          "สถานะ: " + (x.status || "-"),
+          x.note ? "หมายเหตุ: " + x.note : null
+        ].filter(Boolean).join("\n") : (result.message || "ไม่พบคิวนี้");
       } else if (command.action === "listReviewQueue") {
         const items = Array.isArray(result.items) ? result.items : [];
         responseText = items.length
@@ -426,7 +439,9 @@ async function handleEvent(event) {
 
         if (result.resolved && result.requesterLineUserId) {
           const staffText = result.decision === "ผ่าน"
-            ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nยังไม่มีการแก้ยอดในชีตต้นทาง"
+            ? (result.type === "ปิดยอด"
+                ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nรอรับรหัส***** สักครู่นะครับ ภายใน 24 ชม."
+                : "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nบันทึกประวัติแล้ว แต่ยังไม่มีการแก้ยอดในชีตต้นทาง")
             : "คิว #" + result.rowNo + " ไม่ผ่านการตรวจสอบ";
           await pushMessage(result.requesterLineUserId, [
             { type: "text", text: staffText }
