@@ -36,6 +36,8 @@ function doPost(e) {
         result = checkAccess_(body); break;
       case 'registerStaff':
         result = registerStaff_(body); break;
+      case 'approveStaff':
+        result = approveStaff_(body); break;
       case 'searchCustomer':
         result = { ok: true, matches: searchCustomer_(String(body.query || '').trim()) }; break;
       case 'getCustomerInfo':
@@ -156,6 +158,68 @@ function registerStaff_(body) {
     ok: true,
     registered: false,
     message: 'ไม่พบชื่อเจ้าหน้าที่นี้ในรายการที่เจ้าของเตรียมไว้'
+  };
+}
+
+function approveStaff_(body) {
+  const requester = checkAccess_({
+    lineUserId: body.lineUserId,
+    permission: 'จัดการเจ้าหน้าที่'
+  });
+  if (!requester.allowed) {
+    return { ok: true, approved: false, message: requester.message || 'ไม่มีสิทธิ์อนุมัติเจ้าหน้าที่' };
+  }
+
+  const staffName = String(body.query || '').trim();
+  if (!staffName) return { ok: true, approved: false, message: 'รูปแบบ: อนุมัติ <ชื่อเจ้าหน้าที่>' };
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  if (!sh) return { ok: false, error: 'ไม่พบชีตเจ้าหน้าที่' };
+
+  const lastRow = sh.getLastRow();
+  if (lastRow < 2) return { ok: true, approved: false, message: 'ไม่พบเจ้าหน้าที่รออนุมัติ' };
+
+  const values = sh.getRange(2, 1, lastRow - 1, 20).getValues();
+  const matches = [];
+
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    if (String(row[0] || '').trim() === staffName) matches.push({ rowNo: i + 2, row: row });
+  }
+
+  if (!matches.length) return { ok: true, approved: false, message: 'ไม่พบชื่อเจ้าหน้าที่: ' + staffName };
+  if (matches.length > 1) return { ok: true, approved: false, message: 'พบชื่อซ้ำ กรุณาแก้ชื่อในชีตเจ้าหน้าที่ให้ไม่ซ้ำก่อน' };
+
+  const target = matches[0];
+  const row = target.row;
+  if (!String(row[1] || '').trim()) {
+    return { ok: true, approved: false, message: 'เจ้าหน้าที่คนนี้ยังไม่ได้ผูก LINE' };
+  }
+  if (String(row[2] || '').trim() === 'เจ้าหน้าที่' && row[19] === true) {
+    return { ok: true, approved: false, alreadyApproved: true, message: staffName + ' ได้รับอนุมัติแล้ว' };
+  }
+  if (String(row[2] || '').trim() !== 'รอยืนยัน') {
+    return { ok: true, approved: false, message: 'สถานะปัจจุบันไม่ใช่รอยืนยัน' };
+  }
+
+  sh.getRange(target.rowNo, 3).setValue('เจ้าหน้าที่');
+  sh.getRange(target.rowNo, 6).setValue(requester.staffName || 'เจ้าของ');
+  sh.getRange(target.rowNo, 7).setValue(new Date());
+  sh.getRange(target.rowNo, 9).setValue('พนักงาน');
+
+  sh.getRange(target.rowNo, 10).setValue(true);
+  sh.getRange(target.rowNo, 18).setValue(true);
+  sh.getRange(target.rowNo, 20).setValue(true);
+
+  sh.getRange(target.rowNo, 11, 1, 7).setValues([[false, false, false, false, false, false, false]]);
+  sh.getRange(target.rowNo, 19).setValue(false);
+
+  return {
+    ok: true,
+    approved: true,
+    staffName: staffName,
+    message: 'อนุมัติ ' + staffName + ' แล้ว\nสิทธิ์: ดูข้อมูลลูกค้า + ดูประวัติ\nยังไม่เปิดสิทธิ์การเงิน'
   };
 }
 
