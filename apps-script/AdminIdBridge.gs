@@ -1531,6 +1531,25 @@ function findExactCustomerForBinding_(queue, fullName) {
   });
 }
 
+function logCustomerBindingEvent_(lineUserId, queue, fullName, result, status, note) {
+  try {
+    logAction_({
+      lineUserId: String(lineUserId || '').trim(),
+      staffName: String(fullName || '').trim(),
+      role: 'ลูกค้า',
+      command: 'ผูกบัญชี',
+      query: [String(queue || '').trim(), String(fullName || '').trim()].filter(Boolean).join(' '),
+      source: String(CONFIG.CUSTOMER_PILOT_SOURCE || '') + '/' + String(CONFIG.CUSTOMER_PILOT_SHEET || ''),
+      result: String(result || ''),
+      actionName: 'customerBinding',
+      status: String(status || ''),
+      note: String(note || '')
+    });
+  } catch (err) {
+    console.log('customer binding log failed: ' + err.message);
+  }
+}
+
 function requestCustomerBinding_(body) {
   if (!isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)) ||
       !isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true))) {
@@ -1545,8 +1564,66 @@ function requestCustomerBinding_(body) {
     return { ok: true, bound: false, message: 'กรุณาแจ้ง คิว + ชื่อ + นามสกุล\nตัวอย่าง: 6101 สมชาย ใจดี' };
   }
 
+  const sh = customerLineSheet_();
+  const values = sh.getLastRow() >= 2
+    ? sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues()
+    : [];
+
+  // One LINE User ID may have only one active customer identity.
+  // Once bound, it cannot be used to probe or bind another queue/name.
+  for (let i = 0; i < values.length; i++) {
+    const r = values[i];
+    const sameLine = String(r[1] || '').trim() === lineUserId;
+    const status = String(r[7] || '').trim();
+    if (!sameLine || status !== 'ใช้งาน') continue;
+
+    const sameQueue = normalizeGeneral_(r[6]) === normalizeGeneral_(queue);
+    const sameName = normalizeGeneral_(r[2]) === normalizeGeneral_(fullName);
+
+    if (sameQueue && sameName) {
+      try { sh.getRange(i + 2, 13).setValue(new Date()); } catch (err) {}
+      logCustomerBindingEvent_(lineUserId, queue, fullName, 'ผูกอยู่แล้ว', 'สำเร็จ', 'ส่งข้อมูลเดิมซ้ำ');
+      return {
+        ok: true,
+        bound: true,
+        alreadyBound: true,
+        locked: true,
+        customerName: String(r[2] || '').trim(),
+        queue: String(r[6] || '').trim(),
+        source: String(r[4] || '').trim(),
+        sheet: String(r[5] || '').trim(),
+        message: 'บัญชี LINE นี้ผูกกับข้อมูลลูกค้าเรียบร้อยแล้ว\nชื่อ: ' +
+          String(r[2] || '').trim() + '\nคิว: ' + String(r[6] || '').trim()
+      };
+    }
+
+    logCustomerBindingEvent_(
+      lineUserId,
+      queue,
+      fullName,
+      'ปฏิเสธ: LINE ผูกลูกค้าอื่นแล้ว',
+      'ปฏิเสธ',
+      'ผูกอยู่กับ ' + String(r[2] || '').trim() + ' คิว ' + String(r[6] || '').trim()
+    );
+    return {
+      ok: true,
+      bound: true,
+      alreadyBound: true,
+      locked: true,
+      rejectedNewIdentity: true,
+      customerName: String(r[2] || '').trim(),
+      queue: String(r[6] || '').trim(),
+      source: String(r[4] || '').trim(),
+      sheet: String(r[5] || '').trim(),
+      message: 'บัญชี LINE นี้ผูกกับลูกค้าแล้ว\nชื่อ: ' + String(r[2] || '').trim() +
+        '\nคิว: ' + String(r[6] || '').trim() +
+        '\nไม่สามารถใช้ LINE นี้ตรวจสอบชื่อหรือคิวอื่นได้'
+    };
+  }
+
   const matches = findExactCustomerForBinding_(queue, fullName);
   if (!matches.length) {
+    logCustomerBindingEvent_(lineUserId, queue, fullName, 'ไม่พบข้อมูลตรง', 'ไม่สำเร็จ', 'V6/10-69');
     return {
       ok: true,
       bound: false,
@@ -1554,6 +1631,7 @@ function requestCustomerBinding_(body) {
     };
   }
   if (matches.length > 1) {
+    logCustomerBindingEvent_(lineUserId, queue, fullName, 'พบข้อมูลซ้ำ', 'รอตรวจ', 'มากกว่า 1 รายการ');
     return {
       ok: true,
       bound: false,
@@ -1563,12 +1641,8 @@ function requestCustomerBinding_(body) {
   }
 
   const c = matches[0];
-  const sh = customerLineSheet_();
-  const values = sh.getLastRow() >= 2
-    ? sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues()
-    : [];
-
   let reusableRowNo = 0;
+
   for (let i = 0; i < values.length; i++) {
     const r = values[i];
     const sameLine = String(r[1] || '').trim() === lineUserId;
@@ -1579,6 +1653,7 @@ function requestCustomerBinding_(body) {
     const status = String(r[7] || '').trim();
 
     if (sameCustomer && status === 'ใช้งาน' && !sameLine) {
+      logCustomerBindingEvent_(lineUserId, queue, fullName, 'ปฏิเสธ: ลูกค้าผูก LINE อื่นแล้ว', 'ปฏิเสธ', '');
       return {
         ok: true,
         bound: false,
@@ -1587,24 +1662,13 @@ function requestCustomerBinding_(body) {
       };
     }
 
-    if (!sameLine || !sameCustomer) continue;
-    if (status === 'ใช้งาน') {
-      return {
-        ok: true,
-        bound: true,
-        alreadyBound: true,
-        customerName: String(c.name || '').trim(),
-        queue: String(c.queue || '').trim(),
-        source: String(c.source || '').trim(),
-        sheet: String(c.sheet || '').trim(),
-        message: 'ตรวจสอบข้อมูลถูกต้องแล้ว\nบัญชี LINE นี้ผูกกับคิว ' + String(c.queue || '').trim() + ' เรียบร้อย'
-      };
+    if (sameLine && sameCustomer && status !== 'ใช้งาน' && !reusableRowNo) {
+      reusableRowNo = i + 2;
     }
-    if (!reusableRowNo) reusableRowNo = i + 2;
   }
 
   const now = new Date();
-  const note = 'ยืนยันอัตโนมัติ: คิว + ชื่อ-นามสกุลตรง ' +
+  const note = 'ยืนยันอัตโนมัติและล็อก LINE ID: คิว + ชื่อตรง ' +
     String(CONFIG.CUSTOMER_PILOT_SOURCE) + '/' + String(CONFIG.CUSTOMER_PILOT_SHEET);
 
   let rowNo;
@@ -1644,10 +1708,20 @@ function requestCustomerBinding_(body) {
     rowNo = sh.getLastRow();
   }
 
+  logCustomerBindingEvent_(
+    lineUserId,
+    c.queue,
+    c.name,
+    'ผูกบัญชีสำเร็จ',
+    'สำเร็จ',
+    'ลูกค้า LINE แถว ' + rowNo + ' | สถานะ ใช้งาน'
+  );
+
   return {
     ok: true,
     bound: true,
     autoApproved: true,
+    locked: true,
     rowNo: rowNo,
     customerName: String(c.name || '').trim(),
     queue: String(c.queue || '').trim(),
@@ -1655,7 +1729,7 @@ function requestCustomerBinding_(body) {
     sheet: String(c.sheet || '').trim(),
     message: 'ตรวจสอบข้อมูลถูกต้องแล้ว\nชื่อ: ' + String(c.name || '').trim() +
       '\nคิว: ' + String(c.queue || '').trim() +
-      '\nสามารถตรวจสอบข้อมูลจากปุ่มด้านล่างได้เลย'
+      '\nผูก LINE นี้เรียบร้อยแล้ว และไม่สามารถตรวจสอบชื่ออื่นด้วย LINE นี้ได้'
   };
 }
 
