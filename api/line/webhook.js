@@ -146,7 +146,7 @@ async function handleEvent(event) {
       });
 
       if (registration?.registered || registration?.alreadyRegistered) {
-        if (registration?.registered && Array.isArray(registration.ownerLineUserIds)) {
+        if ((registration?.registered || registration?.pendingApproval) && Array.isArray(registration.ownerLineUserIds)) {
           const staffName = registration.staffName || text;
           const ownerText = [
             "มีเจ้าหน้าที่ขออนุมัติ",
