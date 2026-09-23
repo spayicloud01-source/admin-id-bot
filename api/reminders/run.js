@@ -63,6 +63,16 @@ export default async function handler(req, res) {
     }
 
     const batch = await callSheetsBridge({ action: "getReminderBatch" });
+    if (batch.alreadySent) {
+      return res.status(200).json({
+        ok: true,
+        sent: 0,
+        skipped: true,
+        message: "Reminder already sent today",
+        lastSentAt: batch.lastSentAt || null
+      });
+    }
+
     const recipients = Array.isArray(batch.recipients) ? batch.recipients : [];
     const text = buildDigest(batch.digest);
     if (!text || !recipients.length) {
@@ -72,6 +82,15 @@ export default async function handler(req, res) {
     const results = await Promise.allSettled(recipients.map((id) => pushMessage(id, text)));
     const sent = results.filter((x) => x.status === "fulfilled" && x.value?.ok).length;
     const failed = results.length - sent;
+
+    if (sent > 0) {
+      await callSheetsBridge({
+        action: "markReminderSent",
+        sent,
+        failed
+      });
+    }
+
     return res.status(200).json({ ok: true, sent, failed });
   } catch (error) {
     console.error("Reminder run failed", error);
