@@ -307,6 +307,21 @@ async function handleEvent(event) {
         responseText = result.info
           ? formatCustomerInfo(result.info, command.field)
           : "ไม่พบข้อมูลลูกค้า";
+      } else if (command.action === "auditSourceSchemas") {
+        const a = result.summary;
+        if (!a) {
+          responseText = result.message || "ตรวจชีตต้นทางไม่ได้";
+        } else {
+          const issues = (result.items || []).filter((x) => !x.ready).slice(0, 8);
+          responseText = [
+            "ตรวจชีตต้นทาง",
+            "แหล่งข้อมูล: " + a.sources,
+            "แท็บที่ตรวจ: " + a.tabs,
+            "พร้อม: " + a.ready,
+            "มีจุดต้องตรวจ: " + a.issues,
+            ...(issues.length ? ["", "จุดที่ต้องตรวจ:", ...issues.map((x) => "• " + x.source + (x.sheet ? " / " + x.sheet : "") + " : " + (x.missing || []).join(", "))] : [])
+          ].join("\n");
+        }
       } else if (command.action === "listDueCustomers") {
         const items = Array.isArray(result.items) ? result.items : [];
         const title = command.dueMode === "overdue"
@@ -419,6 +434,7 @@ async function handleEvent(event) {
         }
       } else if (command.action === "getReviewQueueItem") {
         const x = result.item;
+        const live = result.liveCustomer;
         responseText = x ? [
           "คิวตรวจสอบ #" + x.rowNo,
           "ประเภท: " + (x.type || "-"),
@@ -428,6 +444,7 @@ async function handleEvent(event) {
           "แหล่ง: " + (x.source || "-"),
           "ผู้ส่ง: " + (x.staff || "-"),
           "สถานะ: " + (x.status || "-"),
+          live ? "ต้นทางล่าสุด: " + (live.status || "-") + (live.dueDate ? " | วันจ่าย " + live.dueDate : "") : "ต้นทางล่าสุด: ไม่พบ/เปลี่ยนแปลง",
           x.note ? "หมายเหตุ: " + x.note : null
         ].filter(Boolean).join("\n") : (result.message || "ไม่พบคิวนี้");
       } else if (command.action === "listReviewQueue") {
