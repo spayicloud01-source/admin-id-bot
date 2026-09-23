@@ -8,8 +8,7 @@ const CONFIG = {
   HEADER_SCAN_ROWS: 20,
   HEADER_SCAN_COLS: 40,
   EXCLUDED_TAB_PATTERNS: [
-    /^LINE/i,
-    /แจ้งค่าเช่า/i,
+    /^LINE แจ้งค่าเช่า$/i,
     /สรุป/i,
     /^Mail/i,
     /รายงาน/i,
