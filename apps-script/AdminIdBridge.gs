@@ -1,5 +1,7 @@
 const CONFIG = {
-  VERSION: '2026.09.23-101',
+  VERSION: '2026.09.23-102',
+  CUSTOMER_PILOT_SOURCE: 'v6',
+  CUSTOMER_PILOT_SHEET: 'V6/10-69',
   SOURCE_SHEET: 'ลิ้งชีต',
   STAFF_SHEET: 'เจ้าหน้าที่',
   HISTORY_SHEET: 'ประวัติลูกค้า',
@@ -84,6 +86,10 @@ function doPost(e) {
         result = getReminderBatch_(body); break;
       case 'markReminderSent':
         result = markReminderSent_(body); break;
+      case 'getCustomerReminderBatch':
+        result = getCustomerReminderBatch_(body); break;
+      case 'markCustomerReminderSent':
+        result = markCustomerReminderSent_(body); break;
       case 'requestCustomerBinding':
         result = requestCustomerBinding_(body); break;
       case 'getCustomerSelf':
@@ -167,7 +173,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.23-101', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.23-102', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -751,6 +757,129 @@ function getReminderBatch_(body) {
       generatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
     }
   };
+}
+
+function getCustomerReminderBatch_(body) {
+  if (!isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)) ||
+      !isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true))) {
+    return { ok: true, items: [], message: 'ระบบลูกค้าปิดใช้งานชั่วคราว' };
+  }
+
+  const lineSheet = customerLineSheet_();
+  if (lineSheet.getLastRow() < 2) return { ok: true, items: [] };
+
+  const notifySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
+  if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
+
+  const pilotSource = String(CONFIG.CUSTOMER_PILOT_SOURCE || '').trim();
+  const pilotSheet = String(CONFIG.CUSTOMER_PILOT_SHEET || '').trim();
+  const todayKey = reminderDayKey_();
+  const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
+
+  const existing = notifySheet.getLastRow() >= 2
+    ? notifySheet.getRange(2, 1, notifySheet.getLastRow() - 1, 11).getDisplayValues()
+    : [];
+
+  const existingMap = {};
+  existing.forEach(function(r, i) {
+    if (String(r[1] || '').trim() !== 'ลูกค้า-ครบกำหนด') return;
+    const key = [
+      String(r[10] || '').trim(),
+      normalizeGeneral_(r[2]),
+      String(r[4] || '').trim(),
+      String(r[5] || '').trim()
+    ].join('|');
+    existingMap[key] = {
+      rowNo: i + 2,
+      status: String(r[8] || '').trim()
+    };
+  });
+
+  const items = [];
+  for (let i = 0; i < bindings.length; i++) {
+    const r = bindings[i];
+    if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
+    if (!isTrue_(r[10])) continue;
+    if (String(r[4] || '').trim() !== pilotSource) continue;
+    if (String(r[5] || '').trim() !== pilotSheet) continue;
+
+    const lineUserId = String(r[1] || '').trim();
+    if (!lineUserId) continue;
+
+    const c = findCustomerIdentity_(pilotSource, pilotSheet, String(r[6] || '').trim());
+    if (!c) continue;
+    const due = parseDateFlexible_(c.dueDate);
+    if (!due) continue;
+    const dueKey = Utilities.formatDate(due, 'Asia/Bangkok', 'yyyy-MM-dd');
+    if (dueKey !== todayKey) continue;
+
+    const dueDisplay = formatThaiDate_(due);
+    const key = [pilotSource, normalizeGeneral_(c.queue), lineUserId, dueDisplay].join('|');
+    const found = existingMap[key];
+    if (found && found.status === 'ส่งแล้ว') continue;
+
+    const message = [
+      'แจ้งเตือนวันชำระ',
+      'ชื่อ: ' + String(c.name || '').trim(),
+      'คิว: ' + String(c.queue || '').trim(),
+      'ครบกำหนดวันนี้: ' + dueDisplay,
+      'ค่าเช่า: ' + parseMoney_(c.fee).toLocaleString('th-TH') + ' บาท',
+      '',
+      'กดปุ่มด้านล่างเพื่อตรวจสอบยอดและรายละเอียด'
+    ].join('\n');
+
+    let rowNo = found ? found.rowNo : 0;
+    if (!rowNo) {
+      notifySheet.appendRow([
+        new Date(),
+        'ลูกค้า-ครบกำหนด',
+        String(c.queue || '').trim(),
+        String(c.name || '').trim(),
+        lineUserId,
+        dueDisplay,
+        parseMoney_(c.fee),
+        message,
+        'รอส่ง',
+        '',
+        pilotSource
+      ]);
+      rowNo = notifySheet.getLastRow();
+      existingMap[key] = { rowNo: rowNo, status: 'รอส่ง' };
+    } else {
+      notifySheet.getRange(rowNo, 8).setValue(message);
+      notifySheet.getRange(rowNo, 9).setValue('รอส่ง');
+    }
+
+    items.push({
+      rowNo: rowNo,
+      lineUserId: lineUserId,
+      queue: String(c.queue || '').trim(),
+      name: String(c.name || '').trim(),
+      dueDate: dueDisplay,
+      fee: parseMoney_(c.fee),
+      message: message
+    });
+  }
+
+  return {
+    ok: true,
+    items: items,
+    generatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
+  };
+}
+
+function markCustomerReminderSent_(body) {
+  const rowNo = Number(body.rowNo || 0);
+  if (!Number.isInteger(rowNo) || rowNo < 2) {
+    return { ok: false, error: 'rowNo ไม่ถูกต้อง' };
+  }
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
+  if (!sh || rowNo > sh.getLastRow()) return { ok: false, error: 'ไม่พบรายการแจ้งเตือน' };
+
+  const sent = body.sent === true;
+  sh.getRange(rowNo, 9).setValue(sent ? 'ส่งแล้ว' : 'ส่งไม่สำเร็จ');
+  if (sent) sh.getRange(rowNo, 10).setValue(new Date());
+  return { ok: true, rowNo: rowNo, sent: sent };
 }
 
 function triggerDailyReminder_() {
@@ -1369,7 +1498,13 @@ function customerBindingOwnerIds_() {
 }
 
 function findExactCustomerForBinding_(queue, fullName) {
-  const verified = findVerifiedIdentity_(queue, fullName);
+  const pilotSource = String(CONFIG.CUSTOMER_PILOT_SOURCE || '').trim();
+  const pilotSheet = String(CONFIG.CUSTOMER_PILOT_SHEET || '').trim();
+
+  const verified = findVerifiedIdentity_(queue, fullName).filter(function(v) {
+    return String(v.source || '').trim() === pilotSource &&
+      String(v.sheet || '').trim() === pilotSheet;
+  });
   if (verified.length === 1) {
     const v = verified[0];
     const c = findCustomerIdentity_(v.source, v.sheet, v.queue);
@@ -1387,9 +1522,11 @@ function findExactCustomerForBinding_(queue, fullName) {
   const queueKey = normalizeGeneral_(queue);
   const nameKey = normalizeGeneral_(fullName);
   if (!queueKey || !nameKey) return [];
-  const matches = searchCustomer_(queue, true) || [];
+  const matches = searchCustomer_(pilotSource + ':' + queue, true) || [];
   return matches.filter(function(c) {
-    return normalizeGeneral_(c.queue) === queueKey &&
+    return String(c.source || '').trim() === pilotSource &&
+      String(c.sheet || '').trim() === pilotSheet &&
+      normalizeGeneral_(c.queue) === queueKey &&
       normalizeGeneral_(c.name) === nameKey;
   });
 }
@@ -1397,31 +1534,31 @@ function findExactCustomerForBinding_(queue, fullName) {
 function requestCustomerBinding_(body) {
   if (!isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)) ||
       !isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true))) {
-    return { ok: true, requested: false, message: 'ระบบลูกค้าปิดใช้งานชั่วคราว' };
+    return { ok: true, bound: false, message: 'ระบบลูกค้าปิดใช้งานชั่วคราว' };
   }
 
   const lineUserId = String(body.lineUserId || '').trim();
   const queue = String(body.queue || '').trim();
   const fullName = String(body.fullName || '').trim();
-  if (!lineUserId) return { ok: true, requested: false, message: 'ไม่พบ LINE User ID' };
+  if (!lineUserId) return { ok: true, bound: false, message: 'ไม่พบ LINE User ID' };
   if (!queue || !fullName) {
-    return { ok: true, requested: false, message: 'รูปแบบ: ผูกบัญชี <คิว> <ชื่อ นามสกุล>' };
+    return { ok: true, bound: false, message: 'กรุณาแจ้ง คิว + ชื่อ + นามสกุล\nตัวอย่าง: 6101 สมชาย ใจดี' };
   }
 
   const matches = findExactCustomerForBinding_(queue, fullName);
   if (!matches.length) {
     return {
       ok: true,
-      requested: false,
-      message: 'ไม่พบข้อมูลที่ตรงกับคิวและชื่อ-นามสกุล กรุณาตรวจสอบให้ตรงกับข้อมูลในระบบหรือติดต่อเจ้าหน้าที่'
+      bound: false,
+      message: 'ข้อมูลไม่ตรงหรือไม่พบใน V6/10-69 กรุณาตรวจสอบคิว ชื่อ และนามสกุลอีกครั้ง'
     };
   }
   if (matches.length > 1) {
     return {
       ok: true,
-      requested: false,
+      bound: false,
       needsStaffHelp: true,
-      message: 'พบข้อมูลมากกว่า 1 รายการ กรุณาติดต่อเจ้าหน้าที่เพื่อยืนยันบัญชี'
+      message: 'พบข้อมูลซ้ำมากกว่า 1 รายการ กรุณาติดต่อเจ้าหน้าที่'
     };
   }
 
@@ -1431,6 +1568,7 @@ function requestCustomerBinding_(body) {
     ? sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues()
     : [];
 
+  let reusableRowNo = 0;
   for (let i = 0; i < values.length; i++) {
     const r = values[i];
     const sameLine = String(r[1] || '').trim() === lineUserId;
@@ -1438,49 +1576,86 @@ function requestCustomerBinding_(body) {
       String(r[4] || '').trim() === String(c.source || '').trim() &&
       String(r[5] || '').trim() === String(c.sheet || '').trim() &&
       normalizeGeneral_(r[6]) === normalizeGeneral_(c.queue);
-    if (!sameLine || !sameCustomer) continue;
-
     const status = String(r[7] || '').trim();
-    if (status === 'ใช้งาน') {
-      return { ok: true, requested: false, alreadyBound: true, message: 'บัญชีนี้ผูกไว้แล้ว' };
-    }
-    if (status === 'รออนุมัติ') {
+
+    if (sameCustomer && status === 'ใช้งาน' && !sameLine) {
       return {
         ok: true,
-        requested: false,
-        pending: true,
-        rowNo: i + 2,
-        message: 'คำขอผูกบัญชีอยู่ระหว่างรออนุมัติ'
+        bound: false,
+        needsStaffHelp: true,
+        message: 'ข้อมูลลูกค้านี้ถูกผูกกับ LINE อื่นแล้ว กรุณาติดต่อเจ้าหน้าที่'
       };
     }
+
+    if (!sameLine || !sameCustomer) continue;
+    if (status === 'ใช้งาน') {
+      return {
+        ok: true,
+        bound: true,
+        alreadyBound: true,
+        customerName: String(c.name || '').trim(),
+        queue: String(c.queue || '').trim(),
+        source: String(c.source || '').trim(),
+        sheet: String(c.sheet || '').trim(),
+        message: 'ตรวจสอบข้อมูลถูกต้องแล้ว\nบัญชี LINE นี้ผูกกับคิว ' + String(c.queue || '').trim() + ' เรียบร้อย'
+      };
+    }
+    if (!reusableRowNo) reusableRowNo = i + 2;
   }
 
-  sh.appendRow([
-    new Date(),
-    lineUserId,
-    String(c.name || '').trim(),
-    String(c.phone || '').trim(),
-    String(c.source || '').trim(),
-    String(c.sheet || '').trim(),
-    String(c.queue || '').trim(),
-    'รออนุมัติ',
-    '',
-    '',
-    true,
-    'ลูกค้าขอผูกบัญชีด้วยคิว + ชื่อ-นามสกุล',
-    new Date()
-  ]);
+  const now = new Date();
+  const note = 'ยืนยันอัตโนมัติ: คิว + ชื่อ-นามสกุลตรง ' +
+    String(CONFIG.CUSTOMER_PILOT_SOURCE) + '/' + String(CONFIG.CUSTOMER_PILOT_SHEET);
 
-  const rowNo = sh.getLastRow();
+  let rowNo;
+  if (reusableRowNo) {
+    sh.getRange(reusableRowNo, 1, 1, 13).setValues([[
+      now,
+      lineUserId,
+      String(c.name || '').trim(),
+      String(c.phone || '').trim(),
+      String(c.source || '').trim(),
+      String(c.sheet || '').trim(),
+      String(c.queue || '').trim(),
+      'ใช้งาน',
+      'ระบบ',
+      now,
+      true,
+      note,
+      now
+    ]]);
+    rowNo = reusableRowNo;
+  } else {
+    sh.appendRow([
+      now,
+      lineUserId,
+      String(c.name || '').trim(),
+      String(c.phone || '').trim(),
+      String(c.source || '').trim(),
+      String(c.sheet || '').trim(),
+      String(c.queue || '').trim(),
+      'ใช้งาน',
+      'ระบบ',
+      now,
+      true,
+      note,
+      now
+    ]);
+    rowNo = sh.getLastRow();
+  }
+
   return {
     ok: true,
-    requested: true,
+    bound: true,
+    autoApproved: true,
     rowNo: rowNo,
     customerName: String(c.name || '').trim(),
     queue: String(c.queue || '').trim(),
     source: String(c.source || '').trim(),
-    ownerLineUserIds: customerBindingOwnerIds_(),
-    message: 'ส่งคำขอผูกบัญชีแล้ว รอเจ้าหน้าที่อนุมัติ'
+    sheet: String(c.sheet || '').trim(),
+    message: 'ตรวจสอบข้อมูลถูกต้องแล้ว\nชื่อ: ' + String(c.name || '').trim() +
+      '\nคิว: ' + String(c.queue || '').trim() +
+      '\nสามารถตรวจสอบข้อมูลจากปุ่มด้านล่างได้เลย'
   };
 }
 
