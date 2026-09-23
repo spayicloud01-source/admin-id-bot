@@ -1,21 +1,27 @@
 import { callSheetsBridge } from "../../lib/sheetsBridge.js";
 
-async function pushMessage(to, text) {
+async function pushMessages(to, messages) {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-  if (!token || !to || !text) return { ok: false, skipped: true };
+  if (!token || !to || !Array.isArray(messages) || !messages.length) {
+    return { ok: false, skipped: true };
+  }
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ to, messages: [{ type: "text", text }] }),
+    body: JSON.stringify({ to, messages }),
   });
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`LINE push failed: ${response.status} ${body}`);
   }
   return { ok: true };
+}
+
+async function pushText(to, text) {
+  return pushMessages(to, [{ type: "text", text }]);
 }
 
 function formatItem(x, mode) {
@@ -46,6 +52,98 @@ function buildDigest(d) {
   return parts.join("\n").slice(0, 4900);
 }
 
+function customerReminderMessage(item) {
+  return {
+    type: "text",
+    text: item.message || [
+      "แจ้งเตือนวันชำระ",
+      "ชื่อ: " + (item.name || "-"),
+      "คิว: " + (item.queue || "-"),
+      "ครบกำหนดวันนี้: " + (item.dueDate || "-"),
+    ].join("\n"),
+    quickReply: {
+      items: [
+        ["ค่าเช่า", "ค่าเช่า"],
+        ["ยอดปิด", "ยอดปิด"],
+        ["วันจ่าย", "วันจ่าย"],
+        ["ยอดค้าง", "ยอดค้าง"],
+        ["เมนูลูกค้า", "เมนูลูกค้า"],
+      ].map(([label, text]) => ({
+        type: "action",
+        action: { type: "message", label, text },
+      })),
+    },
+  };
+}
+
+async function sendCustomerReminders() {
+  const batch = await callSheetsBridge({ action: "getCustomerReminderBatch" });
+  const items = Array.isArray(batch?.items) ? batch.items : [];
+  if (!items.length) {
+    return { sent: 0, failed: 0, total: 0 };
+  }
+
+  let sent = 0;
+  let failed = 0;
+
+  for (const item of items) {
+    let ok = false;
+    try {
+      const result = await pushMessages(item.lineUserId, [customerReminderMessage(item)]);
+      ok = result?.ok === true;
+      if (ok) sent += 1;
+      else failed += 1;
+    } catch (error) {
+      failed += 1;
+      console.warn("Customer reminder push failed", item.queue, error);
+    }
+
+    try {
+      await callSheetsBridge({
+        action: "markCustomerReminderSent",
+        rowNo: item.rowNo,
+        sent: ok,
+      });
+    } catch (error) {
+      console.warn("Customer reminder mark failed", item.rowNo, error);
+    }
+  }
+
+  return { sent, failed, total: items.length };
+}
+
+async function sendInternalDigest() {
+  const batch = await callSheetsBridge({ action: "getReminderBatch" });
+  if (batch.alreadySent) {
+    return {
+      sent: 0,
+      failed: 0,
+      skipped: true,
+      lastSentAt: batch.lastSentAt || null,
+    };
+  }
+
+  const recipients = Array.isArray(batch.recipients) ? batch.recipients : [];
+  const text = buildDigest(batch.digest);
+  if (!text || !recipients.length) {
+    return { sent: 0, failed: 0, skipped: true };
+  }
+
+  const results = await Promise.allSettled(recipients.map((id) => pushText(id, text)));
+  const sent = results.filter((x) => x.status === "fulfilled" && x.value?.ok).length;
+  const failed = results.length - sent;
+
+  if (sent > 0) {
+    await callSheetsBridge({
+      action: "markReminderSent",
+      sent,
+      failed,
+    });
+  }
+
+  return { sent, failed, skipped: false };
+}
+
 export default async function handler(req, res) {
   if (req.method === "GET") {
     return res.status(200).json({ ok: true, service: "Admin ID reminders" });
@@ -62,38 +160,26 @@ export default async function handler(req, res) {
       return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
 
-    const batch = await callSheetsBridge({ action: "getReminderBatch" });
-    if (batch.alreadySent) {
-      return res.status(200).json({
-        ok: true,
-        sent: 0,
-        skipped: true,
-        message: "Reminder already sent today",
-        lastSentAt: batch.lastSentAt || null
-      });
-    }
+    // Customer reminders and the internal owner digest are independent.
+    // A customer due reminder can still go out even if today's owner digest was already sent.
+    const [customer, internal] = await Promise.all([
+      sendCustomerReminders(),
+      sendInternalDigest(),
+    ]);
 
-    const recipients = Array.isArray(batch.recipients) ? batch.recipients : [];
-    const text = buildDigest(batch.digest);
-    if (!text || !recipients.length) {
-      return res.status(200).json({ ok: true, sent: 0, message: "No recipients or digest" });
-    }
-
-    const results = await Promise.allSettled(recipients.map((id) => pushMessage(id, text)));
-    const sent = results.filter((x) => x.status === "fulfilled" && x.value?.ok).length;
-    const failed = results.length - sent;
-
-    if (sent > 0) {
-      await callSheetsBridge({
-        action: "markReminderSent",
-        sent,
-        failed
-      });
-    }
-
-    return res.status(200).json({ ok: true, sent, failed });
+    return res.status(200).json({
+      ok: true,
+      customer,
+      internal,
+      sent: Number(customer.sent || 0) + Number(internal.sent || 0),
+      failed: Number(customer.failed || 0) + Number(internal.failed || 0),
+    });
   } catch (error) {
     console.error("Reminder run failed", error);
-    return res.status(500).json({ ok: false, error: "Reminder run failed" });
+    return res.status(500).json({
+      ok: false,
+      error: "Reminder run failed",
+      detail: String(error?.message || error).slice(0, 200),
+    });
   }
 }
