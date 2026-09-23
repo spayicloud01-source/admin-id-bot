@@ -271,6 +271,7 @@ async function handleEvent(event) {
           text: [
             "คำสั่ง Admin ID",
             "• พิมพ์ชื่อ / เบอร์ / คิว / Apple ID เพื่อค้นหา",
+            "• ถ้าคิวซ้ำ ใช้ แหล่ง:คิว เช่น v6:101",
             "• ประวัติ <คำค้น>",
             "• ดูโน้ต <คำค้น>",
             "• โน้ต <คำค้น> <ข้อความ>",
@@ -339,7 +340,7 @@ async function handleEvent(event) {
       let responseText = "";
       if (result.needsSelection) {
         responseText =
-          "พบหลายรายการ กรุณาใช้คำค้นที่เจาะจงขึ้น เช่น เบอร์โทร / Apple ID / คิว พร้อมแหล่งข้อมูล\n\n" +
+          "พบหลายรายการ กรุณาใช้เบอร์โทร / Apple ID หรือระบุ แหล่ง:คิว เช่น v6:101\n\n" +
           formatCustomerMatches(result.matches || []);
       } else if (command.action === "getCustomerInfo") {
         responseText = result.info
