@@ -146,25 +146,7 @@ function searchCustomer_(query, includeDetails) {
       console.log('ค้นไม่ได้: ' + sourceName + ' / ' + err.message);
     }
   }
-  return dedupeResults_(results);
-}
-
-function dedupeResults_(items) {
-  const seen = {};
-  const out = [];
-  items.forEach(function(x) {
-    const key = [
-      normalizeGeneral_(x.source),
-      normalizeGeneral_(x.sheet),
-      normalizeGeneral_(x.queue),
-      normalizePhone_(x.phone),
-      normalizeApple_(x.appleId)
-    ].join('|');
-    if (seen[key]) return;
-    seen[key] = true;
-    out.push(x);
-  });
-  return out;
+  return results;
 }
 
 function searchTab_(sheet, sourceName, query, results, includeDetails) {
