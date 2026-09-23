@@ -339,7 +339,9 @@ async function handleEvent(event) {
       const result = await callSheetsBridge(payload);
 
       let responseText = "";
-      if (result.needsSelection) {
+      if (command.action === "getBridgeVersion") {
+        responseText = "Admin ID\nApps Script version: " + (result.version || "ไม่ทราบ");
+      } else if (result.needsSelection) {
         responseText =
           "พบหลายรายการ กรุณาใช้เบอร์โทร / Apple ID หรือระบุ แหล่ง:คิว เช่น v6:101\n\n" +
           formatCustomerMatches(result.matches || []);
