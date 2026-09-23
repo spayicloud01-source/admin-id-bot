@@ -232,7 +232,7 @@ async function handleEvent(event) {
       return;
     }
 
-    if (text === "ช่วยเหลือ") {
+    if (text === "ช่วยเหลือ" || text === "แนะนำการใช้งาน") {
       await replyMessage(event.replyToken, [
         {
           type: "text",
@@ -249,7 +249,12 @@ async function handleEvent(event) {
             "• วันจ่าย <คำค้น>",
             "• ยอดค้าง <คำค้น>",
             "• สถานะ <คำค้น>",
-            access.role === "เจ้าของ" ? "• รายงานวันนี้ / สถานะระบบ / คิวตรวจสอบ / เจ้าหน้าที่" : null
+            access.role === "เจ้าของ" ? "• รายงานวันนี้ / สถานะระบบ / ตรวจชีตต้นทาง" : null,
+            access.role === "เจ้าของ" ? "• คิวตรวจสอบ / ดูคิว <เลข> / ผ่านคิว <เลข> / ไม่ผ่านคิว <เลข>" : null,
+            access.role === "เจ้าของ" ? "• เจ้าหน้าที่ / สิทธิ์เจ้าหน้าที่ <ชื่อ> / ระงับ <ชื่อ> / เปิดใช้ <ชื่อ>" : null,
+            access.role === "เจ้าของ" ? "• ให้สิทธิ์ <ชื่อ> <สิทธิ์> / ถอนสิทธิ์ <ชื่อ> <สิทธิ์>" : null,
+            access.role === "เจ้าของ" ? "• เปิดกลุ่ม / ปิดกลุ่ม / สถานะกลุ่ม" : null,
+            access.role === "เจ้าของ" ? "• ติดตั้งแจ้งเตือน / สถานะแจ้งเตือน / ทดสอบแจ้งเตือน" : null
           ].join("\n")
         },
       ]);
@@ -378,7 +383,9 @@ async function handleEvent(event) {
           "กลุ่ม LINE: " + (x.groupEnabled ? "เปิด" : "ปิด"),
           "แหล่งข้อมูลเปิดใช้: " + x.enabledSources,
           "OK Slip: " + (x.okSlipEnabled ? "เปิด" : "ยังไม่เชื่อม"),
-          "Webhook: " + x.webhookStatus
+          "Webhook: " + x.webhookStatus,
+          "เขียนชีตต้นทาง: " + (x.financialSourceWrites ? "เปิด" : "ปิดเพื่อความปลอดภัย"),
+          "แจ้งเตือนลูกค้าโดยตรง: " + (x.reminderInternalOnly ? "ยังปิด" : "เปิด")
         ].join("\n") : (result.message || "ไม่พบสถานะระบบ");
       } else if (command.action === "getHistory") {
         responseText = formatHistory(result.items || []);
@@ -470,6 +477,16 @@ async function handleEvent(event) {
             console.warn("Review result notification failed", error);
           });
         }
+      } else if (command.action === "getReminderBatch") {
+        const d = result.digest;
+        responseText = d ? [
+          "ทดสอบแจ้งเตือน",
+          "ใกล้ครบกำหนด: " + (d.upcomingCount || 0),
+          "ครบกำหนดวันนี้: " + (d.todayCount || 0),
+          "ค้างชำระ: " + (d.overdueCount || 0),
+          "ผู้รับแจ้งเตือน: " + ((result.recipients || []).length),
+          "อัปเดต: " + (d.generatedAt || "-")
+        ].join("\n") : "ยังไม่มีข้อมูลแจ้งเตือน";
       } else if (command.action === "setGroupNotification") {
         responseText = result.message || (result.changed ? "อัปเดตการแจ้งเตือนกลุ่มแล้ว" : "ไม่สามารถดำเนินการได้");
       } else if (command.action === "installReminderTrigger") {
