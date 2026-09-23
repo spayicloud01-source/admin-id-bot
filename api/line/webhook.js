@@ -194,7 +194,8 @@ async function handleEvent(event) {
       sourceType,
       groupId,
       permission: command?.permission || "ดูข้อมูลลูกค้า",
-      allowGroupSetup: ["setGroupEnabled", "getGroupStatus"].includes(command?.action),
+      allowGroupSetup: ["setGroupEnabled", "getGroupStatus", "setGroupNotification"].includes(command?.action),
+      allowSystemControl: ["setBotSwitch", "readinessCheck", "getBridgeVersion"].includes(command?.action),
     });
 
     if (!access.allowed) {
