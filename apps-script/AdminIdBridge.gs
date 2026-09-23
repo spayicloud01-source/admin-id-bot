@@ -1249,7 +1249,7 @@ function latestDiscountStart_(customer, fallbackDate) {
 }
 
 function verifyCustomerIdentity_(body) {
-  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'แก้ข้อมูลลูกค้า' });
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูข้อมูลลูกค้า' });
   if (!access.allowed) return { ok: true, verified: false, message: access.message || 'ไม่มีสิทธิ์' };
 
   const query = String(body.query || '').trim();
@@ -2764,10 +2764,10 @@ function rememberRecentImage_(body) {
     lineUserId: body.lineUserId,
     sourceType: body.sourceType,
     groupId: body.groupId,
-    permission: 'แก้ข้อมูลลูกค้า'
+    permission: 'ดูข้อมูลลูกค้า'
   });
   if (!access.allowed) {
-    return { ok: true, remembered: false, message: access.message || 'ไม่มีสิทธิ์แก้ข้อมูลลูกค้า' };
+    return { ok: true, remembered: false, message: access.message || 'ไม่มีสิทธิ์ใช้งานข้อมูลลูกค้า' };
   }
 
   const messageId = String(body.messageId || '').trim();
@@ -2806,10 +2806,10 @@ function getRecentIdentityImages_(body) {
     lineUserId: body.lineUserId,
     sourceType: body.sourceType,
     groupId: body.groupId,
-    permission: 'แก้ข้อมูลลูกค้า'
+    permission: 'ดูข้อมูลลูกค้า'
   });
   if (!access.allowed) {
-    return { ok: true, items: [], message: access.message || 'ไม่มีสิทธิ์แก้ข้อมูลลูกค้า' };
+    return { ok: true, items: [], message: access.message || 'ไม่มีสิทธิ์ใช้งานข้อมูลลูกค้า' };
   }
 
   const value = CacheService.getScriptCache().get(recentImageCacheKey_(body.lineUserId));
@@ -2929,7 +2929,7 @@ function ocrThaiIdCardImage_(body) {
     lineUserId: body.lineUserId,
     sourceType: body.sourceType,
     groupId: body.groupId,
-    permission: 'แก้ข้อมูลลูกค้า'
+    permission: 'ดูข้อมูลลูกค้า'
   });
   if (!access.allowed) {
     return { ok: true, read: false, message: access.message || 'ไม่มีสิทธิ์อ่านบัตร' };
