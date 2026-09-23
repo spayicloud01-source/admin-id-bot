@@ -238,7 +238,7 @@ async function handleEvent(event) {
     }
 
     if (command) {
-      if (!command.query) {
+      if (command.requiresQuery !== false && !command.query) {
         const usage =
           command.action === "addNote"
             ? "รูปแบบ: โน้ต <คำค้น> <ข้อความ>"
@@ -283,6 +283,50 @@ async function handleEvent(event) {
           : "ไม่พบข้อมูลลูกค้า";
       } else if (["queuePayment", "queueSlipReview", "queueClose"].includes(command.action)) {
         responseText = result.message || (result.queued ? "ส่งเข้าคิวตรวจสอบแล้ว" : "ไม่สามารถดำเนินการได้");
+
+        if (result.queued && result.rowNo && Array.isArray(result.ownerLineUserIds)) {
+          const customerName = result.customer?.name || command.query || "-";
+          const queueText = [
+            "มีรายการรอตรวจ",
+            "#" + result.rowNo + " | " + (result.type || "-"),
+            "ลูกค้า: " + customerName,
+            result.amount ? "ยอด: " + result.amount : null,
+            "ผู้ส่ง: " + (access.staffName || "-")
+          ].filter(Boolean).join("\n");
+
+          const ownerMessage = {
+            type: "text",
+            text: queueText,
+            quickReply: {
+              items: [
+                {
+                  type: "action",
+                  action: {
+                    type: "message",
+                    label: "ผ่าน",
+                    text: "ผ่านคิว " + result.rowNo
+                  }
+                },
+                {
+                  type: "action",
+                  action: {
+                    type: "message",
+                    label: "ไม่ผ่าน",
+                    text: "ไม่ผ่านคิว " + result.rowNo
+                  }
+                }
+              ]
+            }
+          };
+
+          await Promise.all(
+            result.ownerLineUserIds.map((ownerId) =>
+              pushMessage(ownerId, [ownerMessage]).catch((error) => {
+                console.warn("Owner review alert failed", error);
+              })
+            )
+          );
+        }
       } else if (command.action === "listReviewQueue") {
         const items = Array.isArray(result.items) ? result.items : [];
         responseText = items.length
@@ -293,6 +337,17 @@ async function handleEvent(event) {
           : "ไม่มีคิวรอตรวจ";
       } else if (command.action === "resolveReviewQueue") {
         responseText = result.message || (result.resolved ? "อัปเดตคิวแล้ว" : "ไม่สามารถดำเนินการได้");
+
+        if (result.resolved && result.requesterLineUserId) {
+          const staffText = result.decision === "ผ่าน"
+            ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nยังไม่มีการแก้ยอดในชีตต้นทาง"
+            : "คิว #" + result.rowNo + " ไม่ผ่านการตรวจสอบ";
+          await pushMessage(result.requesterLineUserId, [
+            { type: "text", text: staffText }
+          ]).catch((error) => {
+            console.warn("Review result notification failed", error);
+          });
+        }
       } else if (command.action === "listPendingStaff") {
         const items = Array.isArray(result.items) ? result.items : [];
         responseText = items.length
