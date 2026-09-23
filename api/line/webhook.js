@@ -290,6 +290,7 @@ async function handleEvent(event) {
       if (command.amount != null) payload.amount = command.amount;
       if (command.decision) payload.decision = command.decision;
       if (command.enabled != null) payload.enabled = command.enabled;
+      if (command.dueMode) payload.dueMode = command.dueMode;
 
       const result = await callSheetsBridge(payload);
 
@@ -302,6 +303,19 @@ async function handleEvent(event) {
         responseText = result.info
           ? formatCustomerInfo(result.info, command.field)
           : "ไม่พบข้อมูลลูกค้า";
+      } else if (command.action === "listDueCustomers") {
+        const items = Array.isArray(result.items) ? result.items : [];
+        const title = command.dueMode === "overdue"
+          ? "ค้างชำระ"
+          : command.dueMode === "upcoming"
+            ? "ใกล้ครบกำหนด"
+            : "ครบกำหนดวันนี้";
+        responseText = items.length
+          ? title + " (" + items.length + ")\n" + items.slice(0, 10).map((x, i) => {
+              const lag = x.daysDelta < 0 ? "ค้าง " + Math.abs(x.daysDelta) + " วัน" : (x.daysDelta > 0 ? "อีก " + x.daysDelta + " วัน" : "วันนี้");
+              return (i + 1) + ". " + (x.name || "-") + (x.queue ? " | คิว " + x.queue : "") + " | " + (x.dueDate || "-") + " | " + lag;
+            }).join("\n") + (items.length > 10 ? "\nแสดง 10 รายการแรก" : "")
+          : "ไม่มีรายการ" + title;
       } else if (command.action === "getCalculatedSummary") {
         const s = result.summary;
         if (!s) {
