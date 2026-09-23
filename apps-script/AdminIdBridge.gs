@@ -131,7 +131,7 @@ function registerStaff_(body) {
         alreadyRegistered: true,
         message: String(row[2] || '') === 'เจ้าหน้าที่'
           ? 'LINE นี้ลงทะเบียนเป็นเจ้าหน้าที่แล้ว'
-          : 'LINE นี้ลงทะเบียนแล้ว และกำลังรออนุมัติ'
+          : 'รออนุมัติ'
       };
     }
     if (name !== staffName) continue;
@@ -160,7 +160,7 @@ function registerStaff_(body) {
       registered: true,
       staffName: staffName,
       ownerLineUserIds: ownerLineUserIds,
-      message: 'ลงทะเบียนแล้ว รอเจ้าของอนุมัติ'
+      message: 'รออนุมัติ'
     };
   }
 
