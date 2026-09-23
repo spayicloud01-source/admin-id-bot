@@ -38,6 +38,8 @@ function doPost(e) {
         result = registerStaff_(body); break;
       case 'approveStaff':
         result = approveStaff_(body); break;
+      case 'listPendingStaff':
+        result = listPendingStaff_(body); break;
       case 'searchCustomer':
         result = { ok: true, matches: searchCustomer_(String(body.query || '').trim()) }; break;
       case 'getCustomerInfo':
@@ -169,6 +171,32 @@ function registerStaff_(body) {
     registered: false,
     message: 'ไม่พบชื่อเจ้าหน้าที่นี้ในรายการที่เจ้าของเตรียมไว้'
   };
+}
+
+function listPendingStaff_(body) {
+  const requester = checkAccess_({
+    lineUserId: body.lineUserId,
+    permission: 'จัดการเจ้าหน้าที่'
+  });
+  if (!requester.allowed) {
+    return { ok: true, allowed: false, message: requester.message || 'ไม่มีสิทธิ์จัดการเจ้าหน้าที่' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getDisplayValues();
+  const items = values
+    .filter(function(row) { return String(row[2] || '').trim() === 'รอยืนยัน'; })
+    .map(function(row) {
+      return {
+        staffName: String(row[0] || '').trim(),
+        registeredAt: String(row[4] || '').trim()
+      };
+    });
+
+  return { ok: true, items: items };
 }
 
 function approveStaff_(body) {
