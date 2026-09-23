@@ -165,6 +165,14 @@ async function handleEvent(event) {
                     label: "อนุมัติ",
                     text: "อนุมัติ " + staffName
                   }
+                },
+                {
+                  type: "action",
+                  action: {
+                    type: "message",
+                    label: "ไม่อนุมัติ",
+                    text: "ไม่อนุมัติ " + staffName
+                  }
                 }
               ]
             }
@@ -263,6 +271,19 @@ async function handleEvent(event) {
         responseText = items.length
           ? "รออนุมัติ:\n" + items.map((x, i) => `${i + 1}. ${x.staffName}${x.registeredAt ? " | " + x.registeredAt : ""}`).join("\n")
           : "ไม่มีเจ้าหน้าที่รออนุมัติ";
+      } else if (command.action === "rejectStaff") {
+        responseText = result.message || (result.rejected ? "ไม่อนุมัติเจ้าหน้าที่แล้ว" : "ไม่สามารถดำเนินการได้");
+
+        if (result.rejected && result.staffLineUserId) {
+          await pushMessage(result.staffLineUserId, [
+            {
+              type: "text",
+              text: "คำขอใช้งาน Admin ID ไม่ได้รับการอนุมัติ"
+            }
+          ]).catch((error) => {
+            console.warn("Staff rejection notification failed", error);
+          });
+        }
       } else if (command.action === "approveStaff") {
         responseText = result.message || (result.approved ? "อนุมัติเจ้าหน้าที่แล้ว" : "ไม่สามารถอนุมัติได้");
 
