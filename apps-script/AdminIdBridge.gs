@@ -1248,15 +1248,15 @@ function customerBindingOwnerIds_() {
   return getReminderOwnerLineIds_();
 }
 
-function findExactCustomerForBinding_(phone, queue) {
-  const normalizedPhone = normalizePhone_(phone);
+function findExactCustomerForBinding_(queue, fullName) {
   const queueKey = normalizeGeneral_(queue);
-  if (!normalizedPhone || !queueKey) return [];
+  const nameKey = normalizeGeneral_(fullName);
+  if (!queueKey || !nameKey) return [];
 
-  const matches = searchCustomer_(phone, true) || [];
+  const matches = searchCustomer_(queue, true) || [];
   return matches.filter(function(c) {
-    return normalizePhone_(c.phone) === normalizedPhone &&
-      normalizeGeneral_(c.queue) === queueKey;
+    return normalizeGeneral_(c.queue) === queueKey &&
+      normalizeGeneral_(c.name) === nameKey;
   });
 }
 
@@ -1267,19 +1267,19 @@ function requestCustomerBinding_(body) {
   }
 
   const lineUserId = String(body.lineUserId || '').trim();
-  const phone = String(body.phone || '').trim();
   const queue = String(body.queue || '').trim();
+  const fullName = String(body.fullName || '').trim();
   if (!lineUserId) return { ok: true, requested: false, message: 'ไม่พบ LINE User ID' };
-  if (!phone || !queue) {
-    return { ok: true, requested: false, message: 'รูปแบบ: ผูกบัญชี <เบอร์โทร> <คิว>' };
+  if (!queue || !fullName) {
+    return { ok: true, requested: false, message: 'รูปแบบ: ผูกบัญชี <คิว> <ชื่อ นามสกุล>' };
   }
 
-  const matches = findExactCustomerForBinding_(phone, queue);
+  const matches = findExactCustomerForBinding_(queue, fullName);
   if (!matches.length) {
     return {
       ok: true,
       requested: false,
-      message: 'ไม่พบข้อมูลที่ตรงกับเบอร์โทรและคิว กรุณาตรวจสอบอีกครั้งหรือติดต่อเจ้าหน้าที่'
+      message: 'ไม่พบข้อมูลที่ตรงกับคิวและชื่อ-นามสกุล กรุณาตรวจสอบให้ตรงกับข้อมูลในระบบหรือติดต่อเจ้าหน้าที่'
     };
   }
   if (matches.length > 1) {
@@ -1333,7 +1333,7 @@ function requestCustomerBinding_(body) {
     '',
     '',
     true,
-    'ลูกค้าขอผูกบัญชีด้วยเบอร์โทร + คิว',
+    'ลูกค้าขอผูกบัญชีด้วยคิว + ชื่อ-นามสกุล',
     new Date()
   ]);
 
@@ -1432,7 +1432,7 @@ function getCustomerSelf_(body) {
     return {
       ok: true,
       bound: false,
-      message: 'ยังไม่ได้ผูกบัญชี\nพิมพ์: ผูกบัญชี <เบอร์โทร> <คิว>\nตัวอย่าง: ผูกบัญชี 0812345678 101'
+      message: 'ยังไม่ได้ผูกบัญชี\nพิมพ์: ผูกบัญชี <คิว> <ชื่อ นามสกุล>\nตัวอย่าง: ผูกบัญชี 101 สมชาย ใจดี'
     };
   }
 
