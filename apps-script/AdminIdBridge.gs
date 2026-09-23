@@ -127,11 +127,24 @@ function registerStaff_(body) {
     const name = String(row[0] || '').trim();
     const existingId = String(row[1] || '').trim();
     if (existingId === lineUserId) {
+      const status = String(row[2] || '').trim();
+      const ownerLineUserIds = values
+        .filter(function(r) {
+          return String(r[8] || '').trim() === 'เจ้าของ' &&
+            String(r[2] || '').trim() === 'เจ้าหน้าที่' &&
+            r[19] === true &&
+            String(r[1] || '').trim();
+        })
+        .map(function(r) { return String(r[1] || '').trim(); });
+
       return {
         ok: true,
         registered: false,
         alreadyRegistered: true,
-        message: String(row[2] || '') === 'เจ้าหน้าที่'
+        pendingApproval: status !== 'เจ้าหน้าที่',
+        staffName: name || staffName,
+        ownerLineUserIds: ownerLineUserIds,
+        message: status === 'เจ้าหน้าที่'
           ? 'LINE นี้ลงทะเบียนเป็นเจ้าหน้าที่แล้ว'
           : 'รออนุมัติ'
       };
