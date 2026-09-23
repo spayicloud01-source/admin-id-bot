@@ -1,3 +1,4 @@
+export const maxDuration = 60;
 import crypto from "node:crypto";
 import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.js";
 import { parseCommand, formatCustomerInfo, formatHistory } from "../../lib/commands.js";
@@ -64,6 +65,67 @@ async function pushMessage(to, messages) {
     const text = await response.text();
     throw new Error(`LINE push failed: ${response.status} ${text}`);
   }
+}
+
+async function fetchLineMessageContent(messageId) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token || !messageId) throw new Error("LINE content token/messageId missing");
+
+  const response = await fetch(
+    "https://api-data.line.me/v2/bot/message/" + encodeURIComponent(messageId) + "/content",
+    { headers: { Authorization: "Bearer " + token } }
+  );
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error("LINE content fetch failed: " + response.status + " " + text);
+  }
+
+  const contentType = response.headers.get("content-type") || "image/jpeg";
+  const bytes = Buffer.from(await response.arrayBuffer());
+  return { contentType, bytes };
+}
+
+async function readThaiIdFromRecentImages(items, context) {
+  const candidates = Array.isArray(items) ? items.slice(0, 5) : [];
+  const attempts = [];
+
+  for (const item of candidates) {
+    const messageId = item?.messageId;
+    if (!messageId) continue;
+
+    try {
+      const content = await fetchLineMessageContent(messageId);
+      if (content.bytes.length > 5 * 1024 * 1024) {
+        attempts.push({ messageId, skipped: true, reason: "รูปใหญ่เกิน 5 MB" });
+        continue;
+      }
+
+      const result = await callSheetsBridge({
+        action: "ocrThaiIdCardImage",
+        lineUserId: context.lineUserId,
+        sourceType: context.sourceType,
+        groupId: context.groupId,
+        imageBase64: content.bytes.toString("base64"),
+        mimeType: content.contentType.split(";")[0] || "image/jpeg",
+      });
+
+      attempts.push({
+        messageId,
+        isThaiIdCard: !!result?.isThaiIdCard,
+        hasUsableName: !!result?.hasUsableName,
+        message: result?.message || "",
+      });
+
+      if (result?.isThaiIdCard) {
+        return { found: true, result, attempts };
+      }
+    } catch (error) {
+      attempts.push({ messageId, error: String(error?.message || error) });
+    }
+  }
+
+  return { found: false, attempts };
 }
 
 async function getGroupSummary(groupId) {
@@ -548,6 +610,14 @@ async function handleEvent(event) {
     }
 
     if (command) {
+      if (command.action === "verifyCustomerIdentity" && command.prefix === "กรอกชื่อเอง" && command.query && (!command.firstName || !command.lastName)) {
+        await replyMessage(event.replyToken, [{
+          type: "text",
+          text: "พิมพ์ตามนี้ครับ\nกรอกชื่อเอง " + command.query + " <ชื่อ> <นามสกุล> [4ตัวท้าย]\nตัวอย่าง: กรอกชื่อเอง " + command.query + " สมชาย ใจดี 1234"
+        }]);
+        return;
+      }
+
       if (command.requiresQuery !== false && !command.query) {
         const usage =
           command.action === "verifyCustomerIdentity"
@@ -600,9 +670,93 @@ async function handleEvent(event) {
       let responseText = "";
       if (command.action === "getRecentIdentityImages") {
         const items = Array.isArray(result.items) ? result.items : [];
-        responseText = items.length
-          ? "พบรูปในช่วง 10 นาทีล่าสุด " + items.length + " รูป\nขั้นต่อไปจะให้ระบบคัดรูปบัตรและอ่านข้อความจากบัตร\nตอนนี้ยังไม่ได้เชื่อมตัวอ่านภาพบัตร"
-          : (result.message || "ไม่พบรูปล่าสุด");
+
+        if (!items.length) {
+          responseText = result.message || "ไม่พบรูปล่าสุด";
+        } else if (!command.query) {
+          responseText = [
+            "พบรูปในช่วง 10 นาทีล่าสุด " + items.length + " รูป",
+            "พิมพ์คิวต่อท้ายเพื่ออ่านบัตร เช่น",
+            "อ่านบัตรล่าสุด 101",
+          ].join("\n");
+        } else {
+          const ocr = await readThaiIdFromRecentImages(items, { lineUserId, sourceType, groupId });
+
+          if (!ocr.found) {
+            responseText = [
+              "ไม่พบบัตรประชาชนไทยในรูปล่าสุด",
+              "ตรวจสูงสุด " + Math.min(items.length, 5) + " รูป",
+              "ใช้ปุ่ม “กรอกชื่อเอง” ได้ทันที",
+            ].join("\n");
+          } else {
+            const card = ocr.result || {};
+            if (card.hasUsableName && card.firstName && card.lastName) {
+              responseText = [
+                "พบบัตรประชาชน",
+                "คิว: " + command.query,
+                "ชื่อ: " + card.firstName,
+                "นามสกุล: " + card.lastName,
+                card.idLast4 ? "เลขบัตร 4 ตัวท้าย: " + card.idLast4 : null,
+                "",
+                "ตรวจชื่อให้ถูกต้องก่อนกดยืนยัน",
+              ].filter(Boolean).join("\n");
+
+              const confirmText = [
+                "บัตรประชาชน",
+                command.query,
+                card.firstName,
+                card.lastName,
+                card.idLast4 || "",
+              ].filter(Boolean).join(" ");
+
+              await replyMessage(event.replyToken, [{
+                type: "text",
+                text: responseText,
+                quickReply: {
+                  items: [
+                    {
+                      type: "action",
+                      action: { type: "message", label: "ยืนยันชื่อ", text: confirmText },
+                    },
+                    {
+                      type: "action",
+                      action: { type: "message", label: "กรอกชื่อเอง", text: "กรอกชื่อเอง " + command.query },
+                    },
+                    {
+                      type: "action",
+                      action: { type: "message", label: "อ่านใหม่", text: "อ่านบัตรล่าสุด " + command.query },
+                    },
+                  ],
+                },
+              }]);
+              return;
+            }
+
+            responseText = [
+              "พบบัตรประชาชน แต่ชื่ออ่านไม่ชัด",
+              card.ocrPreview ? "อ่านข้อความได้บางส่วน: " + card.ocrPreview : null,
+              "กด “กรอกชื่อเอง” เพื่อบันทึก",
+            ].filter(Boolean).join("\n");
+
+            await replyMessage(event.replyToken, [{
+              type: "text",
+              text: responseText,
+              quickReply: {
+                items: [
+                  {
+                    type: "action",
+                    action: { type: "message", label: "กรอกชื่อเอง", text: "กรอกชื่อเอง " + command.query },
+                  },
+                  {
+                    type: "action",
+                    action: { type: "message", label: "อ่านใหม่", text: "อ่านบัตรล่าสุด " + command.query },
+                  },
+                ],
+              },
+            }]);
+            return;
+          }
+        }
       } else if (command.action === "verifyCustomerIdentity") {
         responseText = result.needsSelection
           ? "พบหลายรายการ กรุณาระบุคำค้นให้ชัดขึ้น\n\n" + formatCustomerMatches(result.matches || [])
