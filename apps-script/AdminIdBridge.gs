@@ -5,6 +5,8 @@ const CONFIG = {
   SETTINGS_SHEET: 'ตั้งค่าบอต',
   LOG_SHEET: 'Log ระบบ',
   REVIEW_QUEUE_SHEET: 'คิวตรวจสอบ',
+  GROUP_SHEET: 'กลุ่ม LINE',
+  NOTIFICATION_QUEUE_SHEET: 'คิวแจ้งเตือน',
   MAX_RESULTS: 20,
   MAX_ROWS_PER_TAB: 3000,
   HEADER_SCAN_ROWS: 20,
@@ -48,6 +50,10 @@ function doPost(e) {
         result = listStaff_(body); break;
       case 'setStaffEnabled':
         result = setStaffEnabled_(body); break;
+      case 'setGroupEnabled':
+        result = setGroupEnabled_(body); break;
+      case 'getGroupStatus':
+        result = getGroupStatus_(body); break;
       case 'searchCustomer':
         result = { ok: true, matches: searchCustomer_(String(body.query || '').trim()) }; break;
       case 'getCustomerInfo':
@@ -87,6 +93,11 @@ function checkAccess_(body) {
   const lineUserId = String(body.lineUserId || '').trim();
   if (!lineUserId) return { ok: true, allowed: false, message: 'ไม่พบ LINE User ID' };
 
+  const masterEnabled = isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true));
+  const staffBotEnabled = isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true));
+  if (!masterEnabled) return { ok: true, allowed: false, message: 'ระบบปิดใช้งานชั่วคราว' };
+  if (!staffBotEnabled) return { ok: true, allowed: false, message: 'ระบบเจ้าหน้าที่ปิดใช้งานชั่วคราว' };
+
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sheet) return { ok: true, allowed: false, message: 'ไม่พบชีตเจ้าหน้าที่' };
@@ -117,6 +128,26 @@ function checkAccess_(body) {
     if (row[19] !== true) {
       return { ok: true, allowed: false, message: 'บัญชีนี้ถูกปิดการใช้งานบอต' };
     }
+
+    const role = String(row[8] || '').trim();
+    const sourceType = String(body.sourceType || '').trim();
+    const groupId = String(body.groupId || '').trim();
+
+    if ((sourceType === 'group' || sourceType === 'room') && !body.allowGroupSetup) {
+      if (!isTrue_(getSettingValue_('BOT_GROUP_ENABLED', true))) {
+        return { ok: true, allowed: false, message: 'ระบบกลุ่ม LINE ปิดใช้งานชั่วคราว' };
+      }
+      if (sourceType === 'group') {
+        const group = getGroupConfig_(groupId);
+        if (!group || !group.botEnabled) {
+          return { ok: true, allowed: false, message: 'กลุ่มนี้ยังไม่ได้เปิดใช้งาน Admin ID' };
+        }
+        if (!group.replyEnabled && role !== 'เจ้าของ') {
+          return { ok: true, allowed: false, message: 'กลุ่มนี้ปิดการตอบข้อความ' };
+        }
+      }
+    }
+
     const p = String(body.permission || '').trim();
     if (p && permCol[p] != null && row[permCol[p]] !== true) {
       return { ok: true, allowed: false, message: 'บัญชีนี้ไม่มีสิทธิ์ ' + p };
@@ -124,8 +155,8 @@ function checkAccess_(body) {
     return {
       ok: true,
       allowed: true,
-      staffName: String(row[0] || ''),
-      role: String(row[8] || '')
+      staffName: String(row[0] || '').trim(),
+      role: role
     };
   }
 
@@ -207,6 +238,106 @@ function registerStaff_(body) {
     ok: true,
     registered: false,
     message: 'ไม่พบชื่อเจ้าหน้าที่นี้ในรายการที่เจ้าของเตรียมไว้'
+  };
+}
+
+function getGroupConfig_(groupId) {
+  const id = String(groupId || '').trim();
+  if (!id) return null;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.GROUP_SHEET);
+  if (!sh || sh.getLastRow() < 2) return null;
+
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 9).getValues();
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][1] || '').trim() !== id) continue;
+    return {
+      rowNo: i + 2,
+      name: String(values[i][0] || '').trim(),
+      groupId: id,
+      botEnabled: isTrue_(values[i][2]),
+      replyEnabled: isTrue_(values[i][3]),
+      notificationsEnabled: isTrue_(values[i][4]),
+      mode: String(values[i][5] || '').trim()
+    };
+  }
+  return null;
+}
+
+function setGroupEnabled_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    sourceType: body.sourceType,
+    groupId: body.groupId,
+    permission: 'จัดการเจ้าหน้าที่',
+    allowGroupSetup: true
+  });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, changed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+  if (String(body.sourceType || '').trim() !== 'group' || !String(body.groupId || '').trim()) {
+    return { ok: true, changed: false, message: 'คำสั่งนี้ต้องใช้ในกลุ่ม LINE' };
+  }
+
+  const enabled = body.enabled === true;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.GROUP_SHEET);
+  if (!sh) return { ok: false, error: 'ไม่พบชีตกลุ่ม LINE' };
+
+  const groupId = String(body.groupId || '').trim();
+  const groupName = String(body.groupName || '').trim() || 'LINE Group';
+  const current = getGroupConfig_(groupId);
+
+  if (current) {
+    sh.getRange(current.rowNo, 1).setValue(groupName || current.name);
+    sh.getRange(current.rowNo, 3).setValue(enabled);
+    sh.getRange(current.rowNo, 4).setValue(enabled);
+    sh.getRange(current.rowNo, 6).setValue(enabled ? 'ตอบทุกข้อความ' : 'ปิด');
+    sh.getRange(current.rowNo, 7).setValue(access.staffName || 'เจ้าของ');
+    if (enabled && !sh.getRange(current.rowNo, 8).getValue()) sh.getRange(current.rowNo, 8).setValue(new Date());
+  } else {
+    sh.appendRow([
+      groupName, groupId, enabled, enabled, false,
+      enabled ? 'ตอบทุกข้อความ' : 'ปิด',
+      access.staffName || 'เจ้าของ', new Date(), ''
+    ]);
+  }
+
+  return {
+    ok: true,
+    changed: true,
+    enabled: enabled,
+    groupName: groupName,
+    message: enabled ? 'เปิดใช้ Admin ID ในกลุ่มนี้แล้ว' : 'ปิดใช้ Admin ID ในกลุ่มนี้แล้ว'
+  };
+}
+
+function getGroupStatus_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    sourceType: body.sourceType,
+    groupId: body.groupId,
+    permission: 'จัดการเจ้าหน้าที่',
+    allowGroupSetup: true
+  });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+  if (String(body.sourceType || '').trim() !== 'group' || !String(body.groupId || '').trim()) {
+    return { ok: true, message: 'คำสั่งนี้ต้องใช้ในกลุ่ม LINE' };
+  }
+
+  const group = getGroupConfig_(body.groupId);
+  return {
+    ok: true,
+    group: group || {
+      name: String(body.groupName || '').trim() || 'LINE Group',
+      groupId: String(body.groupId || '').trim(),
+      botEnabled: false,
+      replyEnabled: false,
+      notificationsEnabled: false,
+      mode: 'ยังไม่ลงทะเบียน'
+    }
   };
 }
 
