@@ -62,3 +62,5 @@ It supports:
 ## Safety
 
 Customer search is permission-gated by LINE User ID and the `เจ้าหน้าที่` sheet. Write operations should not be enabled until read-only flows have been verified end-to-end.
+
+Deployment trigger after public visibility.
