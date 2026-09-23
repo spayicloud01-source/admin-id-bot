@@ -9,6 +9,9 @@ export default async function handler(req, res) {
   const cases = [
     ["คิวตรวจสอบ", "listReviewQueue", ""],
     ["ลูกค้ารออนุมัติ", "listPendingCustomerBindings", ""],
+    ["อ่านบัตรล่าสุด", "getRecentIdentityImages", ""],
+    ["อ่านบัตรล่าสุด 101", "getRecentIdentityImages", "101"],
+    ["กรอกชื่อเอง 101 สมชาย ใจดี 1234", "verifyCustomerIdentity", "101"],
     ["อนุมัติลูกค้า 12", "resolveCustomerBinding", "12"],
     ["ไม่อนุมัติลูกค้า 12", "resolveCustomerBinding", "12"],
     ["รออนุมัติ", "listPendingStaff", ""],
@@ -60,6 +63,29 @@ export default async function handler(req, res) {
     input: "permission parser",
     pass: permission?.targetPermission === "ดูรายงาน" && permission?.permissionEnabled === true,
     targetPermission: permission?.targetPermission || null,
+  });
+
+  const identity = parseCommand("กรอกชื่อเอง 101 สมชาย ใจดี 1234");
+  tests.push({
+    input: "identity parser",
+    pass:
+      identity?.firstName === "สมชาย" &&
+      identity?.lastName === "ใจดี" &&
+      identity?.idLast4 === "1234",
+    firstName: identity?.firstName || null,
+    lastName: identity?.lastName || null,
+    idLast4: identity?.idLast4 || null,
+  });
+
+  const partialIdentity = parseCommand("กรอกชื่อเอง 101");
+  tests.push({
+    input: "partial identity parser",
+    pass:
+      partialIdentity?.action === "verifyCustomerIdentity" &&
+      partialIdentity?.query === "101" &&
+      !partialIdentity?.firstName &&
+      !partialIdentity?.lastName,
+    query: partialIdentity?.query || "",
   });
 
   const ok = tests.every((x) => x.pass);
