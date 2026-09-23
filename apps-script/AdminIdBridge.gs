@@ -51,6 +51,10 @@ function doPost(e) {
         result = listStaff_(body); break;
       case 'setStaffEnabled':
         result = setStaffEnabled_(body); break;
+      case 'getStaffPermissions':
+        result = getStaffPermissions_(body); break;
+      case 'setStaffPermission':
+        result = setStaffPermission_(body); break;
       case 'setGroupEnabled':
         result = setGroupEnabled_(body); break;
       case 'getGroupStatus':
@@ -488,6 +492,105 @@ function getReminderTriggerStatus_(body) {
     installed: triggers.length > 0,
     count: triggers.length,
     remindTime: String(getSettingValue_('REMIND_TIME', '09:00'))
+  };
+}
+
+function staffPermissionMap_() {
+  return {
+    'ดูข้อมูลลูกค้า': 10,
+    'ตอบลูกค้า': 11,
+    'ยืนยันสลิป': 12,
+    'บันทึกชำระ': 13,
+    'ปิดยอด': 14,
+    'แก้ข้อมูลลูกค้า': 15,
+    'ดูรายงาน': 16,
+    'จัดการเจ้าหน้าที่': 17,
+    'ดูประวัติ': 18,
+    'บันทึกโน้ต': 19
+  };
+}
+
+function findStaffByName_(staffName) {
+  const name = String(staffName || '').trim();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  if (!sh || sh.getLastRow() < 2) return { sheet: sh, matches: [] };
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
+  const matches = [];
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() === name) {
+      matches.push({ rowNo: i + 2, row: values[i] });
+    }
+  }
+  return { sheet: sh, matches: matches };
+}
+
+function getStaffPermissions_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'จัดการเจ้าหน้าที่' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const found = findStaffByName_(body.query);
+  if (!found.matches.length) return { ok: true, message: 'ไม่พบชื่อเจ้าหน้าที่: ' + String(body.query || '') };
+  if (found.matches.length > 1) return { ok: true, message: 'พบชื่อซ้ำ กรุณาแก้ชื่อในชีตก่อน' };
+
+  const target = found.matches[0].row;
+  const map = staffPermissionMap_();
+  const permissions = {};
+  Object.keys(map).forEach(function(name) {
+    permissions[name] = target[map[name] - 1] === true;
+  });
+
+  return {
+    ok: true,
+    staffName: String(target[0] || '').trim(),
+    role: String(target[8] || '').trim(),
+    status: String(target[2] || '').trim(),
+    botEnabled: target[19] === true,
+    permissions: permissions
+  };
+}
+
+function setStaffPermission_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'จัดการเจ้าหน้าที่' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, changed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const permissionName = String(body.targetPermission || '').trim();
+  const map = staffPermissionMap_();
+  if (!map[permissionName]) {
+    return {
+      ok: true,
+      changed: false,
+      message: 'ไม่พบสิทธิ์นี้\nใช้ได้: ' + Object.keys(map).join(' / ')
+    };
+  }
+
+  const found = findStaffByName_(body.query);
+  if (!found.matches.length) return { ok: true, changed: false, message: 'ไม่พบชื่อเจ้าหน้าที่: ' + String(body.query || '') };
+  if (found.matches.length > 1) return { ok: true, changed: false, message: 'พบชื่อซ้ำ กรุณาแก้ชื่อในชีตก่อน' };
+
+  const target = found.matches[0];
+  if (String(target.row[8] || '').trim() === 'เจ้าของ') {
+    return { ok: true, changed: false, message: 'ไม่แก้สิทธิ์บัญชีเจ้าของผ่านคำสั่งนี้' };
+  }
+  if (String(target.row[2] || '').trim() !== 'เจ้าหน้าที่' || target.row[19] !== true) {
+    return { ok: true, changed: false, message: 'เจ้าหน้าที่คนนี้ยังไม่ได้เปิดใช้งาน' };
+  }
+
+  const enabled = body.permissionEnabled === true;
+  found.sheet.getRange(target.rowNo, map[permissionName]).setValue(enabled);
+
+  return {
+    ok: true,
+    changed: true,
+    staffName: String(target.row[0] || '').trim(),
+    permissionName: permissionName,
+    enabled: enabled,
+    staffLineUserId: String(target.row[1] || '').trim(),
+    message: (enabled ? 'ให้สิทธิ์ ' : 'ถอนสิทธิ์ ') + permissionName + ' สำหรับ ' + String(target.row[0] || '').trim() + ' แล้ว'
   };
 }
 
