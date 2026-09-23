@@ -77,6 +77,8 @@ function doPost(e) {
         result = dailyOwnerReport_(body); break;
       case 'systemStatus':
         result = systemStatus_(body); break;
+      case 'auditSourceSchemas':
+        result = auditSourceSchemas_(body); break;
       case 'listDueCustomers':
         result = listDueCustomers_(body); break;
       case 'getHistory':
@@ -1356,6 +1358,124 @@ function addNote_(body) {
   return { ok: true, added: true, customer: m };
 }
 
+function findCustomerIdentity_(sourceName, sheetName, queueValue) {
+  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
+  if (!src || src.getLastRow() < 2) return null;
+
+  const rows = src.getRange(2, 1, src.getLastRow() - 1, 7).getValues();
+  let sourceUrl = '';
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0] || '').trim() === String(sourceName || '').trim()) {
+      sourceUrl = String(rows[i][1] || '').trim();
+      break;
+    }
+  }
+  if (!sourceUrl) return null;
+
+  const id = extractSpreadsheetId_(sourceUrl);
+  if (!id) return null;
+  const ss = SpreadsheetApp.openById(id);
+  const sh = ss.getSheetByName(String(sheetName || '').trim());
+  if (!sh) return null;
+
+  const h = detectHeaders_(sh);
+  if (!h || !h.queue) return null;
+  const startRow = h.headerRow + 1;
+  const lastRow = sh.getLastRow();
+  if (startRow > lastRow) return null;
+
+  const rowCount = Math.min(lastRow - h.headerRow, CONFIG.MAX_ROWS_PER_TAB);
+  const maxCol = Math.max.apply(null, Object.keys(h).filter(function(k){ return k !== 'headerRow'; }).map(function(k){ return h[k]; }).filter(function(v){ return v > 0; }));
+  const values = sh.getRange(startRow, 1, rowCount, maxCol).getDisplayValues();
+  const targetQueue = normalizeGeneral_(queueValue);
+
+  for (let r = 0; r < values.length; r++) {
+    const row = values[r];
+    if (normalizeGeneral_(getCell_(row, h.queue)) !== targetQueue) continue;
+    return {
+      source: String(sourceName || '').trim(),
+      sheet: sh.getName(),
+      row: startRow + r,
+      queue: getCell_(row, h.queue),
+      name: getCell_(row, h.name),
+      phone: getCell_(row, h.phone),
+      appleId: getCell_(row, h.appleId),
+      model: getCell_(row, h.model),
+      status: getCell_(row, h.status),
+      principal: getCell_(row, h.principal),
+      fee: getCell_(row, h.fee),
+      saleDate: getCell_(row, h.saleDate),
+      dueDate: getCell_(row, h.dueDate),
+      outstanding: getCell_(row, h.outstanding),
+      closeAmount: getCell_(row, h.closeAmount)
+    };
+  }
+  return null;
+}
+
+function auditSourceSchemas_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น', items: [] };
+  }
+
+  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
+  if (!src || src.getLastRow() < 2) return { ok: true, items: [], summary: { sources: 0, tabs: 0, ready: 0, issues: 0 } };
+
+  const rows = src.getRange(2, 1, src.getLastRow() - 1, 7).getValues();
+  const items = [];
+  let sourceCount = 0, tabCount = 0, readyCount = 0, issueCount = 0;
+
+  for (let i = 0; i < rows.length; i++) {
+    if (!isTrue_(rows[i][2]) || !String(rows[i][1] || '').trim()) continue;
+    sourceCount++;
+    const sourceName = String(rows[i][0] || '').trim();
+    try {
+      const id = extractSpreadsheetId_(rows[i][1]);
+      const ss = SpreadsheetApp.openById(id);
+      let tabs = ss.getSheets().filter(function(sh) {
+        return !sh.isSheetHidden() && !CONFIG.EXCLUDED_TAB_PATTERNS.some(function(rx){ return rx.test(sh.getName()); });
+      });
+      if (!isTrue_(rows[i][3])) tabs = tabs.slice(0, 1);
+
+      for (let t = 0; t < tabs.length; t++) {
+        tabCount++;
+        const h = detectHeaders_(tabs[t]);
+        const missing = [];
+        if (!h) {
+          missing.push('หัวตาราง');
+        } else {
+          if (!h.queue) missing.push('คิว');
+          if (!h.name) missing.push('ชื่อ');
+          if (!h.status) missing.push('สถานะ');
+          if (!h.principal) missing.push('ยอด');
+          if (!h.fee) missing.push('ค่าเช่า/ดอก');
+          if (!h.dueDate) missing.push('วันจ่าย');
+        }
+        const ready = missing.length === 0;
+        if (ready) readyCount++; else issueCount++;
+        items.push({
+          source: sourceName,
+          sheet: tabs[t].getName(),
+          ready: ready,
+          missing: missing
+        });
+      }
+    } catch (err) {
+      issueCount++;
+      items.push({ source: sourceName, sheet: '', ready: false, missing: ['เปิดชีตไม่ได้'], error: err.message });
+    }
+  }
+
+  return {
+    ok: true,
+    summary: { sources: sourceCount, tabs: tabCount, ready: readyCount, issues: issueCount },
+    items: items.slice(0, 50)
+  };
+}
+
 function getReviewQueueItem_(body) {
   const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
   if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
@@ -1372,8 +1492,18 @@ function getReviewQueueItem_(body) {
   if (!sh || rowNo > sh.getLastRow()) return { ok: true, item: null, message: 'ไม่พบคิวนี้' };
 
   const row = sh.getRange(rowNo, 1, 1, 12).getDisplayValues()[0];
+  const sourceParts = String(row[4] || '').split(' / ');
+  const sourceName = String(sourceParts[0] || '').trim();
+  const sourceSheet = sourceParts.slice(1).join(' / ').trim();
+  let liveCustomer = null;
+  try {
+    liveCustomer = findCustomerIdentity_(sourceName, sourceSheet, row[2]);
+  } catch (err) {
+    console.log('live review lookup failed: ' + err.message);
+  }
   return {
     ok: true,
+    liveCustomer: liveCustomer,
     item: {
       rowNo: rowNo,
       dateTime: row[0],
@@ -1474,6 +1604,24 @@ function resolveReviewQueue_(body) {
   const row = sh.getRange(rowNo, 1, 1, 12).getDisplayValues()[0];
   if (String(row[8] || '').trim() !== 'รอตรวจ') {
     return { ok: true, resolved: false, message: 'คิวนี้ถูกตรวจแล้ว' };
+  }
+
+  if (decision === 'ผ่าน') {
+    const sourceParts = String(row[4] || '').split(' / ');
+    const sourceName = String(sourceParts[0] || '').trim();
+    const sourceSheet = sourceParts.slice(1).join(' / ').trim();
+    let liveCustomer = null;
+    try {
+      liveCustomer = findCustomerIdentity_(sourceName, sourceSheet, row[2]);
+    } catch (err) {}
+    if (!liveCustomer || (row[3] && normalizeGeneral_(liveCustomer.name) !== normalizeGeneral_(row[3]))) {
+      return {
+        ok: true,
+        resolved: false,
+        stale: true,
+        message: 'ต้นทางเปลี่ยนหรือไม่พบรายการ กรุณาใช้ ดูคิว ' + rowNo + ' ก่อน'
+      };
+    }
   }
 
   sh.getRange(rowNo, 9).setValue(decision);
