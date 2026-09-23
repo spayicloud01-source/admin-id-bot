@@ -77,7 +77,14 @@ function customerReminderMessage(item) {
 }
 
 async function sendCustomerReminders() {
-  const batch = await callSheetsBridge({ action: "getCustomerReminderBatch" });
+  let batch;
+  try {
+    batch = await callSheetsBridge({ action: "getCustomerReminderBatch" });
+  } catch (error) {
+    // Keep the existing internal reminder working while bridge 102 is being published.
+    console.warn("Customer reminder bridge action unavailable", error);
+    return { sent: 0, failed: 0, total: 0, skipped: true, reason: "bridge-not-ready" };
+  }
   const items = Array.isArray(batch?.items) ? batch.items : [];
   if (!items.length) {
     return { sent: 0, failed: 0, total: 0 };
