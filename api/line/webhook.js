@@ -147,16 +147,32 @@ async function handleEvent(event) {
 
       if (registration?.registered || registration?.alreadyRegistered) {
         if (registration?.registered && Array.isArray(registration.ownerLineUserIds)) {
+          const staffName = registration.staffName || text;
           const ownerText = [
             "มีเจ้าหน้าที่ขออนุมัติ",
-            "ชื่อ: " + (registration.staffName || text),
-            "",
-            "พิมพ์: อนุมัติ " + (registration.staffName || text)
+            "ชื่อ: " + staffName
           ].join("\n");
+
+          const ownerMessage = {
+            type: "text",
+            text: ownerText,
+            quickReply: {
+              items: [
+                {
+                  type: "action",
+                  action: {
+                    type: "message",
+                    label: "อนุมัติ",
+                    text: "อนุมัติ " + staffName
+                  }
+                }
+              ]
+            }
+          };
 
           await Promise.all(
             registration.ownerLineUserIds.map((ownerId) =>
-              pushMessage(ownerId, [{ type: "text", text: ownerText }]).catch((error) => {
+              pushMessage(ownerId, [ownerMessage]).catch((error) => {
                 console.warn("Owner approval alert failed", error);
               })
             )
@@ -244,6 +260,17 @@ async function handleEvent(event) {
           : "ไม่พบข้อมูลลูกค้า";
       } else if (command.action === "approveStaff") {
         responseText = result.message || (result.approved ? "อนุมัติเจ้าหน้าที่แล้ว" : "ไม่สามารถอนุมัติได้");
+
+        if (result.approved && result.staffLineUserId) {
+          await pushMessage(result.staffLineUserId, [
+            {
+              type: "text",
+              text: "อนุมัติแล้ว\nตอนนี้สามารถใช้งาน Admin ID ได้"
+            }
+          ]).catch((error) => {
+            console.warn("Staff approval notification failed", error);
+          });
+        }
       }
 
       await replyMessage(event.replyToken, [{ type: "text", text: responseText || "ดำเนินการแล้ว" }]);
