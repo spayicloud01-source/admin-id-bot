@@ -218,7 +218,7 @@ function postDeploySelfTest_() {
   add('BOT_STAFF_ENABLED', staffEnabled, String(staffEnabled), true);
   add('BOT_CUSTOMER_ENABLED', isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true)), String(getSettingValue_('BOT_CUSTOMER_ENABLED', true)), true);
   add('Safety เขียนต้นทางปิด', writesEnabled === false, writesEnabled ? 'เปิด' : 'ปิด', true);
-  add('แจ้งเตือนภายใน', reminderInternal === true, reminderInternal ? 'ภายในเท่านั้น' : 'ส่งลูกค้าได้', false);
+  add('แจ้งเตือนลูกค้า', reminderInternal === false, reminderInternal ? 'ยังเป็นภายในเท่านั้น' : 'เปิดส่งลูกค้า', false);
   add('OK Slip', okSlip, okSlip ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม', false);
 
   try {
@@ -317,7 +317,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.23-101', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.23-102', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
