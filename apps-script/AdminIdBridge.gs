@@ -1208,10 +1208,29 @@ function getCustomerInfo_(body) {
   return { ok: true, matches: matches, info: matches[0] };
 }
 
+function parseQualifiedSearch_(query) {
+  const text = String(query || '').trim();
+  const idx = text.indexOf(':');
+  if (idx <= 0) return { source: '', query: text };
+
+  const source = text.slice(0, idx).trim();
+  const inner = text.slice(idx + 1).trim();
+  if (!source || !inner) return { source: '', query: text };
+
+  return { source: source, query: inner };
+}
+
 function searchCustomer_(query, includeDetails) {
+  const qualified = parseQualifiedSearch_(query);
+  const sourceFilter = normalizeGeneral_(qualified.source);
+  const effectiveQuery = qualified.query;
+
   const cache = CacheService.getScriptCache();
   const cacheKey = 'customer-search:' + Utilities.base64EncodeWebSafe(
-    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, normalizeGeneral_(query))
+    Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_256,
+      normalizeGeneral_(sourceFilter + ':' + effectiveQuery)
+    )
   );
   const cached = cache.get(cacheKey);
   if (cached) {
@@ -1234,6 +1253,7 @@ function searchCustomer_(query, includeDetails) {
     const sourceName = String(sources[i][0] || '').trim();
     const url = String(sources[i][1] || '').trim();
     const enabled = isTrue_(sources[i][2]);
+    if (sourceFilter && normalizeGeneral_(sourceName) !== sourceFilter) continue;
     const searchAllTabs = isTrue_(sources[i][3]);
     if (!enabled || !url) continue;
 
@@ -1248,7 +1268,7 @@ function searchCustomer_(query, includeDetails) {
       if (!searchAllTabs) tabs = tabs.slice(0, 1);
 
       for (let t = 0; t < tabs.length && results.length < CONFIG.MAX_RESULTS; t++) {
-        searchTab_(tabs[t], sourceName, query, results, true);
+        searchTab_(tabs[t], sourceName, effectiveQuery, results, true);
       }
     } catch (err) {
       console.log('ค้นไม่ได้: ' + sourceName + ' / ' + err.message);
