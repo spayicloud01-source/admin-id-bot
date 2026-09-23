@@ -124,6 +124,10 @@ function doPost(e) {
         result = queueFinancialReview_(body, 'ตรวจสลิป'); break;
       case 'rememberSlipMessage':
         result = rememberSlipMessage_(body); break;
+      case 'rememberRecentImage':
+        result = rememberRecentImage_(body); break;
+      case 'getRecentIdentityImages':
+        result = getRecentIdentityImages_(body); break;
       case 'queueClose':
         result = queueFinancialReview_(body, 'ปิดยอด'); break;
       case 'listReviewQueue':
@@ -2747,6 +2751,79 @@ function slipCacheKey_(lineUserId) {
   const raw = String(lineUserId || '').trim();
   const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw);
   return 'recent-slip:' + Utilities.base64EncodeWebSafe(digest).slice(0, 40);
+}
+
+function recentImageCacheKey_(lineUserId) {
+  return 'recent_images:' + String(lineUserId || '').trim();
+}
+
+function rememberRecentImage_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    sourceType: body.sourceType,
+    groupId: body.groupId,
+    permission: 'แก้ข้อมูลลูกค้า'
+  });
+  if (!access.allowed) {
+    return { ok: true, remembered: false, message: access.message || 'ไม่มีสิทธิ์แก้ข้อมูลลูกค้า' };
+  }
+
+  const messageId = String(body.messageId || '').trim();
+  if (!messageId) return { ok: true, remembered: false, message: 'ไม่พบรหัสรูป' };
+
+  const cache = CacheService.getScriptCache();
+  const key = recentImageCacheKey_(body.lineUserId);
+  let items = [];
+  const old = cache.get(key);
+  if (old) {
+    try { items = JSON.parse(old) || []; } catch (err) { items = []; }
+  }
+
+  items = items.filter(function(x) {
+    return x && x.messageId && String(x.messageId) !== messageId;
+  });
+  items.push({
+    messageId: messageId,
+    receivedAt: new Date().toISOString()
+  });
+  if (items.length > 10) items = items.slice(items.length - 10);
+
+  cache.put(key, JSON.stringify(items), 600);
+
+  return {
+    ok: true,
+    remembered: true,
+    count: items.length,
+    staffName: access.staffName || '',
+    message: 'เก็บรูปล่าสุดไว้ชั่วคราวแล้ว'
+  };
+}
+
+function getRecentIdentityImages_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    sourceType: body.sourceType,
+    groupId: body.groupId,
+    permission: 'แก้ข้อมูลลูกค้า'
+  });
+  if (!access.allowed) {
+    return { ok: true, items: [], message: access.message || 'ไม่มีสิทธิ์แก้ข้อมูลลูกค้า' };
+  }
+
+  const value = CacheService.getScriptCache().get(recentImageCacheKey_(body.lineUserId));
+  if (!value) {
+    return { ok: true, items: [], message: 'ไม่พบรูปในช่วง 10 นาทีล่าสุด' };
+  }
+
+  let items = [];
+  try { items = JSON.parse(value) || []; } catch (err) { items = []; }
+
+  return {
+    ok: true,
+    items: items.slice().reverse(),
+    count: items.length,
+    message: items.length ? 'พบรูปล่าสุด ' + items.length + ' รูป' : 'ไม่พบรูปในช่วง 10 นาทีล่าสุด'
+  };
 }
 
 function rememberSlipMessage_(body) {
