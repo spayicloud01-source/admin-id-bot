@@ -1,4 +1,5 @@
 const CONFIG = {
+  VERSION: '2026.09.23-90',
   SOURCE_SHEET: 'ลิ้งชีต',
   STAFF_SHEET: 'เจ้าหน้าที่',
   HISTORY_SHEET: 'ประวัติลูกค้า',
@@ -23,7 +24,11 @@ const CONFIG = {
 };
 
 function doGet() {
-  return json_({ ok: true, service: 'Admin ID Google Sheets Bridge' });
+  return json_({
+    ok: true,
+    service: 'Admin ID Google Sheets Bridge',
+    version: CONFIG.VERSION
+  });
 }
 
 function doPost(e) {
@@ -37,6 +42,8 @@ function doPost(e) {
 
     let result;
     switch (body.action) {
+      case 'getBridgeVersion':
+        result = { ok: true, version: CONFIG.VERSION }; break;
       case 'checkAccess':
         result = checkAccess_(body); break;
       case 'registerStaff':
