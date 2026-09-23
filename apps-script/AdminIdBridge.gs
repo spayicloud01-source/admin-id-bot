@@ -12,6 +12,7 @@ const CONFIG = {
   HEADER_SCAN_ROWS: 20,
   HEADER_SCAN_COLS: 40,
   SEARCH_CACHE_SECONDS: 300,
+  REMINDER_ENDPOINT: 'https://admin-id-bot.vercel.app/api/reminders/run',
   EXCLUDED_TAB_PATTERNS: [
     /^LINE แจ้งค่าเช่า$/i,
     /สรุป/i,
@@ -54,6 +55,14 @@ function doPost(e) {
         result = setGroupEnabled_(body); break;
       case 'getGroupStatus':
         result = getGroupStatus_(body); break;
+      case 'setGroupNotification':
+        result = setGroupNotification_(body); break;
+      case 'installReminderTrigger':
+        result = installReminderTrigger_(body); break;
+      case 'getReminderTriggerStatus':
+        result = getReminderTriggerStatus_(body); break;
+      case 'getReminderBatch':
+        result = getReminderBatch_(body); break;
       case 'searchCustomer':
         result = { ok: true, matches: searchCustomer_(String(body.query || '').trim()) }; break;
       case 'getCustomerInfo':
@@ -342,6 +351,143 @@ function getGroupStatus_(body) {
       notificationsEnabled: false,
       mode: 'ยังไม่ลงทะเบียน'
     }
+  };
+}
+
+function setGroupNotification_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    sourceType: body.sourceType,
+    groupId: body.groupId,
+    permission: 'จัดการเจ้าหน้าที่',
+    allowGroupSetup: true
+  });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, changed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+  if (String(body.sourceType || '').trim() !== 'group' || !String(body.groupId || '').trim()) {
+    return { ok: true, changed: false, message: 'คำสั่งนี้ต้องใช้ในกลุ่ม LINE' };
+  }
+
+  const group = getGroupConfig_(body.groupId);
+  if (!group) return { ok: true, changed: false, message: 'ต้องเปิดกลุ่มก่อนด้วยคำสั่ง เปิดกลุ่ม' };
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.GROUP_SHEET);
+  const enabled = body.enabled === true;
+  sh.getRange(group.rowNo, 5).setValue(enabled);
+  return {
+    ok: true,
+    changed: true,
+    enabled: enabled,
+    message: enabled ? 'เปิดรับแจ้งเตือนในกลุ่มนี้แล้ว' : 'ปิดรับแจ้งเตือนในกลุ่มนี้แล้ว'
+  };
+}
+
+function getReminderOwnerLineIds_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
+  return values.filter(function(r) {
+    return String(r[8] || '').trim() === 'เจ้าของ' &&
+      String(r[2] || '').trim() === 'เจ้าหน้าที่' &&
+      r[19] === true &&
+      isTrue_(r[3]) &&
+      String(r[1] || '').trim();
+  }).map(function(r){ return String(r[1] || '').trim(); });
+}
+
+function getReminderGroupIds_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.GROUP_SHEET);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 9).getValues();
+  return values.filter(function(r) {
+    return String(r[1] || '').trim() && isTrue_(r[2]) && isTrue_(r[4]);
+  }).map(function(r){ return String(r[1] || '').trim(); });
+}
+
+function getReminderBatch_(body) {
+  const owners = getReminderOwnerLineIds_();
+  if (!owners.length) return { ok: true, recipients: [], digest: null };
+
+  const fakeOwner = owners[0];
+  const base = { lineUserId: fakeOwner, sourceType: 'user', groupId: '' };
+  const upcoming = listDueCustomers_(Object.assign({}, base, { dueMode: 'upcoming' }));
+  const today = listDueCustomers_(Object.assign({}, base, { dueMode: 'today' }));
+  const overdue = listDueCustomers_(Object.assign({}, base, { dueMode: 'overdue' }));
+
+  return {
+    ok: true,
+    recipients: owners.concat(getReminderGroupIds_()).filter(function(v, i, a){ return a.indexOf(v) === i; }),
+    digest: {
+      upcoming: (upcoming.items || []).slice(0, 10),
+      today: (today.items || []).slice(0, 10),
+      overdue: (overdue.items || []).slice(0, 10),
+      upcomingCount: (upcoming.items || []).length,
+      todayCount: (today.items || []).length,
+      overdueCount: (overdue.items || []).length,
+      generatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
+    }
+  };
+}
+
+function triggerDailyReminder_() {
+  const secret = PropertiesService.getScriptProperties().getProperty('SHEETS_BRIDGE_SECRET');
+  if (!secret) throw new Error('SHEETS_BRIDGE_SECRET missing');
+  const response = UrlFetchApp.fetch(CONFIG.REMINDER_ENDPOINT, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({ secret: secret }),
+    muteHttpExceptions: true
+  });
+  console.log('Reminder endpoint: ' + response.getResponseCode() + ' ' + response.getContentText().slice(0, 500));
+}
+
+function installReminderTrigger_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'จัดการเจ้าหน้าที่' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, installed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const triggers = ScriptApp.getProjectTriggers();
+  triggers.forEach(function(t) {
+    if (t.getHandlerFunction() === 'triggerDailyReminder_') ScriptApp.deleteTrigger(t);
+  });
+
+  const timeText = String(getSettingValue_('REMIND_TIME', '09:00'));
+  const m = timeText.match(/^(\d{1,2}):/);
+  let hour = m ? Number(m[1]) : 9;
+  if (!Number.isInteger(hour) || hour < 0 || hour > 23) hour = 9;
+
+  ScriptApp.newTrigger('triggerDailyReminder_')
+    .timeBased()
+    .everyDays(1)
+    .atHour(hour)
+    .create();
+
+  return {
+    ok: true,
+    installed: true,
+    hour: hour,
+    message: 'ติดตั้งแจ้งเตือนรายวันแล้ว ประมาณ ' + String(hour).padStart(2, '0') + ':00'
+  };
+}
+
+function getReminderTriggerStatus_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'จัดการเจ้าหน้าที่' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+  const triggers = ScriptApp.getProjectTriggers().filter(function(t) {
+    return t.getHandlerFunction() === 'triggerDailyReminder_';
+  });
+  return {
+    ok: true,
+    installed: triggers.length > 0,
+    count: triggers.length,
+    remindTime: String(getSettingValue_('REMIND_TIME', '09:00'))
   };
 }
 
