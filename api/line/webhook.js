@@ -533,6 +533,9 @@ async function handleEvent(event) {
       };
 
       if (command.eventType) payload.eventType = command.eventType;
+      if (command.firstName) payload.firstName = command.firstName;
+      if (command.lastName) payload.lastName = command.lastName;
+      if (command.idLast4) payload.idLast4 = command.idLast4;
       if (command.note) payload.note = command.note;
       if (command.amount != null) payload.amount = command.amount;
       if (command.decision) payload.decision = command.decision;
@@ -547,7 +550,11 @@ async function handleEvent(event) {
       const result = await callSheetsBridge(payload);
 
       let responseText = "";
-      if (command.action === "listPendingCustomerBindings") {
+      if (command.action === "verifyCustomerIdentity") {
+        responseText = result.needsSelection
+          ? "พบหลายรายการ กรุณาระบุคำค้นให้ชัดขึ้น\n\n" + formatCustomerMatches(result.matches || [])
+          : (result.message || (result.verified ? "ยืนยันตัวตนแล้ว" : "ยืนยันตัวตนไม่ได้"));
+      } else if (command.action === "listPendingCustomerBindings") {
         const items = Array.isArray(result.items) ? result.items : [];
         responseText = items.length
           ? "ลูกค้ารออนุมัติ (" + items.length + ")\n" + items.slice(0, 10).map((x) =>
