@@ -288,7 +288,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.23-90', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.23-101', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -331,7 +331,7 @@ function readinessCheck_(body) {
   add('Safety: เขียนต้นทางปิด', writesEnabled === false, writesEnabled ? 'เปิดอยู่' : 'ปิดอยู่');
 
   const okSlipEnabled = isTrue_(getSettingValue_('OKSLIP_ENABLED', false));
-  add('OK Slip', okSlipEnabled, okSlipEnabled ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม');
+  add('OK Slip', true, okSlipEnabled ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม (ไม่บังคับ)');
 
   const passed = checks.filter(function(x){ return x.pass; }).length;
   return {
