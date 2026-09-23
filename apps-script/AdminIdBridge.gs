@@ -229,6 +229,7 @@ function approveStaff_(body) {
     ok: true,
     approved: true,
     staffName: staffName,
+    staffLineUserId: String(row[1] || '').trim(),
     message: 'อนุมัติ ' + staffName + ' แล้ว\nสิทธิ์: ดูข้อมูลลูกค้า + ดูประวัติ\nยังไม่เปิดสิทธิ์การเงิน'
   };
 }
