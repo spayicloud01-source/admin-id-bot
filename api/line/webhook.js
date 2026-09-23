@@ -125,6 +125,8 @@ function menuQuickReply(role) {
     ["ใกล้ครบกำหนด", "ใกล้ครบกำหนด"],
     ["ค้างชำระ", "ค้างชำระทั้งหมด"],
     ["คิวตรวจสอบ", "คิวตรวจสอบ"],
+    ["อ่านบัตร", "อ่านบัตรล่าสุด"],
+    ["กรอกชื่อเอง", "กรอกชื่อเอง"],
     ["รายงานวันนี้", "รายงานวันนี้"],
   ];
 
@@ -146,6 +148,25 @@ function menuQuickReply(role) {
     }));
 
   return { items };
+}
+
+function staffImageQuickReply() {
+  return {
+    items: [
+      {
+        type: "action",
+        action: { type: "message", label: "อ่านบัตรรูปล่าสุด", text: "อ่านบัตรล่าสุด" },
+      },
+      {
+        type: "action",
+        action: { type: "message", label: "กรอกชื่อเอง", text: "กรอกชื่อเอง" },
+      },
+      {
+        type: "action",
+        action: { type: "message", label: "เมนู", text: "เมนู" },
+      },
+    ],
+  };
 }
 
 function customerSelfQuickReply() {
@@ -223,24 +244,49 @@ async function handleEvent(event) {
     if (!lineUserId) return;
 
     try {
-      const result = await callSheetsBridge({
-        action: "rememberSlipMessage",
-        lineUserId,
-        sourceType,
-        groupId,
-        messageId: event.message?.id || "",
-      });
+      const [identityResult, slipResult] = await Promise.all([
+        callSheetsBridge({
+          action: "rememberRecentImage",
+          lineUserId,
+          sourceType,
+          groupId,
+          messageId: event.message?.id || "",
+        }).catch(() => null),
+        callSheetsBridge({
+          action: "rememberSlipMessage",
+          lineUserId,
+          sourceType,
+          groupId,
+          messageId: event.message?.id || "",
+        }).catch(() => null),
+      ]);
 
-      const replyText = result.remembered
-        ? "รับรูปสลิปแล้ว\nภายใน 10 นาที พิมพ์ ยืนยันสลิป <ชื่อ/เบอร์/คิว/Apple ID>"
-        : (result.message || "ยังไม่สามารถรับสลิปได้");
+      if (identityResult?.remembered) {
+        await replyMessage(event.replyToken, [{
+          type: "text",
+          text: "รับรูปแล้ว เก็บไว้ชั่วคราว 10 นาที\nถ้าเป็นบัตรประชาชน กด “อ่านบัตรรูปล่าสุด”\nหรือกด “กรอกชื่อเอง”",
+          quickReply: staffImageQuickReply(),
+        }]);
+        return;
+      }
 
-      await replyMessage(event.replyToken, [{ type: "text", text: replyText }]);
-    } catch (error) {
-      console.error("Slip image capture failed", error);
+      if (slipResult?.remembered) {
+        await replyMessage(event.replyToken, [{
+          type: "text",
+          text: "รับรูปสลิปแล้ว\nภายใน 10 นาที พิมพ์ ยืนยันสลิป <ชื่อ/เบอร์/คิว/Apple ID>",
+        }]);
+        return;
+      }
+
       await replyMessage(event.replyToken, [{
         type: "text",
-        text: "รับรูปสลิปไม่สำเร็จ กรุณาลองใหม่"
+        text: identityResult?.message || slipResult?.message || "ยังไม่สามารถรับรูปได้",
+      }]);
+    } catch (error) {
+      console.error("Image capture failed", error);
+      await replyMessage(event.replyToken, [{
+        type: "text",
+        text: "รับรูปไม่สำเร็จ กรุณาลองใหม่"
       }]);
     }
     return;
@@ -504,7 +550,9 @@ async function handleEvent(event) {
     if (command) {
       if (command.requiresQuery !== false && !command.query) {
         const usage =
-          command.action === "addNote"
+          command.action === "verifyCustomerIdentity"
+            ? "รูปแบบ: " + command.prefix + " <คำค้น> <ชื่อ> <นามสกุล> [4ตัวท้าย]\nตัวอย่าง: " + command.prefix + " 101 สมชาย ใจดี 1234"
+            : command.action === "addNote"
             ? "รูปแบบ: โน้ต <คำค้น> <ข้อความ>"
             : command.action === "queuePayment"
               ? "รูปแบบ: บันทึกชำระ <คำค้น> <ยอด>"
@@ -550,7 +598,12 @@ async function handleEvent(event) {
       const result = await callSheetsBridge(payload);
 
       let responseText = "";
-      if (command.action === "verifyCustomerIdentity") {
+      if (command.action === "getRecentIdentityImages") {
+        const items = Array.isArray(result.items) ? result.items : [];
+        responseText = items.length
+          ? "พบรูปในช่วง 10 นาทีล่าสุด " + items.length + " รูป\nขั้นต่อไปจะให้ระบบคัดรูปบัตรและอ่านข้อความจากบัตร\nตอนนี้ยังไม่ได้เชื่อมตัวอ่านภาพบัตร"
+          : (result.message || "ไม่พบรูปล่าสุด");
+      } else if (command.action === "verifyCustomerIdentity") {
         responseText = result.needsSelection
           ? "พบหลายรายการ กรุณาระบุคำค้นให้ชัดขึ้น\n\n" + formatCustomerMatches(result.matches || [])
           : (result.message || (result.verified ? "ยืนยันตัวตนแล้ว" : "ยืนยันตัวตนไม่ได้"));
