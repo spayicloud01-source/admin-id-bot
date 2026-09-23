@@ -128,6 +128,8 @@ function doPost(e) {
         result = rememberRecentImage_(body); break;
       case 'getRecentIdentityImages':
         result = getRecentIdentityImages_(body); break;
+      case 'ocrThaiIdCardImage':
+        result = ocrThaiIdCardImage_(body); break;
       case 'queueClose':
         result = queueFinancialReview_(body, 'ปิดยอด'); break;
       case 'listReviewQueue':
@@ -2824,6 +2826,223 @@ function getRecentIdentityImages_(body) {
     count: items.length,
     message: items.length ? 'พบรูปล่าสุด ' + items.length + ' รูป' : 'ไม่พบรูปในช่วง 10 นาทีล่าสุด'
   };
+}
+
+function concatBytes_(parts) {
+  let out = [];
+  parts.forEach(function(part) {
+    const bytes = Array.isArray(part) ? part : Utilities.newBlob(String(part)).getBytes();
+    out = out.concat(bytes);
+  });
+  return out;
+}
+
+function extractThaiIdCardFields_(text) {
+  const raw = String(text || '').replace(/\r/g, '\n');
+  const lines = raw.split(/\n+/).map(function(x){ return String(x || '').trim(); }).filter(Boolean);
+  const compact = lines.join('\n');
+
+  const cardMarker = /(บัตร\s*(?:ประจำตัว)?\s*ประชาชน|บัตรประชาชน|thai\s*national\s*id|identification\s*card|เลข\s*ประจำตัว\s*ประชาชน|identification\s*number)/i;
+  const isThaiIdCard = cardMarker.test(compact);
+
+  let firstName = '';
+  let lastName = '';
+  let fullName = '';
+
+  function cleanThaiName_(value) {
+    return String(value || '')
+      .replace(/^(นาย|นางสาว|นาง|เด็กชาย|เด็กหญิง|ด\.ช\.|ด\.ญ\.)\s*/i, '')
+      .replace(/[^ก-๙A-Za-z\-'.\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+
+    let m = line.match(/(?:ชื่อตัวและชื่อสกุล|ชื่อ\s*[-:]?|name\s*[-:]?)\s*(.+)$/i);
+    if (m && !/นามสกุล|last\s*name/i.test(line)) {
+      const candidate = cleanThaiName_(m[1]);
+      if (candidate && !/^(thai|national|identification|เลข|เกิด|date|ศาสนา|ที่อยู่)/i.test(candidate)) {
+        const parts = candidate.split(/\s+/).filter(Boolean);
+        if (parts.length >= 2) {
+          firstName = parts[0];
+          lastName = parts.slice(1).join(' ');
+          fullName = (firstName + ' ' + lastName).trim();
+          break;
+        } else if (parts.length === 1) {
+          firstName = parts[0];
+        }
+      }
+    }
+  }
+
+  if (!lastName) {
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/(?:นามสกุล|last\s*name)\s*[-:]?\s*(.+)$/i);
+      if (m) {
+        lastName = cleanThaiName_(m[1]).split(/\s+/)[0] || '';
+        break;
+      }
+    }
+  }
+
+  if (!firstName) {
+    for (let i = 0; i < lines.length; i++) {
+      const m = lines[i].match(/(?:^|\s)(?:ชื่อ|name)\s*[-:]?\s*(.+)$/i);
+      if (m && !/นามสกุล|last\s*name/i.test(lines[i])) {
+        firstName = cleanThaiName_(m[1]).split(/\s+/)[0] || '';
+        if (firstName) break;
+      }
+    }
+  }
+
+  fullName = (firstName + ' ' + lastName).trim();
+
+  let idDigits = '';
+  const idPatterns = [
+    /(?:เลข\s*ประจำตัว\s*ประชาชน|identification\s*number)[^0-9]*(\d[\d\s\-]{10,20})/i,
+    /\b(\d[\d\s\-]{11,20})\b/
+  ];
+  for (let i = 0; i < idPatterns.length; i++) {
+    const m = compact.match(idPatterns[i]);
+    if (!m) continue;
+    const digits = String(m[1] || '').replace(/\D/g, '');
+    if (digits.length === 13) {
+      idDigits = digits;
+      break;
+    }
+  }
+
+  return {
+    isThaiIdCard: isThaiIdCard,
+    firstName: firstName,
+    lastName: lastName,
+    fullName: fullName,
+    idLast4: idDigits ? idDigits.slice(-4) : '',
+    hasUsableName: !!(firstName && lastName)
+  };
+}
+
+function ocrThaiIdCardImage_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    sourceType: body.sourceType,
+    groupId: body.groupId,
+    permission: 'แก้ข้อมูลลูกค้า'
+  });
+  if (!access.allowed) {
+    return { ok: true, read: false, message: access.message || 'ไม่มีสิทธิ์อ่านบัตร' };
+  }
+
+  const imageBase64 = String(body.imageBase64 || '').trim();
+  const mimeType = String(body.mimeType || 'image/jpeg').trim();
+  if (!imageBase64) return { ok: true, read: false, message: 'ไม่พบข้อมูลรูป' };
+
+  let imageBytes;
+  try {
+    imageBytes = Utilities.base64Decode(imageBase64);
+  } catch (err) {
+    return { ok: true, read: false, message: 'ข้อมูลรูปไม่ถูกต้อง' };
+  }
+
+  if (!imageBytes || !imageBytes.length) return { ok: true, read: false, message: 'รูปว่าง' };
+  if (imageBytes.length > 5 * 1024 * 1024) {
+    return { ok: true, read: false, message: 'รูปใหญ่เกิน 5 MB กรุณาส่งรูปใหม่ให้เล็กลง' };
+  }
+
+  // Force Drive/Docs OAuth scopes so the web app can run OCR with the owner's authorization.
+  DriveApp.getRootFolder().getName();
+
+  const boundary = 'ocr_' + Utilities.getUuid().replace(/-/g, '');
+  const metadata = JSON.stringify({
+    title: 'AdminID_OCR_' + new Date().getTime(),
+    mimeType: 'application/vnd.google-apps.document'
+  });
+
+  const head1 = '--' + boundary + '\r\n' +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    metadata + '\r\n';
+  const head2 = '--' + boundary + '\r\n' +
+    'Content-Type: ' + mimeType + '\r\n\r\n';
+  const tail = '\r\n--' + boundary + '--';
+
+  const payload = concatBytes_([
+    Utilities.newBlob(head1).getBytes(),
+    Utilities.newBlob(head2).getBytes(),
+    imageBytes,
+    Utilities.newBlob(tail).getBytes()
+  ]);
+
+  let createdId = '';
+  try {
+    const response = UrlFetchApp.fetch(
+      'https://www.googleapis.com/upload/drive/v2/files?uploadType=multipart&convert=true&ocr=true&ocrLanguage=th',
+      {
+        method: 'post',
+        contentType: 'multipart/related; boundary=' + boundary,
+        payload: payload,
+        headers: {
+          Authorization: 'Bearer ' + ScriptApp.getOAuthToken()
+        },
+        muteHttpExceptions: true
+      }
+    );
+
+    const code = response.getResponseCode();
+    const bodyText = response.getContentText();
+    if (code < 200 || code >= 300) {
+      return {
+        ok: true,
+        read: false,
+        message: 'OCR ใช้งานไม่ได้ กรุณาใช้ “กรอกชื่อเอง”',
+        detail: 'Drive OCR HTTP ' + code
+      };
+    }
+
+    const created = JSON.parse(bodyText || '{}');
+    createdId = String(created.id || '').trim();
+    if (!createdId) {
+      return { ok: true, read: false, message: 'OCR อ่านรูปไม่สำเร็จ กรุณาใช้ “กรอกชื่อเอง”' };
+    }
+
+    Utilities.sleep(600);
+    let text = '';
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        text = DocumentApp.openById(createdId).getBody().getText() || '';
+      } catch (err) {}
+      if (String(text || '').trim()) break;
+      Utilities.sleep(700);
+    }
+
+    const parsed = extractThaiIdCardFields_(text);
+    return {
+      ok: true,
+      read: true,
+      isThaiIdCard: parsed.isThaiIdCard,
+      firstName: parsed.firstName,
+      lastName: parsed.lastName,
+      fullName: parsed.fullName,
+      idLast4: parsed.idLast4,
+      hasUsableName: parsed.hasUsableName,
+      ocrPreview: String(text || '').replace(/\s+/g, ' ').trim().slice(0, 240),
+      message: parsed.isThaiIdCard
+        ? (parsed.hasUsableName ? 'อ่านบัตรประชาชนสำเร็จ' : 'พบบัตรประชาชน แต่ชื่ออ่านไม่ชัด')
+        : 'รูปนี้ไม่ใช่บัตรประชาชนไทย'
+    };
+  } catch (err) {
+    return {
+      ok: true,
+      read: false,
+      message: 'OCR ใช้งานไม่ได้ กรุณาใช้ “กรอกชื่อเอง”',
+      detail: String(err && err.message ? err.message : err)
+    };
+  } finally {
+    if (createdId) {
+      try { DriveApp.getFileById(createdId).setTrashed(true); } catch (err) {}
+    }
+  }
 }
 
 function rememberSlipMessage_(body) {
