@@ -120,10 +120,26 @@ async function handleEvent(event) {
     });
 
     if (!access.allowed) {
+      const registration = await callSheetsBridge({
+        action: "registerStaff",
+        lineUserId,
+        staffName: text,
+      });
+
+      if (registration?.registered || registration?.alreadyRegistered) {
+        await replyMessage(event.replyToken, [
+          {
+            type: "text",
+            text: registration.message || "ลงทะเบียนแล้ว รอเจ้าของอนุมัติ",
+          },
+        ]);
+        return;
+      }
+
       await replyMessage(event.replyToken, [
         {
           type: "text",
-          text: access.message || "บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID",
+          text: access.message || registration?.message || "บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID",
         },
       ]);
       return;
