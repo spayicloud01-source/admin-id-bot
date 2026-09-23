@@ -38,6 +38,8 @@ function doPost(e) {
         result = registerStaff_(body); break;
       case 'approveStaff':
         result = approveStaff_(body); break;
+      case 'rejectStaff':
+        result = rejectStaff_(body); break;
       case 'listPendingStaff':
         result = listPendingStaff_(body); break;
       case 'searchCustomer':
@@ -210,6 +212,61 @@ function listPendingStaff_(body) {
     });
 
   return { ok: true, items: items };
+}
+
+function rejectStaff_(body) {
+  const requester = checkAccess_({
+    lineUserId: body.lineUserId,
+    permission: 'จัดการเจ้าหน้าที่'
+  });
+  if (!requester.allowed) {
+    return { ok: true, rejected: false, message: requester.message || 'ไม่มีสิทธิ์จัดการเจ้าหน้าที่' };
+  }
+
+  const staffName = String(body.query || '').trim();
+  if (!staffName) return { ok: true, rejected: false, message: 'รูปแบบ: ไม่อนุมัติ <ชื่อเจ้าหน้าที่>' };
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  if (!sh || sh.getLastRow() < 2) {
+    return { ok: true, rejected: false, message: 'ไม่พบเจ้าหน้าที่รออนุมัติ' };
+  }
+
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
+  const matches = [];
+
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    if (String(row[0] || '').trim() === staffName) matches.push({ rowNo: i + 2, row: row });
+  }
+
+  if (!matches.length) return { ok: true, rejected: false, message: 'ไม่พบชื่อเจ้าหน้าที่: ' + staffName };
+  if (matches.length > 1) return { ok: true, rejected: false, message: 'พบชื่อซ้ำ กรุณาแก้ชื่อในชีตเจ้าหน้าที่ให้ไม่ซ้ำก่อน' };
+
+  const target = matches[0];
+  const row = target.row;
+  if (String(row[2] || '').trim() !== 'รอยืนยัน') {
+    return { ok: true, rejected: false, message: 'สถานะปัจจุบันไม่ใช่รอยืนยัน' };
+  }
+
+  const staffLineUserId = String(row[1] || '').trim();
+
+  // Keep the pre-approved staff name, but clear the LINE binding so they can retry later.
+  sh.getRange(target.rowNo, 2).clearContent();
+  sh.getRange(target.rowNo, 3).setValue('ระงับ');
+  sh.getRange(target.rowNo, 6).setValue(requester.staffName || 'เจ้าของ');
+  sh.getRange(target.rowNo, 7).setValue(new Date());
+  sh.getRange(target.rowNo, 10, 1, 11).setValues([[
+    false, false, false, false, false, false, false, false, false, false, false
+  ]]);
+
+  return {
+    ok: true,
+    rejected: true,
+    staffName: staffName,
+    staffLineUserId: staffLineUserId,
+    message: 'ไม่อนุมัติ ' + staffName + ' แล้ว'
+  };
 }
 
 function approveStaff_(body) {
