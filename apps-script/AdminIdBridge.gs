@@ -43,6 +43,10 @@ function doPost(e) {
         result = rejectStaff_(body); break;
       case 'listPendingStaff':
         result = listPendingStaff_(body); break;
+      case 'listStaff':
+        result = listStaff_(body); break;
+      case 'setStaffEnabled':
+        result = setStaffEnabled_(body); break;
       case 'searchCustomer':
         result = { ok: true, matches: searchCustomer_(String(body.query || '').trim()) }; break;
       case 'getCustomerInfo':
@@ -196,6 +200,86 @@ function registerStaff_(body) {
     ok: true,
     registered: false,
     message: 'ไม่พบชื่อเจ้าหน้าที่นี้ในรายการที่เจ้าของเตรียมไว้'
+  };
+}
+
+function listStaff_(body) {
+  const requester = checkAccess_({
+    lineUserId: body.lineUserId,
+    permission: 'จัดการเจ้าหน้าที่'
+  });
+  if (!requester.allowed || String(requester.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, allowed: false, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getDisplayValues();
+  const raw = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
+  const items = values.map(function(row, i) {
+    return {
+      staffName: String(row[0] || '').trim(),
+      status: String(row[2] || '').trim(),
+      role: String(row[8] || '').trim(),
+      botEnabled: raw[i][19] === true,
+      lineBound: !!String(row[1] || '').trim()
+    };
+  }).filter(function(x) { return x.staffName; });
+
+  return { ok: true, items: items };
+}
+
+function setStaffEnabled_(body) {
+  const requester = checkAccess_({
+    lineUserId: body.lineUserId,
+    permission: 'จัดการเจ้าหน้าที่'
+  });
+  if (!requester.allowed || String(requester.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, changed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const staffName = String(body.query || '').trim();
+  const enabled = body.enabled === true;
+  if (!staffName) return { ok: true, changed: false, message: 'กรุณาระบุชื่อเจ้าหน้าที่' };
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  if (!sh || sh.getLastRow() < 2) {
+    return { ok: true, changed: false, message: 'ไม่พบเจ้าหน้าที่' };
+  }
+
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
+  const matches = [];
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() === staffName) {
+      matches.push({ rowNo: i + 2, row: values[i] });
+    }
+  }
+
+  if (!matches.length) return { ok: true, changed: false, message: 'ไม่พบชื่อเจ้าหน้าที่: ' + staffName };
+  if (matches.length > 1) return { ok: true, changed: false, message: 'พบชื่อซ้ำ กรุณาแก้ชื่อในชีตก่อน' };
+
+  const target = matches[0];
+  const row = target.row;
+  if (String(row[8] || '').trim() === 'เจ้าของ') {
+    return { ok: true, changed: false, message: 'ไม่อนุญาตให้ระงับบัญชีเจ้าของด้วยคำสั่งนี้' };
+  }
+  if (!String(row[1] || '').trim()) {
+    return { ok: true, changed: false, message: 'เจ้าหน้าที่คนนี้ยังไม่ได้ผูก LINE' };
+  }
+
+  sh.getRange(target.rowNo, 3).setValue(enabled ? 'เจ้าหน้าที่' : 'ระงับ');
+  sh.getRange(target.rowNo, 20).setValue(enabled);
+
+  return {
+    ok: true,
+    changed: true,
+    enabled: enabled,
+    staffName: staffName,
+    staffLineUserId: String(row[1] || '').trim(),
+    message: enabled ? 'เปิดใช้งาน ' + staffName + ' แล้ว' : 'ระงับ ' + staffName + ' แล้ว'
   };
 }
 
