@@ -192,10 +192,14 @@ function postDeploySelfTest_() {
   add('แจ้งเตือนภายใน', reminderInternal === true, reminderInternal ? 'ภายในเท่านั้น' : 'ส่งลูกค้าได้', false);
   add('OK Slip', okSlip, okSlip ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม', false);
 
-  const triggers = ScriptApp.getProjectTriggers().filter(function(t) {
-    return t.getHandlerFunction() === 'triggerDailyReminder_';
-  });
-  if (!triggers.length) warnings.push('ยังไม่ได้ติดตั้งแจ้งเตือนรายวัน');
+  try {
+    const triggers = ScriptApp.getProjectTriggers().filter(function(t) {
+      return t.getHandlerFunction() === 'triggerDailyReminder_';
+    });
+    if (!triggers.length) warnings.push('ยังไม่ได้ติดตั้งแจ้งเตือนรายวัน');
+  } catch (err) {
+    warnings.push('Web App ไม่มีสิทธิ์ตรวจ trigger อัตโนมัติ ให้เช็ก trigger ใน Apps Script UI');
+  }
   if (!okSlip) warnings.push('OK Slip ยังไม่เชื่อม จึงยังไม่ตรวจสลิปกับ API ภายนอก');
   if (writesEnabled) warnings.push('FINANCIAL_SOURCE_WRITES_ENABLED เปิดอยู่');
 
@@ -313,10 +317,15 @@ function readinessCheck_(body) {
   add('Log ระบบ', !!log, log ? 'พร้อม' : 'ไม่พบชีต');
   add('คิวตรวจสอบ', !!review, review ? 'พร้อม' : 'ไม่พบชีต');
 
-  const reminderTriggers = ScriptApp.getProjectTriggers().filter(function(t) {
-    return t.getHandlerFunction() === 'triggerDailyReminder_';
-  });
-  add('แจ้งเตือนรายวัน', reminderTriggers.length > 0, reminderTriggers.length ? 'ติดตั้งแล้ว' : 'ยังไม่ติดตั้ง');
+  let reminderTriggerCount = -1;
+  try {
+    reminderTriggerCount = ScriptApp.getProjectTriggers().filter(function(t) {
+      return t.getHandlerFunction() === 'triggerDailyReminder_';
+    }).length;
+    add('แจ้งเตือนรายวัน', reminderTriggerCount > 0, reminderTriggerCount ? 'ติดตั้งแล้ว' : 'ยังไม่ติดตั้ง');
+  } catch (err) {
+    add('แจ้งเตือนรายวัน', true, 'ตรวจ trigger จาก Web App ไม่ได้ ให้เช็กจาก Apps Script UI', false);
+  }
 
   const writesEnabled = isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false));
   add('Safety: เขียนต้นทางปิด', writesEnabled === false, writesEnabled ? 'เปิดอยู่' : 'ปิดอยู่');
@@ -739,7 +748,17 @@ function installReminderTrigger_(body) {
     return { ok: true, installed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
 
-  const triggers = ScriptApp.getProjectTriggers();
+  let triggers;
+  try {
+    triggers = ScriptApp.getProjectTriggers();
+  } catch (err) {
+    return {
+      ok: true,
+      installed: false,
+      manualRequired: true,
+      message: 'ต้องติดตั้ง Trigger จาก Apps Script UI: triggerDailyReminder_ แบบ Time-driven วันละครั้ง'
+    };
+  }
   triggers.forEach(function(t) {
     if (t.getHandlerFunction() === 'triggerDailyReminder_') ScriptApp.deleteTrigger(t);
   });
@@ -768,15 +787,25 @@ function getReminderTriggerStatus_(body) {
   if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
     return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
-  const triggers = ScriptApp.getProjectTriggers().filter(function(t) {
-    return t.getHandlerFunction() === 'triggerDailyReminder_';
-  });
-  return {
-    ok: true,
-    installed: triggers.length > 0,
-    count: triggers.length,
-    remindTime: String(getSettingValue_('REMIND_TIME', '09:00'))
-  };
+  try {
+    const triggers = ScriptApp.getProjectTriggers().filter(function(t) {
+      return t.getHandlerFunction() === 'triggerDailyReminder_';
+    });
+    return {
+      ok: true,
+      installed: triggers.length > 0,
+      count: triggers.length,
+      remindTime: String(getSettingValue_('REMIND_TIME', '09:00'))
+    };
+  } catch (err) {
+    return {
+      ok: true,
+      installed: null,
+      manualRequired: true,
+      remindTime: String(getSettingValue_('REMIND_TIME', '09:00')),
+      message: 'เช็ก Trigger จาก Web App ไม่ได้ ให้ดูใน Apps Script > Triggers'
+    };
+  }
 }
 
 function staffPermissionMap_() {
