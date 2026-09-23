@@ -206,6 +206,8 @@ async function handleEvent(event) {
         responseText = result.added
           ? `บันทึกโน้ตแล้ว: ${result.customer?.name || command.query}`
           : "ไม่พบข้อมูลลูกค้า";
+      } else if (command.action === "approveStaff") {
+        responseText = result.message || (result.approved ? "อนุมัติเจ้าหน้าที่แล้ว" : "ไม่สามารถอนุมัติได้");
       }
 
       await replyMessage(event.replyToken, [{ type: "text", text: responseText || "ดำเนินการแล้ว" }]);
