@@ -77,6 +77,8 @@ function doPost(e) {
         result = getCalculatedSummary_(body); break;
       case 'dailyOwnerReport':
         result = dailyOwnerReport_(body); break;
+      case 'getStaffActivity':
+        result = getStaffActivity_(body); break;
       case 'systemStatus':
         result = systemStatus_(body); break;
       case 'auditSourceSchemas':
@@ -1120,6 +1122,53 @@ function listDueCustomers_(body) {
   return result;
 }
 
+function getStaffActivity_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const targetName = String(body.query || '').trim();
+  const todayOnly = body.activityToday === true;
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.LOG_SHEET);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+
+  const raw = sh.getRange(2, 1, sh.getLastRow() - 1, 11).getValues();
+  const display = sh.getRange(2, 1, sh.getLastRow() - 1, 11).getDisplayValues();
+  const todayKey = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+  const items = [];
+
+  for (let i = raw.length - 1; i >= 0 && items.length < 20; i--) {
+    const row = display[i];
+    const staffName = String(row[2] || '').trim();
+    if (targetName && normalizeGeneral_(staffName) !== normalizeGeneral_(targetName)) continue;
+
+    if (todayOnly) {
+      const d = raw[i][0] instanceof Date ? raw[i][0] : new Date(raw[i][0]);
+      if (isNaN(d.getTime()) || Utilities.formatDate(d, 'Asia/Bangkok', 'yyyy-MM-dd') !== todayKey) continue;
+    }
+
+    items.push({
+      dateTime: row[0],
+      staffName: staffName,
+      role: row[3],
+      command: row[4],
+      query: row[5],
+      result: row[7],
+      actionName: row[8],
+      status: row[9]
+    });
+  }
+
+  return {
+    ok: true,
+    targetName: targetName,
+    todayOnly: todayOnly,
+    items: items
+  };
+}
+
 function dailyOwnerReport_(body) {
   const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
   if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
@@ -1984,6 +2033,7 @@ function queueFinancialReview_(body, type) {
       return String(r[8] || '').trim() === 'เจ้าของ' &&
         String(r[2] || '').trim() === 'เจ้าหน้าที่' &&
         r[19] === true &&
+        isTrue_(r[3]) &&
         String(r[1] || '').trim();
     })
     .map(function(r) { return String(r[1] || '').trim(); });
