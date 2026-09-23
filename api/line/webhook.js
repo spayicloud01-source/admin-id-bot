@@ -451,11 +451,36 @@ async function handleEvent(event) {
         }
 
         if (bindingMatch) {
+          const queue = bindingMatch[1];
+          const fullName = bindingMatch[2].trim();
+
+          // Pilot launch: only V6/10-69 is allowed to self-bind.
+          const pilotSearch = await callSheetsBridge({
+            action: "searchCustomer",
+            query: "v6:" + queue,
+          });
+          const exactPilotMatches = (pilotSearch?.matches || []).filter((x) =>
+            String(x?.source || "").trim() === "v6" &&
+            String(x?.sheet || "").trim() === "V6/10-69" &&
+            String(x?.queue || "").replace(/\s+/g, "").toLowerCase() === String(queue).replace(/\s+/g, "").toLowerCase() &&
+            String(x?.name || "").replace(/\s+/g, "").toLowerCase() === String(fullName).replace(/\s+/g, "").toLowerCase()
+          );
+
+          if (exactPilotMatches.length !== 1) {
+            await replyMessage(event.replyToken, [{
+              type: "text",
+              text: exactPilotMatches.length > 1
+                ? "พบข้อมูลซ้ำมากกว่า 1 รายการ กรุณาติดต่อเจ้าหน้าที่"
+                : "ข้อมูลไม่ตรงหรือไม่พบใน V6/10-69 กรุณาตรวจสอบคิว ชื่อ และนามสกุลอีกครั้ง"
+            }]);
+            return;
+          }
+
           const result = await callSheetsBridge({
             action: "requestCustomerBinding",
             lineUserId,
-            queue: bindingMatch[1],
-            fullName: bindingMatch[2].trim(),
+            queue,
+            fullName,
           });
 
           let finalResult = result;
