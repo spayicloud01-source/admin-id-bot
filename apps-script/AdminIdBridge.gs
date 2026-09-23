@@ -57,6 +57,10 @@ function doPost(e) {
         result = queueFinancialReview_(body, 'ตรวจสลิป'); break;
       case 'queueClose':
         result = queueFinancialReview_(body, 'ปิดยอด'); break;
+      case 'listReviewQueue':
+        result = listReviewQueue_(body); break;
+      case 'resolveReviewQueue':
+        result = resolveReviewQueue_(body); break;
       case 'logAction':
         result = logAction_(body); break;
       default:
@@ -550,6 +554,66 @@ function addNote_(body) {
   ]);
 
   return { ok: true, added: true, customer: m };
+}
+
+function listReviewQueue_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, allowed: false, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
+  if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
+
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 12).getDisplayValues();
+  const items = [];
+  for (let i = values.length - 1; i >= 0 && items.length < 10; i--) {
+    const row = values[i];
+    if (String(row[8] || '').trim() !== 'รอตรวจ') continue;
+    items.push({
+      rowNo: i + 2, dateTime: row[0], type: row[1], queue: row[2], name: row[3],
+      source: row[4], detail: row[5], amount: row[6], staff: row[9]
+    });
+  }
+  return { ok: true, items: items };
+}
+
+function resolveReviewQueue_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, resolved: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const rowNo = Number(String(body.query || '').trim());
+  const decision = String(body.decision || '').trim();
+  if (!Number.isInteger(rowNo) || rowNo < 2) {
+    return { ok: true, resolved: false, message: 'ระบุเลขแถวคิวให้ถูกต้อง' };
+  }
+  if (decision !== 'ผ่าน' && decision !== 'ไม่ผ่าน') {
+    return { ok: true, resolved: false, message: 'ผลตรวจไม่ถูกต้อง' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
+  if (!sh || rowNo > sh.getLastRow()) {
+    return { ok: true, resolved: false, message: 'ไม่พบคิวนี้' };
+  }
+
+  const row = sh.getRange(rowNo, 1, 1, 12).getDisplayValues()[0];
+  if (String(row[8] || '').trim() !== 'รอตรวจ') {
+    return { ok: true, resolved: false, message: 'คิวนี้ถูกตรวจแล้ว' };
+  }
+
+  sh.getRange(rowNo, 9).setValue(decision);
+  sh.getRange(rowNo, 10).setValue(access.staffName || 'เจ้าของ');
+  sh.getRange(rowNo, 11).setValue(new Date());
+
+  return {
+    ok: true, resolved: true, decision: decision, rowNo: rowNo,
+    type: row[1], name: row[3], queue: row[2], amount: row[6],
+    message: (decision === 'ผ่าน' ? 'อนุมัติคิว ' : 'ไม่อนุมัติคิว ') + rowNo + ' แล้ว'
+  };
 }
 
 function queueFinancialReview_(body, type) {
