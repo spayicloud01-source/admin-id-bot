@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.23-90',
+  VERSION: '2026.09.23-100',
   SOURCE_SHEET: 'ลิ้งชีต',
   STAFF_SHEET: 'เจ้าหน้าที่',
   HISTORY_SHEET: 'ประวัติลูกค้า',
@@ -44,6 +44,8 @@ function doPost(e) {
     switch (body.action) {
       case 'getBridgeVersion':
         result = { ok: true, version: CONFIG.VERSION }; break;
+      case 'postDeploySelfTest':
+        result = postDeploySelfTest_(); break;
       case 'readinessCheck':
         result = readinessCheck_(body); break;
       case 'setBotSwitch':
@@ -129,6 +131,88 @@ function doPost(e) {
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message ? err.message : err) });
   }
+}
+
+function postDeploySelfTest_() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const checks = [];
+  const warnings = [];
+
+  function add(name, pass, detail, critical) {
+    checks.push({
+      name: name,
+      pass: !!pass,
+      detail: detail || '',
+      critical: critical !== false
+    });
+  }
+
+  add('version', CONFIG.VERSION === '2026.09.23-100', CONFIG.VERSION, true);
+  add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
+  add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
+  add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
+  add('Log ระบบ', !!ss.getSheetByName(CONFIG.LOG_SHEET), CONFIG.LOG_SHEET, true);
+  add('คิวตรวจสอบ', !!ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET), CONFIG.REVIEW_QUEUE_SHEET, true);
+  add('ตั้งค่าบอต', !!ss.getSheetByName(CONFIG.SETTINGS_SHEET), CONFIG.SETTINGS_SHEET, true);
+  add('กลุ่ม LINE', !!ss.getSheetByName(CONFIG.GROUP_SHEET), CONFIG.GROUP_SHEET, false);
+  add('คิวแจ้งเตือน', !!ss.getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET), CONFIG.NOTIFICATION_QUEUE_SHEET, false);
+
+  const src = ss.getSheetByName(CONFIG.SOURCE_SHEET);
+  let enabledSources = 0;
+  if (src && src.getLastRow() >= 2) {
+    const values = src.getRange(2, 1, src.getLastRow() - 1, 3).getValues();
+    enabledSources = values.filter(function(r) {
+      return String(r[1] || '').trim() && isTrue_(r[2]);
+    }).length;
+  }
+  add('แหล่งข้อมูลเปิดใช้', enabledSources >= 8, enabledSources + ' แหล่ง', true);
+
+  const staff = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  let ownerCount = 0;
+  if (staff && staff.getLastRow() >= 2) {
+    const values = staff.getRange(2, 1, staff.getLastRow() - 1, 20).getValues();
+    ownerCount = values.filter(function(r) {
+      return String(r[8] || '').trim() === 'เจ้าของ' &&
+        String(r[2] || '').trim() === 'เจ้าหน้าที่' &&
+        r[19] === true &&
+        String(r[1] || '').trim();
+    }).length;
+  }
+  add('เจ้าของระบบพร้อมใช้', ownerCount >= 1, ownerCount + ' คน', true);
+
+  const master = isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true));
+  const staffEnabled = isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true));
+  const writesEnabled = isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false));
+  const reminderInternal = isTrue_(getSettingValue_('REMINDER_INTERNAL_ONLY', true));
+  const okSlip = isTrue_(getSettingValue_('OKSLIP_ENABLED', false));
+
+  add('BOT_MASTER_ENABLED', master, String(master), true);
+  add('BOT_STAFF_ENABLED', staffEnabled, String(staffEnabled), true);
+  add('Safety เขียนต้นทางปิด', writesEnabled === false, writesEnabled ? 'เปิด' : 'ปิด', true);
+  add('แจ้งเตือนภายใน', reminderInternal === true, reminderInternal ? 'ภายในเท่านั้น' : 'ส่งลูกค้าได้', false);
+  add('OK Slip', okSlip, okSlip ? 'เชื่อมแล้ว' : 'ยังไม่เชื่อม', false);
+
+  const triggers = ScriptApp.getProjectTriggers().filter(function(t) {
+    return t.getHandlerFunction() === 'triggerDailyReminder_';
+  });
+  if (!triggers.length) warnings.push('ยังไม่ได้ติดตั้งแจ้งเตือนรายวัน');
+  if (!okSlip) warnings.push('OK Slip ยังไม่เชื่อม จึงยังไม่ตรวจสลิปกับ API ภายนอก');
+  if (writesEnabled) warnings.push('FINANCIAL_SOURCE_WRITES_ENABLED เปิดอยู่');
+
+  const critical = checks.filter(function(x){ return x.critical; });
+  const criticalPassed = critical.filter(function(x){ return x.pass; }).length;
+  const passed = checks.filter(function(x){ return x.pass; }).length;
+
+  return {
+    ok: criticalPassed === critical.length,
+    version: CONFIG.VERSION,
+    passed: passed,
+    total: checks.length,
+    criticalPassed: criticalPassed,
+    criticalTotal: critical.length,
+    checks: checks,
+    warnings: warnings
+  };
 }
 
 function setSettingValue_(key, value) {
