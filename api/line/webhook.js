@@ -47,6 +47,25 @@ async function replyMessage(replyToken, messages) {
   }
 }
 
+async function pushMessage(to, messages) {
+  const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
+  if (!token || !to) return;
+
+  const response = await fetch("https://api.line.me/v2/bot/message/push", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ to, messages }),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`LINE push failed: ${response.status} ${text}`);
+  }
+}
+
 async function startLoading(chatId, loadingSeconds = 60) {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token || !chatId) return;
@@ -127,6 +146,23 @@ async function handleEvent(event) {
       });
 
       if (registration?.registered || registration?.alreadyRegistered) {
+        if (registration?.registered && Array.isArray(registration.ownerLineUserIds)) {
+          const ownerText = [
+            "มีเจ้าหน้าที่ขออนุมัติ",
+            "ชื่อ: " + (registration.staffName || text),
+            "",
+            "พิมพ์: อนุมัติ " + (registration.staffName || text)
+          ].join("\n");
+
+          await Promise.all(
+            registration.ownerLineUserIds.map((ownerId) =>
+              pushMessage(ownerId, [{ type: "text", text: ownerText }]).catch((error) => {
+                console.warn("Owner approval alert failed", error);
+              })
+            )
+          );
+        }
+
         await replyMessage(event.replyToken, [
           {
             type: "text",
