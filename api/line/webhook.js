@@ -119,7 +119,39 @@ async function startLoading(chatId, loadingSeconds = 60) {
 }
 
 async function handleEvent(event) {
-  if (event.type !== "message" || event.message?.type !== "text") return;
+  if (event.type !== "message") return;
+
+  if (event.message?.type === "image") {
+    const lineUserId = event.source?.userId || "";
+    const sourceType = event.source?.type || "";
+    const groupId = event.source?.groupId || "";
+    if (!lineUserId) return;
+
+    try {
+      const result = await callSheetsBridge({
+        action: "rememberSlipMessage",
+        lineUserId,
+        sourceType,
+        groupId,
+        messageId: event.message?.id || "",
+      });
+
+      const replyText = result.remembered
+        ? "รับรูปสลิปแล้ว\nภายใน 10 นาที พิมพ์ ยืนยันสลิป <ชื่อ/เบอร์/คิว/Apple ID>"
+        : (result.message || "ยังไม่สามารถรับสลิปได้");
+
+      await replyMessage(event.replyToken, [{ type: "text", text: replyText }]);
+    } catch (error) {
+      console.error("Slip image capture failed", error);
+      await replyMessage(event.replyToken, [{
+        type: "text",
+        text: "รับรูปสลิปไม่สำเร็จ กรุณาลองใหม่"
+      }]);
+    }
+    return;
+  }
+
+  if (event.message?.type !== "text") return;
 
   const text = String(event.message.text || "").trim();
 
