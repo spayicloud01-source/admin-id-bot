@@ -1,6 +1,6 @@
 import { callSheetsBridge } from "../lib/sheetsBridge.js";
 
-const EXPECTED_BRIDGE_VERSION = "2026.09.23-100";
+const EXPECTED_BRIDGE_VERSION = "2026.09.23-101";
 
 export default async function handler(req, res) {
   let bridge = {
@@ -44,7 +44,7 @@ export default async function handler(req, res) {
   return res.status(200).json({
     ok: envReady && bridge.reachable,
     service: "Admin ID",
-    appVersion: "2026.09.23-100",
+    appVersion: "2026.09.23-101",
     expectedBridgeVersion: EXPECTED_BRIDGE_VERSION,
     environment,
     bridge,
