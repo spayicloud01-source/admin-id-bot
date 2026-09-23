@@ -8,6 +8,7 @@ const CONFIG = {
   REVIEW_QUEUE_SHEET: 'คิวตรวจสอบ',
   GROUP_SHEET: 'กลุ่ม LINE',
   NOTIFICATION_QUEUE_SHEET: 'คิวแจ้งเตือน',
+  CUSTOMER_LINE_SHEET: 'ลูกค้า LINE',
   MAX_RESULTS: 20,
   MAX_ROWS_PER_TAB: 3000,
   HEADER_SCAN_ROWS: 20,
@@ -82,6 +83,16 @@ function doPost(e) {
         result = getReminderBatch_(body); break;
       case 'markReminderSent':
         result = markReminderSent_(body); break;
+      case 'requestCustomerBinding':
+        result = requestCustomerBinding_(body); break;
+      case 'getCustomerSelf':
+        result = getCustomerSelf_(body); break;
+      case 'cancelCustomerBindings':
+        result = cancelCustomerBindings_(body); break;
+      case 'listPendingCustomerBindings':
+        result = listPendingCustomerBindings_(body); break;
+      case 'resolveCustomerBinding':
+        result = resolveCustomerBinding_(body); break;
       case 'searchCustomer':
         result = { ok: true, matches: searchCustomer_(String(body.query || '').trim()) }; break;
       case 'getCustomerInfo':
@@ -1223,6 +1234,320 @@ function latestDiscountStart_(customer, fallbackDate) {
     if (d) return d;
   }
   return fallbackDate;
+}
+
+function customerLineSheet_() {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.CUSTOMER_LINE_SHEET);
+  if (!sh) throw new Error('ไม่พบชีต ' + CONFIG.CUSTOMER_LINE_SHEET);
+  return sh;
+}
+
+function customerBindingOwnerIds_() {
+  return getReminderOwnerLineIds_();
+}
+
+function findExactCustomerForBinding_(phone, queue) {
+  const normalizedPhone = normalizePhone_(phone);
+  const queueKey = normalizeGeneral_(queue);
+  if (!normalizedPhone || !queueKey) return [];
+
+  const matches = searchCustomer_(phone, true) || [];
+  return matches.filter(function(c) {
+    return normalizePhone_(c.phone) === normalizedPhone &&
+      normalizeGeneral_(c.queue) === queueKey;
+  });
+}
+
+function requestCustomerBinding_(body) {
+  if (!isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)) ||
+      !isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true))) {
+    return { ok: true, requested: false, message: 'ระบบลูกค้าปิดใช้งานชั่วคราว' };
+  }
+
+  const lineUserId = String(body.lineUserId || '').trim();
+  const phone = String(body.phone || '').trim();
+  const queue = String(body.queue || '').trim();
+  if (!lineUserId) return { ok: true, requested: false, message: 'ไม่พบ LINE User ID' };
+  if (!phone || !queue) {
+    return { ok: true, requested: false, message: 'รูปแบบ: ผูกบัญชี <เบอร์โทร> <คิว>' };
+  }
+
+  const matches = findExactCustomerForBinding_(phone, queue);
+  if (!matches.length) {
+    return {
+      ok: true,
+      requested: false,
+      message: 'ไม่พบข้อมูลที่ตรงกับเบอร์โทรและคิว กรุณาตรวจสอบอีกครั้งหรือติดต่อเจ้าหน้าที่'
+    };
+  }
+  if (matches.length > 1) {
+    return {
+      ok: true,
+      requested: false,
+      needsStaffHelp: true,
+      message: 'พบข้อมูลมากกว่า 1 รายการ กรุณาติดต่อเจ้าหน้าที่เพื่อยืนยันบัญชี'
+    };
+  }
+
+  const c = matches[0];
+  const sh = customerLineSheet_();
+  const values = sh.getLastRow() >= 2
+    ? sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues()
+    : [];
+
+  for (let i = 0; i < values.length; i++) {
+    const r = values[i];
+    const sameLine = String(r[1] || '').trim() === lineUserId;
+    const sameCustomer =
+      String(r[4] || '').trim() === String(c.source || '').trim() &&
+      String(r[5] || '').trim() === String(c.sheet || '').trim() &&
+      normalizeGeneral_(r[6]) === normalizeGeneral_(c.queue);
+    if (!sameLine || !sameCustomer) continue;
+
+    const status = String(r[7] || '').trim();
+    if (status === 'ใช้งาน') {
+      return { ok: true, requested: false, alreadyBound: true, message: 'บัญชีนี้ผูกไว้แล้ว' };
+    }
+    if (status === 'รออนุมัติ') {
+      return {
+        ok: true,
+        requested: false,
+        pending: true,
+        rowNo: i + 2,
+        message: 'คำขอผูกบัญชีอยู่ระหว่างรออนุมัติ'
+      };
+    }
+  }
+
+  sh.appendRow([
+    new Date(),
+    lineUserId,
+    String(c.name || '').trim(),
+    String(c.phone || '').trim(),
+    String(c.source || '').trim(),
+    String(c.sheet || '').trim(),
+    String(c.queue || '').trim(),
+    'รออนุมัติ',
+    '',
+    '',
+    true,
+    'ลูกค้าขอผูกบัญชีด้วยเบอร์โทร + คิว',
+    new Date()
+  ]);
+
+  const rowNo = sh.getLastRow();
+  return {
+    ok: true,
+    requested: true,
+    rowNo: rowNo,
+    customerName: String(c.name || '').trim(),
+    queue: String(c.queue || '').trim(),
+    source: String(c.source || '').trim(),
+    ownerLineUserIds: customerBindingOwnerIds_(),
+    message: 'ส่งคำขอผูกบัญชีแล้ว รอเจ้าหน้าที่อนุมัติ'
+  };
+}
+
+function getActiveCustomerBindings_(lineUserId) {
+  const id = String(lineUserId || '').trim();
+  const sh = customerLineSheet_();
+  if (!id || sh.getLastRow() < 2) return [];
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues();
+  const out = [];
+  for (let i = 0; i < values.length; i++) {
+    const r = values[i];
+    if (String(r[1] || '').trim() !== id) continue;
+    if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
+    out.push({
+      rowNo: i + 2,
+      name: String(r[2] || '').trim(),
+      phone: String(r[3] || '').trim(),
+      source: String(r[4] || '').trim(),
+      sheet: String(r[5] || '').trim(),
+      queue: String(r[6] || '').trim(),
+      notifications: isTrue_(r[10])
+    });
+  }
+  return out;
+}
+
+function calculateCustomerSelfSummary_(c) {
+  const principal = parseMoney_(c.principal);
+  const fee = parseMoney_(c.fee);
+  const saleDate = parseDateFlexible_(c.saleDate);
+  const dueDate = parseDateFlexible_(c.dueDate);
+  const now = new Date();
+  const asOf = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  const latePerDay = Number(getSettingValue_('LATE_FEE_PER_DAY', 50)) || 50;
+  const discountDays = Number(getSettingValue_('CLOSE_DISCOUNT_DAYS', 5)) || 5;
+  const discountPercent = Number(getSettingValue_('CLOSE_FEE_DISCOUNT_PERCENT', 50)) || 50;
+  const cycleDays = 10;
+
+  const overdueDays = dueDate ? Math.max(0, daysBetween_(asOf, dueDate)) : 0;
+  const cyclesCrossed = overdueDays > 0 ? Math.floor(overdueDays / cycleDays) : 0;
+  const crossCycle = cyclesCrossed >= 1;
+  const accumulatedFee = fee * (1 + cyclesCrossed);
+  const lateFee = overdueDays * latePerDay;
+
+  const discountStart = latestDiscountStart_(c, saleDate);
+  const daysFromDiscountStart = discountStart ? daysBetween_(asOf, discountStart) : null;
+  const discountEligible = !!discountStart && !crossCycle &&
+    daysFromDiscountStart >= 0 && daysFromDiscountStart <= discountDays;
+
+  const feeApplied = discountEligible
+    ? accumulatedFee * (1 - discountPercent / 100)
+    : accumulatedFee;
+
+  return {
+    name: String(c.name || '').trim(),
+    queue: String(c.queue || '').trim(),
+    source: String(c.source || '').trim(),
+    status: String(c.status || '').trim(),
+    principal: principal,
+    fee: fee,
+    accumulatedFee: accumulatedFee,
+    dueDate: dueDate ? formatThaiDate_(dueDate) : String(c.dueDate || ''),
+    outstanding: parseMoney_(c.outstanding),
+    overdueDays: overdueDays,
+    lateFee: lateFee,
+    discountEligible: discountEligible,
+    discountPercent: discountEligible ? discountPercent : 0,
+    calculatedClose: principal + feeApplied + lateFee,
+    calculatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
+  };
+}
+
+function getCustomerSelf_(body) {
+  if (!isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)) ||
+      !isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true))) {
+    return { ok: true, bound: false, message: 'ระบบลูกค้าปิดใช้งานชั่วคราว' };
+  }
+
+  const lineUserId = String(body.lineUserId || '').trim();
+  const bindings = getActiveCustomerBindings_(lineUserId);
+  if (!bindings.length) {
+    return {
+      ok: true,
+      bound: false,
+      message: 'ยังไม่ได้ผูกบัญชี\nพิมพ์: ผูกบัญชี <เบอร์โทร> <คิว>\nตัวอย่าง: ผูกบัญชี 0812345678 101'
+    };
+  }
+
+  const items = [];
+  const staleRows = [];
+  for (let i = 0; i < bindings.length; i++) {
+    const b = bindings[i];
+    let c = null;
+    try {
+      c = findCustomerIdentity_(b.source, b.sheet, b.queue);
+    } catch (err) {}
+    if (!c) {
+      staleRows.push(b.rowNo);
+      continue;
+    }
+    items.push(calculateCustomerSelfSummary_(c));
+  }
+
+  const sh = customerLineSheet_();
+  bindings.forEach(function(b) {
+    try { sh.getRange(b.rowNo, 13).setValue(new Date()); } catch (err) {}
+  });
+
+  return {
+    ok: true,
+    bound: true,
+    items: items,
+    staleCount: staleRows.length,
+    field: String(body.field || 'menu').trim()
+  };
+}
+
+function cancelCustomerBindings_(body) {
+  const lineUserId = String(body.lineUserId || '').trim();
+  const sh = customerLineSheet_();
+  if (!lineUserId || sh.getLastRow() < 2) {
+    return { ok: true, changed: false, message: 'ไม่พบบัญชีที่ผูกไว้' };
+  }
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues();
+  let changed = 0;
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][1] || '').trim() !== lineUserId) continue;
+    const status = String(values[i][7] || '').trim();
+    if (status !== 'ใช้งาน' && status !== 'รออนุมัติ') continue;
+    sh.getRange(i + 2, 8).setValue('ระงับ');
+    sh.getRange(i + 2, 12).setValue('ลูกค้ายกเลิกการผูกบัญชี');
+    changed++;
+  }
+  return {
+    ok: true,
+    changed: changed > 0,
+    count: changed,
+    message: changed ? 'ยกเลิกการผูกบัญชีแล้ว' : 'ไม่พบบัญชีที่ผูกไว้'
+  };
+}
+
+function listPendingCustomerBindings_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'จัดการเจ้าหน้าที่' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+  const sh = customerLineSheet_();
+  if (sh.getLastRow() < 2) return { ok: true, items: [] };
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues();
+  const items = [];
+  for (let i = values.length - 1; i >= 0 && items.length < 20; i--) {
+    const r = values[i];
+    if (String(r[7] || '').trim() !== 'รออนุมัติ') continue;
+    items.push({
+      rowNo: i + 2,
+      dateTime: r[0],
+      name: r[2],
+      phone: r[3],
+      source: r[4],
+      sheet: r[5],
+      queue: r[6]
+    });
+  }
+  return { ok: true, items: items };
+}
+
+function resolveCustomerBinding_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'จัดการเจ้าหน้าที่' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, resolved: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const rowNo = Number(String(body.query || '').trim());
+  if (!Number.isInteger(rowNo) || rowNo < 2) {
+    return { ok: true, resolved: false, message: 'รูปแบบ: อนุมัติลูกค้า <เลข> หรือ ไม่อนุมัติลูกค้า <เลข>' };
+  }
+
+  const sh = customerLineSheet_();
+  if (rowNo > sh.getLastRow()) return { ok: true, resolved: false, message: 'ไม่พบคำขอนี้' };
+
+  const row = sh.getRange(rowNo, 1, 1, 13).getDisplayValues()[0];
+  if (String(row[7] || '').trim() !== 'รออนุมัติ') {
+    return { ok: true, resolved: false, message: 'คำขอนี้ไม่ได้อยู่สถานะรออนุมัติ' };
+  }
+
+  const decision = String(body.decision || '').trim();
+  const approved = decision === 'อนุมัติ';
+  sh.getRange(rowNo, 8).setValue(approved ? 'ใช้งาน' : 'ไม่อนุมัติ');
+  sh.getRange(rowNo, 9).setValue(access.staffName || 'เจ้าของ');
+  sh.getRange(rowNo, 10).setValue(new Date());
+  sh.getRange(rowNo, 12).setValue(approved ? 'อนุมัติการผูก LINE ลูกค้า' : 'ไม่อนุมัติการผูก LINE ลูกค้า');
+
+  return {
+    ok: true,
+    resolved: true,
+    approved: approved,
+    rowNo: rowNo,
+    customerLineUserId: String(row[1] || '').trim(),
+    customerName: String(row[2] || '').trim(),
+    queue: String(row[6] || '').trim(),
+    message: approved ? 'อนุมัติลูกค้าแล้ว' : 'ไม่อนุมัติลูกค้าแล้ว'
+  };
 }
 
 function getCalculatedSummary_(body) {
