@@ -609,10 +609,23 @@ function resolveReviewQueue_(body) {
   sh.getRange(rowNo, 10).setValue(access.staffName || 'เจ้าของ');
   sh.getRange(rowNo, 11).setValue(new Date());
 
+  const staffSheet = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  let requesterLineUserId = '';
+  if (staffSheet && staffSheet.getLastRow() >= 2) {
+    const staffValues = staffSheet.getRange(2, 1, staffSheet.getLastRow() - 1, 20).getValues();
+    for (let i = 0; i < staffValues.length; i++) {
+      if (String(staffValues[i][0] || '').trim() === String(row[9] || '').trim()) {
+        requesterLineUserId = String(staffValues[i][1] || '').trim();
+        break;
+      }
+    }
+  }
+
   return {
     ok: true, resolved: true, decision: decision, rowNo: rowNo,
     type: row[1], name: row[3], queue: row[2], amount: row[6],
-    message: (decision === 'ผ่าน' ? 'อนุมัติคิว ' : 'ไม่อนุมัติคิว ') + rowNo + ' แล้ว'
+    requesterLineUserId: requesterLineUserId,
+    message: (decision === 'ผ่าน' ? 'คิว #' + rowNo + ' ผ่านการตรวจสอบแล้ว' : 'คิว #' + rowNo + ' ไม่ผ่านการตรวจสอบ')
   };
 }
 
@@ -666,13 +679,30 @@ function queueFinancialReview_(body, type) {
     ''
   ]);
 
+  const rowNo = sh.getLastRow();
+  const staffSheet = ss.getSheetByName(CONFIG.STAFF_SHEET);
+  const staffValues = staffSheet && staffSheet.getLastRow() >= 2
+    ? staffSheet.getRange(2, 1, staffSheet.getLastRow() - 1, 20).getValues()
+    : [];
+  const ownerLineUserIds = staffValues
+    .filter(function(r) {
+      return String(r[8] || '').trim() === 'เจ้าของ' &&
+        String(r[2] || '').trim() === 'เจ้าหน้าที่' &&
+        r[19] === true &&
+        String(r[1] || '').trim();
+    })
+    .map(function(r) { return String(r[1] || '').trim(); });
+
   return {
     ok: true,
     queued: true,
+    rowNo: rowNo,
     type: type,
     customer: customer,
     amount: amount,
-    message: 'ส่งเข้าคิวตรวจสอบแล้ว'
+    requesterLineUserId: String(body.lineUserId || '').trim(),
+    ownerLineUserIds: ownerLineUserIds,
+    message: 'ส่งเข้าคิวตรวจสอบแล้ว #' + rowNo
   };
 }
 
