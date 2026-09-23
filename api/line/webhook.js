@@ -130,6 +130,7 @@ function menuQuickReply(role) {
 
   const ownerOnly = [
     ["เจ้าหน้าที่", "เจ้าหน้าที่"],
+    ["ลูกค้ารออนุมัติ", "ลูกค้ารออนุมัติ"],
     ["กิจกรรมวันนี้", "กิจกรรมวันนี้"],
     ["สถานะระบบ", "สถานะระบบ"],
     ["เช็กพร้อมใช้", "เช็กพร้อมใช้"],
@@ -145,6 +146,61 @@ function menuQuickReply(role) {
     }));
 
   return { items };
+}
+
+function customerSelfQuickReply() {
+  return {
+    items: [
+      ["ยอดปิด", "ยอดปิด"],
+      ["ค่าเช่า", "ค่าเช่า"],
+      ["วันจ่าย", "วันจ่าย"],
+      ["ยอดค้าง", "ยอดค้าง"],
+      ["สถานะ", "สถานะ"],
+      ["เมนูลูกค้า", "เมนูลูกค้า"],
+    ].map(([label, text]) => ({
+      type: "action",
+      action: { type: "message", label, text },
+    })),
+  };
+}
+
+function formatMoney(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) ? n.toLocaleString("th-TH", { maximumFractionDigits: 2 }) : "0";
+}
+
+function formatCustomerSelfResult(result, field) {
+  const items = Array.isArray(result?.items) ? result.items : [];
+  if (!result?.bound) return result?.message || "ยังไม่ได้ผูกบัญชี";
+  if (!items.length) return "บัญชีผูกแล้ว แต่ไม่พบข้อมูลลูกค้าต้นทาง กรุณาติดต่อเจ้าหน้าที่";
+
+  const blocks = items.slice(0, 5).map((x) => {
+    const head = (x.name || "ลูกค้า") + (x.queue ? " | คิว " + x.queue : "");
+    if (field === "close") {
+      return [head, "ยอดปิดวันนี้: " + formatMoney(x.calculatedClose) + " บาท", x.discountEligible ? "มีสิทธิ์ลดค่าเช่า " + x.discountPercent + "%" : null, "คำนวณ ณ " + x.calculatedAt].filter(Boolean).join("\n");
+    }
+    if (field === "fee") {
+      return [head, "ค่าเช่า: " + formatMoney(x.accumulatedFee) + " บาท", x.lateFee ? "ค่าปรับ: " + formatMoney(x.lateFee) + " บาท" : null].filter(Boolean).join("\n");
+    }
+    if (field === "due") {
+      return [head, "วันจ่าย: " + (x.dueDate || "-"), x.overdueDays > 0 ? "เกินกำหนด " + x.overdueDays + " วัน" : null].filter(Boolean).join("\n");
+    }
+    if (field === "outstanding") {
+      const outstanding = Number(x.outstanding || 0) > 0 ? Number(x.outstanding || 0) : Number(x.accumulatedFee || 0) + Number(x.lateFee || 0);
+      return [head, "ยอดค้าง: " + formatMoney(outstanding) + " บาท"].join("\n");
+    }
+    if (field === "status") {
+      return [head, "สถานะ: " + (x.status || "-"), x.overdueDays > 0 ? "ค้าง " + x.overdueDays + " วัน" : "ยังไม่เกินกำหนด"].join("\n");
+    }
+    return [
+      head,
+      "ยอดปิดวันนี้: " + formatMoney(x.calculatedClose) + " บาท",
+      "วันจ่าย: " + (x.dueDate || "-"),
+      x.overdueDays > 0 ? "ค้าง " + x.overdueDays + " วัน" : null,
+    ].filter(Boolean).join("\n");
+  });
+
+  return blocks.join("\n\n");
 }
 
 async function handleEvent(event) {
@@ -241,6 +297,86 @@ async function handleEvent(event) {
     }
 
     if (!access.allowed) {
+      if (sourceType === "user" && lineUserId) {
+        const bindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(\S+)$/);
+        const customerFieldMap = {
+          "ยอดปิด": "close",
+          "ค่าเช่า": "fee",
+          "วันจ่าย": "due",
+          "ยอดค้าง": "outstanding",
+          "สถานะ": "status",
+          "สถานะทั้งหมด": "status",
+          "เมนูลูกค้า": "menu",
+        };
+
+        if (bindingMatch) {
+          const result = await callSheetsBridge({
+            action: "requestCustomerBinding",
+            lineUserId,
+            phone: bindingMatch[1],
+            queue: bindingMatch[2],
+          });
+
+          if (result.requested && Array.isArray(result.ownerLineUserIds)) {
+            const ownerMessage = {
+              type: "text",
+              text: [
+                "ลูกค้าขอผูกบัญชี LINE",
+                "ชื่อ: " + (result.customerName || "-"),
+                "คิว: " + (result.queue || "-"),
+                "แหล่ง: " + (result.source || "-"),
+                "คำขอ #" + result.rowNo,
+              ].join("\n"),
+              quickReply: {
+                items: [
+                  {
+                    type: "action",
+                    action: { type: "message", label: "อนุมัติลูกค้า", text: "อนุมัติลูกค้า " + result.rowNo },
+                  },
+                  {
+                    type: "action",
+                    action: { type: "message", label: "ไม่อนุมัติ", text: "ไม่อนุมัติลูกค้า " + result.rowNo },
+                  },
+                ],
+              },
+            };
+            await Promise.all(
+              result.ownerLineUserIds.map((ownerId) =>
+                pushMessage(ownerId, [ownerMessage]).catch((error) =>
+                  console.warn("Customer binding owner alert failed", error)
+                )
+              )
+            );
+          }
+
+          await replyMessage(event.replyToken, [{ type: "text", text: result.message || "ส่งคำขอแล้ว" }]);
+          return;
+        }
+
+        if (text === "ยกเลิกผูกบัญชี") {
+          const result = await callSheetsBridge({ action: "cancelCustomerBindings", lineUserId });
+          await replyMessage(event.replyToken, [{ type: "text", text: result.message || "ดำเนินการแล้ว" }]);
+          return;
+        }
+
+        if (customerFieldMap[text]) {
+          const field = customerFieldMap[text];
+          const result = await callSheetsBridge({
+            action: "getCustomerSelf",
+            lineUserId,
+            field,
+          });
+
+          const message = {
+            type: "text",
+            text: field === "menu" ? formatCustomerSelfResult(result, "menu") : formatCustomerSelfResult(result, field),
+          };
+          if (result.bound) message.quickReply = customerSelfQuickReply();
+          await replyMessage(event.replyToken, [message]);
+          return;
+        }
+      }
+
       const registration = await callSheetsBridge({
         action: "registerStaff",
         lineUserId,
@@ -392,7 +528,26 @@ async function handleEvent(event) {
       const result = await callSheetsBridge(payload);
 
       let responseText = "";
-      if (command.action === "readinessCheck") {
+      if (command.action === "listPendingCustomerBindings") {
+        const items = Array.isArray(result.items) ? result.items : [];
+        responseText = items.length
+          ? "ลูกค้ารออนุมัติ (" + items.length + ")\n" + items.slice(0, 10).map((x) =>
+              "#" + x.rowNo + " " + (x.name || "-") + " | คิว " + (x.queue || "-") + " | " + (x.source || "-")
+            ).join("\n")
+          : (result.message || "ไม่มีลูกค้ารออนุมัติ");
+      } else if (command.action === "resolveCustomerBinding") {
+        responseText = result.message || (result.resolved ? "ดำเนินการแล้ว" : "ดำเนินการไม่ได้");
+        if (result.resolved && result.customerLineUserId) {
+          const customerText = result.approved
+            ? "ผูกบัญชีสำเร็จแล้ว\nพิมพ์ ยอดปิด เพื่อดูยอดปิดของคุณได้ทันที"
+            : "คำขอผูกบัญชีไม่ได้รับการอนุมัติ กรุณาติดต่อเจ้าหน้าที่";
+          await pushMessage(result.customerLineUserId, [{
+            type: "text",
+            text: customerText,
+            ...(result.approved ? { quickReply: customerSelfQuickReply() } : {}),
+          }]).catch((error) => console.warn("Customer binding result push failed", error));
+        }
+      } else if (command.action === "readinessCheck") {
         if (!Array.isArray(result.checks)) {
           responseText = result.message || "ตรวจความพร้อมไม่ได้";
         } else {
