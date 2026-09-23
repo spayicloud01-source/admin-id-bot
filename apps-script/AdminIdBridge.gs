@@ -95,6 +95,10 @@ function doPost(e) {
         result = listReviewQueue_(body); break;
       case 'getReviewQueueItem':
         result = getReviewQueueItem_(body); break;
+      case 'cancelReviewQueue':
+        result = cancelReviewQueue_(body); break;
+      case 'planSourceWrite':
+        result = planSourceWrite_(body); break;
       case 'resolveReviewQueue':
         result = resolveReviewQueue_(body); break;
       case 'logAction':
@@ -1478,6 +1482,126 @@ function auditSourceSchemas_(body) {
   };
 }
 
+function cancelReviewQueue_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, cancelled: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const rowNo = Number(String(body.query || '').trim());
+  if (!Number.isInteger(rowNo) || rowNo < 2) {
+    return { ok: true, cancelled: false, message: 'รูปแบบ: ยกเลิกคิว <เลขคิว>' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
+  if (!sh || rowNo > sh.getLastRow()) {
+    return { ok: true, cancelled: false, message: 'ไม่พบคิวนี้' };
+  }
+
+  const row = sh.getRange(rowNo, 1, 1, 12).getDisplayValues()[0];
+  if (String(row[8] || '').trim() !== 'รอตรวจ') {
+    return { ok: true, cancelled: false, message: 'ยกเลิกไม่ได้ เพราะคิวนี้ไม่ได้อยู่สถานะรอตรวจ' };
+  }
+
+  sh.getRange(rowNo, 9).setValue('ยกเลิก');
+  sh.getRange(rowNo, 10).setValue(access.staffName || 'เจ้าของ');
+  sh.getRange(rowNo, 11).setValue(new Date());
+  sh.getRange(rowNo, 12).setValue('ยกเลิกโดยเจ้าของ');
+
+  return {
+    ok: true,
+    cancelled: true,
+    rowNo: rowNo,
+    requesterName: String(row[9] || '').trim(),
+    message: 'ยกเลิกคิว #' + rowNo + ' แล้ว'
+  };
+}
+
+function planSourceWrite_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, plan: null, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const rowNo = Number(String(body.query || '').trim());
+  if (!Number.isInteger(rowNo) || rowNo < 2) {
+    return { ok: true, plan: null, message: 'รูปแบบ: จำลองบันทึก <เลขคิว>' };
+  }
+
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
+  if (!sh || rowNo > sh.getLastRow()) {
+    return { ok: true, plan: null, message: 'ไม่พบคิวนี้' };
+  }
+
+  const row = sh.getRange(rowNo, 1, 1, 12).getDisplayValues()[0];
+  const type = String(row[1] || '').trim();
+  const sourceParts = String(row[4] || '').split(' / ');
+  const sourceName = String(sourceParts[0] || '').trim();
+  const sourceSheet = sourceParts.slice(1).join(' / ').trim();
+  const live = findCustomerIdentity_(sourceName, sourceSheet, row[2]);
+
+  if (!live) {
+    return { ok: true, plan: null, stale: true, message: 'ไม่พบรายการต้นทางล่าสุด' };
+  }
+  if (row[3] && normalizeGeneral_(live.name) !== normalizeGeneral_(row[3])) {
+    return { ok: true, plan: null, stale: true, message: 'ชื่อลูกค้าในต้นทางเปลี่ยนแล้ว' };
+  }
+
+  const writesEnabled = isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false));
+  const proposed = [];
+  if (type === 'บันทึกชำระ') {
+    proposed.push('บันทึกเหตุการณ์ชำระลงประวัติลูกค้า');
+    proposed.push('ยังไม่กำหนดคอลัมน์เขียนกลับต้นทางจนกว่า mapping แหล่งนี้จะผ่านการตรวจ');
+  } else if (type === 'ปิดยอด') {
+    proposed.push('บันทึกเหตุการณ์ปิดยอดลงประวัติลูกค้า');
+    proposed.push('ยังไม่แก้สถานะ/ยอดในชีตต้นทางจนกว่า mapping แหล่งนี้จะผ่านการตรวจ');
+  } else if (type === 'ตรวจสลิป') {
+    proposed.push('ตรวจสลิปเท่านั้น ไม่มีการเขียนยอดต้นทาง');
+  } else {
+    proposed.push('ยังไม่มีแผนเขียนต้นทางสำหรับประเภทนี้');
+  }
+
+  return {
+    ok: true,
+    plan: {
+      reviewRowNo: rowNo,
+      type: type,
+      source: sourceName,
+      sheet: sourceSheet,
+      sourceRow: live.row,
+      queue: live.queue,
+      name: live.name,
+      currentStatus: live.status,
+      currentPrincipal: live.principal,
+      currentFee: live.fee,
+      currentDueDate: live.dueDate,
+      requestedAmount: row[6],
+      writesEnabled: writesEnabled,
+      proposed: proposed
+    }
+  };
+}
+
+function hasDuplicatePendingReview_(sh, type, customer, amount) {
+  if (!sh || sh.getLastRow() < 2) return null;
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 12).getDisplayValues();
+  const sourceKey = (String(customer.source || '').trim() + ' / ' + String(customer.sheet || '').trim()).trim();
+  const amountKey = String(amount == null ? '' : amount).replace(/,/g, '').trim();
+
+  for (let i = values.length - 1; i >= 0; i--) {
+    const row = values[i];
+    if (String(row[8] || '').trim() !== 'รอตรวจ') continue;
+    if (String(row[1] || '').trim() !== String(type || '').trim()) continue;
+    if (String(row[2] || '').trim() !== String(customer.queue || '').trim()) continue;
+    if (String(row[4] || '').trim() !== sourceKey) continue;
+    if (String(row[6] || '').replace(/,/g, '').trim() !== amountKey) continue;
+    return i + 2;
+  }
+  return null;
+}
+
 function getReviewQueueItem_(body) {
   const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
   if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
@@ -1690,6 +1814,17 @@ function queueFinancialReview_(body, type) {
   if (!sh) return { ok: false, error: 'ไม่พบชีตคิวตรวจสอบ' };
 
   const amount = body.amount == null ? '' : Number(body.amount);
+  const duplicateRowNo = hasDuplicatePendingReview_(sh, type, customer, amount);
+  if (duplicateRowNo) {
+    return {
+      ok: true,
+      queued: false,
+      duplicate: true,
+      duplicateRowNo: duplicateRowNo,
+      message: 'มีคิวซ้ำที่ยังรอตรวจ #' + duplicateRowNo
+    };
+  }
+
   const detail = type === 'บันทึกชำระ'
     ? 'คำขอบันทึกชำระจาก LINE'
     : type === 'ปิดยอด'
