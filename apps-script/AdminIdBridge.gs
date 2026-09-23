@@ -9,6 +9,7 @@ const CONFIG = {
   GROUP_SHEET: 'กลุ่ม LINE',
   NOTIFICATION_QUEUE_SHEET: 'คิวแจ้งเตือน',
   CUSTOMER_LINE_SHEET: 'ลูกค้า LINE',
+  CUSTOMER_IDENTITY_SHEET: 'ยืนยันตัวตนลูกค้า',
   MAX_RESULTS: 20,
   MAX_ROWS_PER_TAB: 3000,
   HEADER_SCAN_ROWS: 20,
@@ -115,6 +116,8 @@ function doPost(e) {
         result = getHistory_(body); break;
       case 'addNote':
         result = addNote_(body); break;
+      case 'verifyCustomerIdentity':
+        result = verifyCustomerIdentity_(body); break;
       case 'queuePayment':
         result = queueFinancialReview_(body, 'บันทึกชำระ'); break;
       case 'queueSlipReview':
@@ -168,6 +171,7 @@ function postDeploySelfTest_() {
   add('กลุ่ม LINE', !!ss.getSheetByName(CONFIG.GROUP_SHEET), CONFIG.GROUP_SHEET, false);
   add('คิวแจ้งเตือน', !!ss.getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET), CONFIG.NOTIFICATION_QUEUE_SHEET, false);
   add('ลูกค้า LINE', !!ss.getSheetByName(CONFIG.CUSTOMER_LINE_SHEET), CONFIG.CUSTOMER_LINE_SHEET, true);
+  add('ยืนยันตัวตนลูกค้า', !!ss.getSheetByName(CONFIG.CUSTOMER_IDENTITY_SHEET), CONFIG.CUSTOMER_IDENTITY_SHEET, true);
 
   const src = ss.getSheetByName(CONFIG.SOURCE_SHEET);
   let enabledSources = 0;
@@ -1238,6 +1242,116 @@ function latestDiscountStart_(customer, fallbackDate) {
   return fallbackDate;
 }
 
+function verifyCustomerIdentity_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'แก้ข้อมูลลูกค้า' });
+  if (!access.allowed) return { ok: true, verified: false, message: access.message || 'ไม่มีสิทธิ์' };
+
+  const query = String(body.query || '').trim();
+  const firstName = String(body.firstName || '').trim();
+  const lastName = String(body.lastName || '').trim();
+  const idLast4 = String(body.idLast4 || '').trim();
+
+  if (!query || !firstName || !lastName) {
+    return {
+      ok: true,
+      verified: false,
+      message: 'รูปแบบ: บัตรประชาชน <คำค้น> <ชื่อ> <นามสกุล> [4ตัวท้าย]\nตัวอย่าง: บัตรประชาชน 101 สมชาย ใจดี 1234'
+    };
+  }
+
+  if (idLast4 && !/^\d{4}$/.test(idLast4)) {
+    return { ok: true, verified: false, message: 'ถ้าระบุเลขบัตร ให้ใส่เฉพาะ 4 ตัวท้ายเท่านั้น' };
+  }
+
+  const matches = searchCustomer_(query, true);
+  if (!matches.length) return { ok: true, verified: false, message: 'ไม่พบลูกค้า' };
+  if (matches.length > 1) {
+    return { ok: true, verified: false, needsSelection: true, matches: matches.slice(0, 10) };
+  }
+
+  const m = matches[0];
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sh = ss.getSheetByName(CONFIG.CUSTOMER_IDENTITY_SHEET);
+  if (!sh) throw new Error('ไม่พบชีต ' + CONFIG.CUSTOMER_IDENTITY_SHEET);
+
+  const fullName = (firstName + ' ' + lastName).trim();
+
+  if (sh.getLastRow() >= 2) {
+    const values = sh.getRange(2, 1, sh.getLastRow() - 1, 12).getDisplayValues();
+    for (let i = values.length - 1; i >= 0; i--) {
+      const r = values[i];
+      const same =
+        String(r[1] || '').trim() === String(m.source || '').trim() &&
+        String(r[2] || '').trim() === String(m.sheet || '').trim() &&
+        normalizeGeneral_(r[3]) === normalizeGeneral_(m.queue) &&
+        String(r[10] || '').trim() === 'ใช้งาน';
+      if (!same) continue;
+      sh.getRange(i + 2, 11).setValue('ยกเลิก');
+      sh.getRange(i + 2, 12).setValue('แทนที่ด้วยการยืนยันล่าสุด');
+      break;
+    }
+  }
+
+  sh.appendRow([
+    new Date(),
+    m.source,
+    m.sheet,
+    m.queue,
+    firstName,
+    lastName,
+    fullName,
+    idLast4,
+    access.staffName || String(body.staffName || ''),
+    String(body.lineUserId || ''),
+    'ใช้งาน',
+    'ยืนยันจากบัตรประชาชน; ไม่เก็บเลขเต็ม'
+  ]);
+
+  const history = ss.getSheetByName(CONFIG.HISTORY_SHEET);
+  if (history) {
+    history.appendRow([
+      new Date(), m.source, m.sheet, m.queue, fullName, m.phone, m.appleId, m.model,
+      'ยืนยันตัวตน', '', '', '', '', '', access.staffName || String(body.staffName || ''),
+      'ยืนยันชื่อ-นามสกุลจากบัตรประชาชน' + (idLast4 ? ' | 4 ตัวท้าย ' + idLast4 : '')
+    ]);
+  }
+
+  return {
+    ok: true,
+    verified: true,
+    source: m.source,
+    sheet: m.sheet,
+    queue: m.queue,
+    firstName: firstName,
+    lastName: lastName,
+    fullName: fullName,
+    idLast4: idLast4,
+    message: 'บันทึกชื่อ-นามสกุลจากบัตรประชาชนแล้ว'
+  };
+}
+
+function findVerifiedIdentity_(queue, fullName) {
+  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.CUSTOMER_IDENTITY_SHEET);
+  if (!sh || sh.getLastRow() < 2) return [];
+  const q = normalizeGeneral_(queue);
+  const n = normalizeGeneral_(fullName);
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 12).getDisplayValues();
+  const out = [];
+  for (let i = values.length - 1; i >= 0; i--) {
+    const r = values[i];
+    if (String(r[10] || '').trim() !== 'ใช้งาน') continue;
+    if (normalizeGeneral_(r[3]) !== q) continue;
+    if (normalizeGeneral_(r[6]) !== n) continue;
+    out.push({
+      source: String(r[1] || '').trim(),
+      sheet: String(r[2] || '').trim(),
+      queue: String(r[3] || '').trim(),
+      fullName: String(r[6] || '').trim()
+    });
+  }
+  return out;
+}
+
 function customerLineSheet_() {
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.CUSTOMER_LINE_SHEET);
   if (!sh) throw new Error('ไม่พบชีต ' + CONFIG.CUSTOMER_LINE_SHEET);
@@ -1249,10 +1363,24 @@ function customerBindingOwnerIds_() {
 }
 
 function findExactCustomerForBinding_(queue, fullName) {
+  const verified = findVerifiedIdentity_(queue, fullName);
+  if (verified.length === 1) {
+    const v = verified[0];
+    const c = findCustomerIdentity_(v.source, v.sheet, v.queue);
+    return c ? [c] : [];
+  }
+  if (verified.length > 1) {
+    const found = [];
+    verified.forEach(function(v) {
+      const c = findCustomerIdentity_(v.source, v.sheet, v.queue);
+      if (c) found.push(c);
+    });
+    return found;
+  }
+
   const queueKey = normalizeGeneral_(queue);
   const nameKey = normalizeGeneral_(fullName);
   if (!queueKey || !nameKey) return [];
-
   const matches = searchCustomer_(queue, true) || [];
   return matches.filter(function(c) {
     return normalizeGeneral_(c.queue) === queueKey &&
