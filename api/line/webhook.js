@@ -155,6 +155,13 @@ async function safeLogAction(payload) {
   }
 }
 
+async function logCustomerOutcome(lineUserId, command, result, status, note = "", query = "") {
+  await safeLogAction({
+    lineUserId, staffName: "", role: "ลูกค้า", command, query,
+    source: "LINE ส่วนตัว", result, actionName: "customerSelfService", status, note,
+  });
+}
+
 async function safeLinkCustomerMenu(lineUserId) {
   try {
     // A person can be in both sheets. Never replace an owner's or staff member's menu.
@@ -495,6 +502,7 @@ async function handleEvent(event) {
 
   if (!text) return;
 
+  let auditAction = "รับข้อความ";
   try {
     const lineUserId = event.source?.userId || "";
     const sourceType = event.source?.type || "";
@@ -524,6 +532,7 @@ async function handleEvent(event) {
       const bindingMatch = explicitBindingMatch || plainBindingMatch;
 
       if (text === "ผูกบัญชี") {
+        await logCustomerOutcome(lineUserId, "ผูกบัญชี", "ข้อมูลไม่ครบ", "รูปแบบไม่ถูกต้อง", "กรุณาระบุคิวและชื่อเต็ม");
         await replyMessage(event.replyToken, [{
           type: "text",
           text: "กรุณาแจ้ง คิว + ชื่อ + นามสกุล\nตัวอย่าง: 6101 สมชาย ใจดี"
@@ -531,7 +540,16 @@ async function handleEvent(event) {
         return;
       }
 
+      if (!bindingMatch && (/^ผูกบัญชี\s/.test(text) || /^(?:คิว\s*)?\d{3,}(?:-\d+)*$/.test(text))) {
+        await logCustomerOutcome(lineUserId, "ผูกบัญชี", "ข้อมูลไม่ครบหรือรูปแบบไม่ถูกต้อง", "รูปแบบไม่ถูกต้อง");
+        await replyMessage(event.replyToken, [{
+          type: "text", text: "กรุณาแจ้ง คิว + ชื่อ + นามสกุล\nตัวอย่าง: 610-21 สมชาย ใจดี"
+        }]);
+        return;
+      }
+
       if (bindingMatch) {
+        auditAction = "ผูกบัญชี";
         const queue = bindingMatch[1];
         const fullName = bindingMatch[2].trim();
 
@@ -589,11 +607,13 @@ async function handleEvent(event) {
       }
 
       if (text === "ติดต่อแอดมิน") {
+        auditAction = "ติดต่อแอดมิน";
         const result = await callSheetsBridge({
           action: "getCustomerContactRecipients",
           lineUserId,
         });
         if (!result?.bound) {
+          await logCustomerOutcome(lineUserId, text, result?.message || "ยังไม่ได้ผูกบัญชี", "ไม่มีสิทธิ์");
           await replyMessage(event.replyToken, [{ type: "text", text: result?.message || "ยังไม่ได้ผูกบัญชี" }]);
           return;
         }
@@ -627,6 +647,7 @@ async function handleEvent(event) {
       }
 
       if (customerFieldMap[text]) {
+        auditAction = text;
         const field = customerFieldMap[text];
         const result = await callSheetsBridge({
           action: "getCustomerSelf",
@@ -638,12 +659,21 @@ async function handleEvent(event) {
           text: formatCustomerSelfResult(result, field),
         };
         if (result.bound) message.quickReply = customerSelfQuickReply();
+        const hasItems = Array.isArray(result?.items) && result.items.length > 0;
+        await logCustomerOutcome(
+          lineUserId, text,
+          !result?.bound ? (result?.message || "ยังไม่ได้ผูกบัญชี") :
+            hasItems ? "แสดงข้อมูลลูกค้า" : "ไม่พบข้อมูลต้นทาง",
+          !result?.bound ? "ไม่มีสิทธิ์" : hasItems ? "สำเร็จ" : "ข้อมูลไม่ตรง",
+          hasItems ? "" : (result?.bound ? "ข้อมูลต้นทางหายหรือชื่อไม่ตรง" : "")
+        );
         await replyMessage(event.replyToken, [message]);
         if (result.bound && !result.suspended) await safeLinkCustomerMenu(lineUserId);
         return;
       }
     }
 
+    auditAction = command?.action || "ตรวจสิทธิ์";
     const directOwnerValidatedActions = new Set(["readinessCheck"]);
     let access;
 
@@ -675,6 +705,12 @@ async function handleEvent(event) {
       });
 
       if (registration?.registered || registration?.alreadyRegistered) {
+        await safeLogAction({
+          lineUserId, staffName: registration.staffName || "", role: "เจ้าหน้าที่",
+          command: "ขอสิทธิ์เจ้าหน้าที่", query: "", source: sourceType,
+          result: registration.message || "รออนุมัติ", actionName: "registerStaff",
+          status: registration.pendingApproval ? "รออนุมัติ" : "ลงทะเบียนแล้ว", note: access.message || ""
+        });
         if ((registration?.registered || registration?.pendingApproval) && Array.isArray(registration.ownerLineUserIds)) {
           const staffName = registration.staffName || text;
           const ownerText = [
@@ -725,6 +761,11 @@ async function handleEvent(event) {
         return;
       }
 
+      await safeLogAction({
+        lineUserId, staffName: "", role: "ไม่พบสิทธิ์", command: command?.action || "ตรวจสิทธิ์",
+        query: "", source: sourceType, result: access.message || registration?.message || "ไม่มีสิทธิ์",
+        actionName: "checkAccess", status: "ไม่มีสิทธิ์", note: ""
+      });
       await replyMessage(event.replyToken, [
         {
           type: "text",
@@ -1517,7 +1558,13 @@ async function handleEvent(event) {
       note: ""
     });
   } catch (error) {
-    console.error("Sheets bridge error", error);
+    console.error("LINE request failed", { action: auditAction, name: error?.name, message: error?.message });
+    await safeLogAction({
+      lineUserId: event.source?.userId || "", staffName: "", role: "ระบบ",
+      command: auditAction, query: "", source: event.source?.type || "",
+      result: "ทำรายการไม่สำเร็จ", actionName: "webhookError", status: "ผิดพลาด",
+      note: String(error?.name || "Error").slice(0, 80)
+    });
     await replyMessage(event.replyToken, [
       {
         type: "text",
