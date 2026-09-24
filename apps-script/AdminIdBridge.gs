@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.24-104',
+  VERSION: '2026.09.24-105',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   SOURCE_SHEET: 'ลิ้งชีต',
@@ -181,7 +181,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.24-104', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.24-105', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -325,7 +325,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.24-104', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.24-105', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -816,6 +816,9 @@ function setCustomerAutoReminderSheet_(body) {
   const source = String(body.source || '').trim();
   const sheet = String(body.sheet || '').trim();
   if (!source || !sheet) return { ok: true, allowed: true, changed: false, message: 'กรุณาเลือกชีตก่อน' };
+  if (!isConfiguredCustomerNotificationSheet_(source, sheet)) {
+    return { ok: true, allowed: true, changed: false, message: 'ไม่พบแหล่งข้อมูลหรือชีตที่เลือก' };
+  }
 
   const key = customerNotificationSheetKey_(source, sheet);
   let keys = getCustomerAutoReminderSheetKeys_();
@@ -850,14 +853,40 @@ function setCustomerAutoReminderSheet_(body) {
   };
 }
 
+function isConfiguredCustomerNotificationSheet_(source, sheet) {
+  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const links = backend.getSheetByName(CONFIG.SOURCE_SHEET);
+  if (!links || links.getLastRow() < 2) return false;
+  const rows = links.getRange(2, 1, links.getLastRow() - 1, 3).getDisplayValues();
+  const row = rows.find(function(r) { return String(r[0] || '').trim() === source && isTrue_(r[2]); });
+  if (!row) return false;
+  const id = extractSpreadsheetId_(row[1]);
+  if (!id) return false;
+  return !!SpreadsheetApp.openById(id).getSheetByName(sheet);
+}
+
 function listCustomerNotificationSheets_(body) {
   const access = ownerAccessForCustomerNotification_(body);
   if (!access) return { ok: true, allowed: false, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
 
   const sh = customerLineSheet_();
-  if (sh.getLastRow() < 2) return { ok: true, allowed: true, items: [] };
-  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues();
+  const rows = sh.getLastRow() >= 2 ? sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues() : [];
   const map = {};
+  const links = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SOURCE_SHEET);
+  if (links && links.getLastRow() >= 2) {
+    links.getRange(2, 1, links.getLastRow() - 1, 3).getDisplayValues().forEach(function(r) {
+      if (!isTrue_(r[2])) return;
+      const source = String(r[0] || '').trim();
+      const id = extractSpreadsheetId_(r[1]);
+      if (!source || !id) return;
+      const sourceBook = SpreadsheetApp.openById(id);
+      sourceBook.getSheets().forEach(function(tab) {
+        const sheet = tab.getName();
+        if (CONFIG.EXCLUDED_TAB_PATTERNS.some(function(p) { return p.test(sheet); })) return;
+        map[customerNotificationSheetKey_(source, sheet)] = { source: source, sheet: sheet, count: 0 };
+      });
+    });
+  }
   rows.forEach(function(r) {
     if (String(r[7] || '').trim() !== 'ใช้งาน') return;
     const source = String(r[4] || '').trim();
@@ -921,12 +950,27 @@ function buildCustomerNotificationMessage_(summary, field) {
 function buildCustomerNotificationBatch_(body) {
   const access = ownerAccessForCustomerNotification_(body);
   if (!access) return { ok: true, allowed: false, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    return buildCustomerNotificationBatchLocked_(body, access);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function buildCustomerNotificationBatchLocked_(body, access) {
 
   const source = String(body.source || '').trim();
   const sheet = String(body.sheet || '').trim();
   const field = String(body.field || '').trim();
   const queueFilter = normalizeGeneral_(body.queue || '');
+  const queueFilters = String(body.queues || '').split(',').map(normalizeGeneral_).filter(Boolean);
   if (!source || !sheet) return { ok: true, allowed: true, items: [], message: 'กรุณาเลือกชีตก่อน' };
+  if (!isConfiguredCustomerNotificationSheet_(source, sheet)) {
+    return { ok: true, allowed: true, items: [], message: 'ไม่พบแหล่งข้อมูลหรือชีตที่เลือก' };
+  }
+  if (queueFilter && queueFilters.length) return { ok: true, allowed: true, items: [], message: 'เลือกรายคนหรือหลายคนอย่างใดอย่างหนึ่ง' };
   if (['close','outstanding','due'].indexOf(field) === -1) {
     return { ok: true, allowed: true, items: [], message: 'เลือกได้เฉพาะ ยอดปิด / ยอดค้าง / กำหนดครบวันชำระ' };
   }
@@ -936,6 +980,18 @@ function buildCustomerNotificationBatch_(body) {
   const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
   const notifySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
+  const today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+  const type = 'เจ้าของ-' + notificationFieldLabel_(field);
+  const existing = notifySheet.getLastRow() >= 2
+    ? notifySheet.getRange(2, 1, notifySheet.getLastRow() - 1, 11).getValues() : [];
+  const sentToday = {};
+  existing.forEach(function(r) {
+    if (String(r[1] || '') !== type || String(r[10] || '') !== source + '/' + sheet) return;
+    const date = r[0] instanceof Date ? Utilities.formatDate(r[0], 'Asia/Bangkok', 'yyyy-MM-dd') : '';
+    if (date === today && ['ส่งแล้ว', 'รอส่ง'].indexOf(String(r[8] || '').trim()) !== -1) {
+      sentToday[String(r[4] || '').trim() + '|' + normalizeGeneral_(r[2])] = true;
+    }
+  });
 
   const items = [];
   const seen = {};
@@ -944,21 +1000,22 @@ function buildCustomerNotificationBatch_(body) {
     if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
     if (String(r[4] || '').trim() !== source || String(r[5] || '').trim() !== sheet) continue;
     if (queueFilter && normalizeGeneral_(r[6]) !== queueFilter) continue;
+    if (queueFilters.length && queueFilters.indexOf(normalizeGeneral_(r[6])) === -1) continue;
 
     const lineUserId = String(r[1] || '').trim();
     const queue = String(r[6] || '').trim();
     if (!lineUserId || !queue) continue;
     const uniqueKey = lineUserId + '|' + normalizeGeneral_(queue);
-    if (seen[uniqueKey]) continue;
+    if (seen[uniqueKey] || sentToday[uniqueKey]) continue;
     seen[uniqueKey] = true;
 
     const c = findCustomerIdentity_(source, sheet, queue);
-    if (!c) continue;
+    if (!c || normalizeGeneral_(c.name) !== normalizeGeneral_(r[2])) continue;
     const summary = calculateCustomerSelfSummary_(c);
     const message = buildCustomerNotificationMessage_(summary, field);
     notifySheet.appendRow([
       new Date(),
-      'เจ้าของ-' + notificationFieldLabel_(field),
+      type,
       queue,
       summary.name || '',
       lineUserId,
@@ -984,7 +1041,7 @@ function buildCustomerNotificationBatch_(body) {
     staffName: access.staffName || '',
     role: 'เจ้าของ',
     command: 'ส่งแจ้งลูกค้า',
-    query: source + '/' + sheet + ' ' + notificationFieldLabel_(field) + (queueFilter ? ' ' + body.queue : ' ทั้งหมด'),
+    query: source + '/' + sheet + ' ' + notificationFieldLabel_(field) + (queueFilter ? ' ' + body.queue : queueFilters.length ? ' ' + queueFilters.join(',') : ' ทั้งหมด'),
     source: source + '/' + sheet,
     result: 'เตรียมส่ง ' + items.length + ' ราย',
     actionName: 'customerNotificationBatch',
@@ -1000,7 +1057,7 @@ function buildCustomerNotificationBatch_(body) {
     source: source,
     sheet: sheet,
     field: field,
-    message: items.length ? 'เตรียมส่ง ' + items.length + ' ราย' : 'ไม่พบลูกค้าที่ผูก LINE ในชีตนี้'
+    message: items.length ? 'เตรียมส่ง ' + items.length + ' ราย' : 'ไม่พบผู้รับใหม่ (รายการวันนี้อาจส่งแล้วหรือกำลังส่ง)'
   };
 }
 
@@ -1041,6 +1098,16 @@ function getCustomerContactRecipients_(body) {
 }
 
 function getCustomerReminderBatch_(body) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    return getCustomerReminderBatchLocked_(body);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function getCustomerReminderBatchLocked_(body) {
   if (!isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)) ||
       !isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true))) {
     return { ok: true, items: [], message: 'ระบบลูกค้าปิดใช้งานชั่วคราว' };
@@ -1074,6 +1141,8 @@ function getCustomerReminderBatch_(body) {
       String(r[4] || '').trim(),
       String(r[5] || '').trim()
     ].join('|');
+    const previous = existingMap[key];
+    if (previous && ['ส่งแล้ว', 'รอส่ง'].indexOf(previous.status) !== -1) return;
     existingMap[key] = {
       rowNo: i + 2,
       status: String(r[8] || '').trim()
@@ -1096,7 +1165,7 @@ function getCustomerReminderBatch_(body) {
     if (!lineUserId || !queue) continue;
 
     const c = findCustomerIdentity_(source, sheet, queue);
-    if (!c) continue;
+    if (!c || normalizeGeneral_(c.name) !== normalizeGeneral_(r[2])) continue;
     const due = parseDateFlexible_(c.dueDate);
     if (!due) continue;
 
@@ -1113,7 +1182,7 @@ function getCustomerReminderBatch_(body) {
     const sourceKey = source + '/' + sheet;
     const key = [sourceKey, normalizeGeneral_(c.queue), lineUserId, cycleDisplay].join('|');
     const found = existingMap[key];
-    if (found && found.status === 'ส่งแล้ว') continue;
+    if (found && ['ส่งแล้ว', 'รอส่ง'].indexOf(found.status) !== -1) continue;
 
     const message = [
       'แจ้งเตือนวันครบกำหนดชำระ',
@@ -1174,6 +1243,8 @@ function markCustomerReminderSent_(body) {
   }
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!sh || rowNo > sh.getLastRow()) return { ok: false, error: 'ไม่พบรายการแจ้งเตือน' };
+  const currentStatus = String(sh.getRange(rowNo, 9).getDisplayValue() || '').trim();
+  if (currentStatus !== 'รอส่ง') return { ok: false, error: 'รายการนี้ไม่ได้รอส่งแล้ว', rowNo: rowNo };
 
   const sent = body.sent === true;
   sh.getRange(rowNo, 9).setValue(sent ? 'ส่งแล้ว' : 'ส่งไม่สำเร็จ');
@@ -1807,13 +1878,13 @@ function findExactCustomerForBinding_(queue, fullName) {
   if (verified.length === 1) {
     const v = verified[0];
     const c = findCustomerIdentity_(v.source, v.sheet, v.queue);
-    return c ? [c] : [];
+    return c && normalizeGeneral_(c.name) === normalizeGeneral_(fullName) ? [c] : [];
   }
   if (verified.length > 1) {
     const found = [];
     verified.forEach(function(v) {
       const c = findCustomerIdentity_(v.source, v.sheet, v.queue);
-      if (c) found.push(c);
+      if (c && normalizeGeneral_(c.name) === normalizeGeneral_(fullName)) found.push(c);
     });
     return found;
   }
@@ -1850,16 +1921,32 @@ function logCustomerBindingEvent_(lineUserId, queue, fullName, result, status, n
 }
 
 function requestCustomerBinding_(body) {
-  if (!isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)) ||
-      !isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true))) {
-    return { ok: true, bound: false, message: 'ระบบลูกค้าปิดใช้งานชั่วคราว' };
+  // Serialize the check and insert: concurrent LINE deliveries must never create two bindings.
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    return requestCustomerBindingLocked_(body);
+  } finally {
+    lock.releaseLock();
   }
+}
 
+function requestCustomerBindingLocked_(body) {
   const lineUserId = String(body.lineUserId || '').trim();
   const queue = String(body.queue || '').trim();
   const fullName = String(body.fullName || '').trim();
-  if (!lineUserId) return { ok: true, bound: false, message: 'ไม่พบ LINE User ID' };
+  if (!isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)) ||
+      !isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true))) {
+    logCustomerBindingEvent_(lineUserId, queue, fullName, 'ระบบลูกค้าปิด', 'ไม่สำเร็จ', '');
+    return { ok: true, bound: false, message: 'ระบบลูกค้าปิดใช้งานชั่วคราว' };
+  }
+
+  if (!lineUserId) {
+    logCustomerBindingEvent_(lineUserId, queue, fullName, 'ไม่มี LINE User ID', 'ไม่สำเร็จ', '');
+    return { ok: true, bound: false, message: 'ไม่พบ LINE User ID' };
+  }
   if (!queue || !fullName) {
+    logCustomerBindingEvent_(lineUserId, queue, fullName, 'ข้อมูลไม่ครบ', 'ไม่สำเร็จ', '');
     return { ok: true, bound: false, message: 'กรุณาแจ้ง คิว + ชื่อ + นามสกุล\nตัวอย่าง: 6101 สมชาย ใจดี' };
   }
 
@@ -1874,12 +1961,12 @@ function requestCustomerBinding_(body) {
     const r = values[i];
     const sameLine = String(r[1] || '').trim() === lineUserId;
     const status = String(r[7] || '').trim();
-    if (!sameLine || status !== 'ใช้งาน') continue;
+    if (!sameLine || !status || status === 'ไม่อนุมัติ') continue;
 
     const sameQueue = normalizeGeneral_(r[6]) === normalizeGeneral_(queue);
     const sameName = normalizeGeneral_(r[2]) === normalizeGeneral_(fullName);
 
-    if (sameQueue && sameName) {
+    if (sameQueue && sameName && status === 'ใช้งาน') {
       try { sh.getRange(i + 2, 13).setValue(new Date()); } catch (err) {}
       logCustomerBindingEvent_(lineUserId, queue, fullName, 'ผูกอยู่แล้ว', 'สำเร็จ', 'ส่งข้อมูลเดิมซ้ำ');
       return {
@@ -1902,11 +1989,12 @@ function requestCustomerBinding_(body) {
       fullName,
       'ปฏิเสธ: LINE ผูกลูกค้าอื่นแล้ว',
       'ปฏิเสธ',
-      'ผูกอยู่กับ ' + String(r[2] || '').trim() + ' คิว ' + String(r[6] || '').trim()
+      'ผูกอยู่กับ ' + String(r[2] || '').trim() + ' คิว ' + String(r[6] || '').trim() + ' | สถานะ ' + status
     );
     return {
       ok: true,
-      bound: true,
+      bound: status === 'ใช้งาน',
+      suspended: status !== 'ใช้งาน',
       alreadyBound: true,
       locked: true,
       rejectedNewIdentity: true,
@@ -1914,8 +2002,8 @@ function requestCustomerBinding_(body) {
       queue: String(r[6] || '').trim(),
       source: String(r[4] || '').trim(),
       sheet: String(r[5] || '').trim(),
-      message: 'บัญชี LINE นี้ผูกกับลูกค้าแล้ว\nชื่อ: ' + String(r[2] || '').trim() +
-        '\nคิว: ' + String(r[6] || '').trim() +
+      message: (status === 'ใช้งาน' ? 'บัญชี LINE นี้ผูกกับลูกค้าแล้ว' : 'บัญชี LINE นี้ถูกระงับ กรุณาติดต่อแอดมิน') +
+        '\nชื่อ: ' + String(r[2] || '').trim() + '\nคิว: ' + String(r[6] || '').trim() +
         '\nไม่สามารถใช้ LINE นี้ตรวจสอบชื่อหรือคิวอื่นได้'
     };
   }
@@ -1951,7 +2039,7 @@ function requestCustomerBinding_(body) {
       normalizeGeneral_(r[6]) === normalizeGeneral_(c.queue);
     const status = String(r[7] || '').trim();
 
-    if (sameCustomer && status === 'ใช้งาน' && !sameLine) {
+    if (sameCustomer && status !== 'ไม่อนุมัติ' && !sameLine) {
       logCustomerBindingEvent_(lineUserId, queue, fullName, 'ปฏิเสธ: ลูกค้าผูก LINE อื่นแล้ว', 'ปฏิเสธ', '');
       return {
         ok: true,
@@ -2126,7 +2214,7 @@ function getCustomerSelf_(body) {
     try {
       c = findCustomerIdentity_(b.source, b.sheet, b.queue);
     } catch (err) {}
-    if (!c) {
+    if (!c || normalizeGeneral_(c.name) !== normalizeGeneral_(b.name)) {
       staleRows.push(b.rowNo);
       continue;
     }
@@ -2148,27 +2236,7 @@ function getCustomerSelf_(body) {
 }
 
 function cancelCustomerBindings_(body) {
-  const lineUserId = String(body.lineUserId || '').trim();
-  const sh = customerLineSheet_();
-  if (!lineUserId || sh.getLastRow() < 2) {
-    return { ok: true, changed: false, message: 'ไม่พบบัญชีที่ผูกไว้' };
-  }
-  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues();
-  let changed = 0;
-  for (let i = 0; i < values.length; i++) {
-    if (String(values[i][1] || '').trim() !== lineUserId) continue;
-    const status = String(values[i][7] || '').trim();
-    if (status !== 'ใช้งาน' && status !== 'รออนุมัติ') continue;
-    sh.getRange(i + 2, 8).setValue('ระงับ');
-    sh.getRange(i + 2, 12).setValue('ลูกค้ายกเลิกการผูกบัญชี');
-    changed++;
-  }
-  return {
-    ok: true,
-    changed: changed > 0,
-    count: changed,
-    message: changed ? 'ยกเลิกการผูกบัญชีแล้ว' : 'ไม่พบบัญชีที่ผูกไว้'
-  };
+  return { ok: true, changed: false, message: 'บัญชีที่ผูกแล้วเปลี่ยนเองไม่ได้ กรุณาติดต่อแอดมิน' };
 }
 
 function listPendingCustomerBindings_(body) {
