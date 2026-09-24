@@ -520,7 +520,7 @@ async function handleEvent(event) {
       };
 
       const explicitBindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(.+\S)$/);
-      const plainBindingMatch = text.match(/^(?:คิว\s*)?(\d{3,})\s+(.+\S)$/);
+      const plainBindingMatch = text.match(/^(?:คิว\s*)?(\d{3,}(?:-\d+)*)\s+(.+\S)$/);
       const bindingMatch = explicitBindingMatch || plainBindingMatch;
 
       if (text === "ผูกบัญชี") {
