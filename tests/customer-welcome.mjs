@@ -9,11 +9,13 @@ process.env.GOOGLE_APPS_SCRIPT_URL='https://example.test/bridge';
 let binding;
 const replies=[];
 const bindingRequests=[];
+const auditLogs=[];
 const json=(body,status=200)=>({ok:status<400,status,json:async()=>body,text:async()=>JSON.stringify(body)});
 globalThis.fetch=async(url,options={})=>{
  const method=options.method||'GET';
  if(url.startsWith('https://example.test/bridge')) {
-  const input=JSON.parse(options.body);
+ const input=JSON.parse(options.body);
+  if(input.action==='logAction') {auditLogs.push(input);return json({ok:true,logged:true});}
   if(input.action==='requestCustomerBinding') {bindingRequests.push(input);return json({ok:true,...binding});}
   if(input.action==='checkAccess') return json({ok:true,allowed:false,message:'บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID'});
   return json({ok:true,bound:false});
@@ -44,4 +46,15 @@ const hyphenated=await send('U-hyphen','610-21 ภาณุ พันธ์');
 assert.equal(bindingRequests.at(-1).queue,'610-21');
 assert.equal(bindingRequests.at(-1).fullName,'ภาณุ พันธ์');
 assert.equal(hyphenated[0].type,'flex');
+const invalid=await send('U-invalid','ผูกบัญชี 610-21');
+assert.match(invalid[0].text,/กรุณาแจ้ง คิว/);
+assert.equal(auditLogs.at(-1).status,'รูปแบบไม่ถูกต้อง');
+const unbound=await send('U-unbound','สถานะ');
+assert.equal(unbound[0].type,'text');
+assert.equal(auditLogs.at(-1).status,'ไม่มีสิทธิ์');
+assert.equal(auditLogs.at(-1).command,'สถานะ');
+const denied=await send('U-unknown','ช่วยเหลือ');
+assert.equal(denied[0].type,'text');
+assert.equal(auditLogs.at(-1).status,'ไม่มีสิทธิ์');
+assert.equal(auditLogs.at(-1).actionName,'checkAccess');
 console.log('PASS: verified overview card, exact fields, six buttons; rejected binding has no card');
