@@ -1,10 +1,10 @@
 const CONFIG = {
-  VERSION: '2026.09.24-107',
+  VERSION: '2026.09.24-108',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
     { source: 'v6', sheet: 'V6/10-69' },
-    { source: 'v1/v3', sheet: 'v3/10-69' }
+    { source: 'v1/v3', sheet: 'v3/10' }
   ],
   SOURCE_SHEET: 'ลิ้งชีต',
   STAFF_SHEET: 'เจ้าหน้าที่',
@@ -189,7 +189,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.24-107', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.24-108', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -276,7 +276,7 @@ function setSettingValue_(key, value) {
     sh.getRange(i + 2, 2).setValue(value);
     sh.getRange(i + 2, 5).setValue(true);
     SETTINGS_MEMORY_CACHE_ = null;
-    try { CacheService.getScriptCache().remove('admin-id-settings-v107'); } catch (err) {}
+    try { CacheService.getScriptCache().remove('admin-id-settings-v108'); } catch (err) {}
     return true;
   }
   return false;
@@ -335,7 +335,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.24-107', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.24-108', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -1665,7 +1665,7 @@ function approveStaff_(body) {
 
 function getSettingValue_(key, fallback) {
   if (!SETTINGS_MEMORY_CACHE_) {
-    const cacheKey = 'admin-id-settings-v107';
+    const cacheKey = 'admin-id-settings-v108';
     try {
       const cached = CacheService.getScriptCache().get(cacheKey);
       if (cached) SETTINGS_MEMORY_CACHE_ = JSON.parse(cached);
@@ -1969,7 +1969,7 @@ function findExactCustomerForBinding_(queue, fullName) {
   if (!queueKey || !nameKey) return [];
   let matches = [];
   targets.forEach(function(t) {
-    matches = matches.concat(searchCustomer_(t.source + ':' + queue, true) || []);
+    matches = matches.concat(searchCustomerInConfiguredTab_(t.source, t.sheet, queue) || []);
   });
   const seen = {};
   return matches.filter(function(c) {
@@ -2781,6 +2781,49 @@ function searchCustomer_(query, includeDetails) {
   return results;
 }
 
+function searchCustomerInConfiguredTab_(sourceName, sheetName, query) {
+  const sourceKey = normalizeGeneral_(sourceName);
+  const sheetKey = normalizeGeneral_(sheetName);
+  const queryKey = normalizeGeneral_(query);
+  if (!sourceKey || !sheetKey || !queryKey) return [];
+
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'customer-target-search:' + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_256,
+      [sourceKey, sheetKey, queryKey].join('|')
+    )
+  );
+  const cached = cache.get(cacheKey);
+  if (cached) {
+    try { return JSON.parse(cached); } catch (err) {}
+  }
+
+  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const sourceSheet = backend.getSheetByName(CONFIG.SOURCE_SHEET);
+  if (!sourceSheet || sourceSheet.getLastRow() < 2) return [];
+  const rows = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1, 3).getValues();
+  const source = rows.find(function(row) {
+    return normalizeGeneral_(row[0]) === sourceKey && isTrue_(row[2]);
+  });
+  const url = source ? String(source[1] || '').trim() : '';
+  const id = extractSpreadsheetId_(url);
+  if (!id) return [];
+
+  const workbook = SpreadsheetApp.openById(id);
+  const tab = workbook.getSheetByName(String(sheetName || '').trim());
+  if (!tab || tab.isSheetHidden()) return [];
+
+  const results = [];
+  searchTab_(tab, String(sourceName || '').trim(), query, results, true);
+  try {
+    cache.put(cacheKey, JSON.stringify(results), CONFIG.SEARCH_CACHE_SECONDS);
+  } catch (err) {
+    console.log('target search cache put failed: ' + err.message);
+  }
+  return results;
+}
+
 function searchTab_(sheet, sourceName, query, results, includeDetails) {
   const lastRow = sheet.getLastRow();
   if (!lastRow || !sheet.getLastColumn()) return;
@@ -3032,7 +3075,7 @@ function auditSourceWriteCapabilities_(body) {
 }
 
 function findCustomerIdentity_(sourceName, sheetName, queueValue) {
-  const cacheKey = 'customer-v107-' + Utilities.base64EncodeWebSafe(
+  const cacheKey = 'customer-v108-' + Utilities.base64EncodeWebSafe(
     Utilities.computeDigest(
       Utilities.DigestAlgorithm.SHA_256,
       [sourceName, sheetName, normalizeGeneral_(queueValue)].join('|')
