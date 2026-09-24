@@ -218,7 +218,7 @@ async function showCustomerProgress(chatId) {
   try {
     await pushMessage(chatId, [{
       type: "text",
-      text: "กำลังตรวจสอบข้อมูลลูกค้าในชีตที่เปิดใช้งาน กรุณารอสักครู่ครับ"
+      text: "กำลังตรวจสอบ"
     }]);
   } catch (error) {
     console.warn("Customer progress message failed", error);
