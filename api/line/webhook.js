@@ -248,6 +248,24 @@ function customerSelfQuickReply() {
   };
 }
 
+function customerWelcomeMessage() {
+  return {
+    type: "text",
+    text: [
+      "เริ่มใช้งานได้เลยครับ 👇",
+      "กดปุ่มด้านล่างเพื่อดูข้อมูลของตัวเอง:",
+      "• ยอดปิด — ยอดสำหรับปิดรายการวันนี้",
+      "• วันครบกำหนดชำระ — วันที่ต้องชำระรอบถัดไป",
+      "• ยอดค้าง — ยอดที่ยังค้างชำระ",
+      "• สถานะ — สถานะรายการปัจจุบัน",
+      "• สิทธิ์ส่วนลด — ตรวจสิทธิ์ลดค่าเช่าเมื่อปิดยอด",
+      "• ติดต่อแอดมิน — ส่งคำขอถึงเจ้าหน้าที่",
+      "ถ้าปุ่มหาย พิมพ์ สถานะ เพื่อเรียกปุ่มอีกครั้งครับ",
+    ].join("\n"),
+    quickReply: customerSelfQuickReply(),
+  };
+}
+
 function ownerNotificationFieldQuickReply(source, sheet, autoEnabled = false) {
   const key = source + "|" + sheet;
   return {
@@ -457,7 +475,7 @@ async function handleEvent(event) {
 
         // A binding can be committed even if the bridge omits its reply text.
         // Confirm the persisted identity before telling a real customer it failed.
-        let confirmed = result?.bound && !result?.suspended;
+        let confirmed = !!result?.bound && !result?.suspended && !result?.rejectedNewIdentity;
         let replyText = result?.message;
         if (!replyText) {
           console.warn("Customer binding returned without a message", {
@@ -480,12 +498,10 @@ async function handleEvent(event) {
             ? "ผูกบัญชีสำเร็จแล้ว\nชื่อ: " + fullName + "\nคิว: " + queue
             : "ยังยืนยันการผูกบัญชีไม่ได้ กรุณาพิมพ์ สถานะ เพื่อตรวจสอบก่อนลองใหม่";
         }
-        const message = { type: "text", text: replyText };
-        if (confirmed) {
-
-          message.quickReply = customerSelfQuickReply();
-        }
-        await replyMessage(event.replyToken, [message]);
+        await replyMessage(event.replyToken, [
+          { type: "text", text: replyText },
+          ...(confirmed ? [customerWelcomeMessage()] : []),
+        ]);
         return;
       }
 
