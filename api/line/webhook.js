@@ -455,11 +455,34 @@ async function handleEvent(event) {
           fullName,
         });
 
-        const message = {
-          type: "text",
-          text: result?.message || (result?.bound ? "ตรวจสอบข้อมูลถูกต้องแล้ว" : "ไม่สามารถผูกบัญชีได้"),
-        };
-        if (result?.bound && !result?.suspended) {
+        // A binding can be committed even if the bridge omits its reply text.
+        // Confirm the persisted identity before telling a real customer it failed.
+        let confirmed = result?.bound && !result?.suspended;
+        let replyText = result?.message;
+        if (!replyText) {
+          console.warn("Customer binding returned without a message", {
+            ok: result?.ok, bound: result?.bound, suspended: result?.suspended,
+          });
+          if (!confirmed) {
+            try {
+              const current = await callSheetsBridge({
+                action: "getCustomerSelf", lineUserId, field: "status",
+              });
+              const customer = current?.items?.[0] || {};
+              confirmed = !!current?.bound &&
+                String(customer.queue || "").trim() === queue &&
+                String(customer.name || "").trim().replace(/\s+/g, " ") === fullName.replace(/\s+/g, " ");
+            } catch (error) {
+              console.warn("Could not confirm customer binding after missing reply", error);
+            }
+          }
+          replyText = confirmed
+            ? "ผูกบัญชีสำเร็จแล้ว\nชื่อ: " + fullName + "\nคิว: " + queue
+            : "ยังยืนยันการผูกบัญชีไม่ได้ กรุณาพิมพ์ สถานะ เพื่อตรวจสอบก่อนลองใหม่";
+        }
+        const message = { type: "text", text: replyText };
+        if (confirmed) {
+
           message.quickReply = customerSelfQuickReply();
         }
         await replyMessage(event.replyToken, [message]);
