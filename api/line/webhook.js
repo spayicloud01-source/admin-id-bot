@@ -710,8 +710,8 @@ async function handleEvent(event) {
     const groupId = event.source?.groupId || "";
 
     if (sourceType === "user" && lineUserId) {
-      // Start the indicator without delaying the data lookup.
-      startLoading(lineUserId, 60);
+      // Confirm the LINE loading indicator before starting a potentially slow Sheets lookup.
+      await startLoading(lineUserId, 60);
     }
 
     const command = parseCommand(text);
