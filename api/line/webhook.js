@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.js";
 import { parseCommand, formatCustomerInfo, formatHistory } from "../../lib/commands.js";
 import { linkVerifiedCustomerMenu } from "../../lib/customerRichMenu.js";
+import { paymentQrUrl } from "../../lib/paymentQr.js";
 
 function getRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -162,7 +163,10 @@ async function logCustomerOutcome(lineUserId, command, result, status, note = ""
   });
 }
 
+const customerMenuCheckedUsers = new Set();
+
 async function safeLinkCustomerMenu(lineUserId) {
+  if (!lineUserId || customerMenuCheckedUsers.has(lineUserId)) return;
   try {
     // A person can be in both sheets. Never replace an owner's or staff member's menu.
     const staff = await callSheetsBridge({
@@ -174,6 +178,7 @@ async function safeLinkCustomerMenu(lineUserId) {
     if (!staff.allowed && staff.message === "บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID") {
       await linkVerifiedCustomerMenu(lineUserId);
     }
+    customerMenuCheckedUsers.add(lineUserId);
   } catch (error) {
     console.warn("Could not link customer rich menu", error);
   }
@@ -218,7 +223,7 @@ function menuQuickReply(role) {
   ];
 
   const ownerOnly = [
-    ["ส่งแจ้งลูกค้า", "ส่งแจ้งลูกค้า"],
+    ["ส่งแจ้งทันที", "ส่งแจ้งเตือนทันที"],
     ["เจ้าหน้าที่", "เจ้าหน้าที่"],
     ["ลูกค้ารออนุมัติ", "ลูกค้ารออนุมัติ"],
     ["กิจกรรมวันนี้", "กิจกรรมวันนี้"],
@@ -258,10 +263,10 @@ function staffImageQuickReply() {
 }
 
 const CUSTOMER_SELF_ACTIONS = [
+  ["ชำระยอด", "ชำระยอด"],
   ["ยอดปิด", "ยอดปิด"],
-  ["วันครบกำหนด", "วันครบกำหนดชำระ"],
-  ["ยอดค้าง", "ยอดค้าง"],
   ["สถานะ", "สถานะ"],
+  ["ข้อมูล", "ข้อมูล"],
   ["สิทธิ์ส่วนลด", "สิทธิ์ส่วนลด"],
   ["ติดต่อแอดมิน", "ติดต่อแอดมิน"],
 ];
@@ -326,6 +331,8 @@ function customerResultMessage(text, title = "ข้อมูลล่าสุ�
 function customerFieldForText(value) {
   const text = String(value || "").trim().replace(/\s+/g, "");
   const exact = {
+    "ชำระยอด": "payment",
+    "จ่ายยอด": "payment",
     "ยอดปิด": "close",
     "วันครบกำหนดชำระ": "due",
     "วันครบกำหนด": "due",
@@ -336,17 +343,126 @@ function customerFieldForText(value) {
     "ยอดค้าง": "outstanding",
     "สถานะ": "status",
     "สถานะทั้งหมด": "status",
+    "ข้อมูล": "info",
+    "ข้อมูลลูกค้า": "info",
     "สิทธิ์ส่วนลด": "discount",
     "ค่าเช่า": "fee",
   };
   if (exact[text]) return exact[text];
+  if (/(?:ชำระ|จ่าย).*(?:ยอด|เงิน)|(?:ยอด|เงิน).*(?:ชำระ|จ่าย)/.test(text)) return "payment";
   if (/(?:จ่าย|ชำระ).*(?:วัน|เมื่อไหร่|ไหนดี)|วัน.*(?:จ่าย|ชำระ)|กำหนด.*(?:จ่าย|ชำระ)/.test(text)) return "due";
   if (/ยอด.*ปิด|ปิด.*ยอด/.test(text)) return "close";
   if (/ยอด.*ค้าง|ค้าง.*(?:เท่า|ยอด)/.test(text)) return "outstanding";
   if (/ส่วนลด|ลดค่าเช่า/.test(text)) return "discount";
   if (/ค่าเช่า/.test(text)) return "fee";
   if (/สถานะ/.test(text)) return "status";
+  if (/ข้อมูล/.test(text)) return "info";
   return "";
+}
+
+function customerPaymentMessage(result, field) {
+  const item = Array.isArray(result?.items) ? result.items[0] : null;
+  if (!result?.bound || !item) return { type: "text", text: formatCustomerSelfResult(result, field) };
+  const isClose = field === "close";
+  const total = isClose
+    ? Number(item.calculatedClose || 0)
+    : Number(item.paymentTotal || (Number(item.accumulatedFee || 0) + Number(item.lateFee || 0)));
+  const qrUrl = paymentQrUrl(item.source, total);
+  const discountAmount = Number(item.discountAmount || 0);
+  const rows = isClose
+    ? [
+        ["ชื่อ", item.name || "-"], ["คิว", item.queue || "-"],
+        ["เงินต้น", formatMoney(item.principal) + " บาท"],
+        ["ค่าเช่า", formatMoney(item.accumulatedFee) + " บาท"],
+        ...(discountAmount > 0 ? [["ส่วนลด", "−" + formatMoney(discountAmount) + " บาท"]] : []),
+        ["ค่าปรับ", formatMoney(item.lateFee) + " บาท"],
+        ["รวมยอดปิดวันนี้", formatMoney(total) + " บาท"],
+      ]
+    : [
+        ["ชื่อ", item.name || "-"], ["คิว", item.queue || "-"],
+        ["ค่าเช่าที่ต้องชำระ", formatMoney(item.accumulatedFee) + " บาท"],
+        ["ค่าปรับ", formatMoney(item.lateFee) + " บาท"],
+        ["รวมยอดชำระวันนี้", formatMoney(total) + " บาท"],
+        ["วันครบกำหนด", item.dueDate || "-"],
+      ];
+  const bodyRows = rows.map(([label, value], index) => ({
+    type: "box", layout: "horizontal", spacing: "md", margin: index ? "sm" : "none",
+    contents: [
+      { type: "text", text: label, size: "sm", color: "#60717B", flex: 5, wrap: true },
+      { type: "text", text: String(value), size: "sm", color: index === rows.length - 1 ? "#C2413B" : "#173B46", weight: "bold", align: "end", flex: 5, wrap: true },
+    ],
+  }));
+  return {
+    type: "flex",
+    altText: `${isClose ? "ยอดปิด" : "ชำระยอด"} คิว ${item.queue || "-"} รวม ${formatMoney(total)} บาท`,
+    contents: {
+      type: "bubble", size: "mega",
+      header: { type: "box", layout: "vertical", paddingAll: "18px", backgroundColor: isClose ? "#7B3F00" : "#0D5D65", contents: [
+        { type: "text", text: isClose ? "สรุปยอดปิดวันนี้" : "สรุปยอดชำระวันนี้", color: "#FFFFFF", size: "lg", weight: "bold" },
+        { type: "text", text: "กรุณาตรวจสอบยอดก่อนชำระ", color: "#F3FAFA", size: "xs", margin: "sm" },
+      ] },
+      ...(qrUrl ? { hero: { type: "image", url: qrUrl, size: "full", aspectRatio: "1:1", aspectMode: "fit", backgroundColor: "#FFFFFF" } } : {}),
+      body: { type: "box", layout: "vertical", paddingAll: "18px", contents: [
+        ...bodyRows,
+        { type: "separator", margin: "lg", color: "#DDE9EA" },
+        { type: "text", text: qrUrl ? `QR นี้กำหนดยอด ${formatMoney(total)} บาทแล้ว` : "ยังไม่ได้ตั้งค่า QR สำหรับแหล่งข้อมูลนี้ กรุณาติดต่อแอดมิน", size: "xs", color: qrUrl ? "#0D5D65" : "#C2413B", wrap: true, margin: "lg", align: "center" },
+      ] },
+      footer: { type: "box", layout: "vertical", paddingAll: "14px", spacing: "sm", backgroundColor: "#F1F8F8", contents: [
+        ...(qrUrl ? [{ type: "button", style: "primary", color: "#0D5D65", height: "sm", action: { type: "uri", label: "เปิด/บันทึก QR", uri: qrUrl } }] : []),
+        ...customerPersistentButtons(),
+      ] },
+    },
+    quickReply: customerSelfQuickReply(),
+  };
+}
+
+function customerTermsMessage() {
+  const rules = [
+    "ชำระค่าเช่าตามยอดและวันครบกำหนดที่ระบบ LINE แจ้ง โดยนับรอบจากวันที่รับเงิน",
+    "หากยังไม่คืนเงินต้น ต้องชำระค่าเช่าต่อเนื่องจนกว่าจะปิดยอด และต้องปิดยอดภายใน 6 เดือน",
+    "กรุณาชำระภายในเวลา 18:00 น. ของวันครบกำหนด",
+    "ชำระล่าช้ามีค่าปรับวันละ 50 บาท และเครื่องอาจถูกระงับตามข้อตกลง",
+    "ยอดปิด = เงินต้น + ค่าเช่า + ค่าปรับ − ส่วนลด (ถ้ามี)",
+    "หากเครื่องถูกล็อก อาจเข้าใช้งานหรือออกจากบัญชี iCloud ไม่ได้ และข้อมูลภายในเครื่องอาจมีความเสี่ยง",
+    "หลังชำระ กรุณาส่งสลิปผ่าน LINE และรอเจ้าหน้าที่ตรวจสอบ",
+    "หากมีข้อสงสัย กรุณากด ติดต่อแอดมิน ก่อนถึงวันครบกำหนด",
+  ];
+  return {
+    type: "flex", altText: "เงื่อนไขการชำระค่าเช่าฝาก กรุณาอ่านให้ครบถ้วน",
+    contents: {
+      type: "bubble", size: "mega",
+      header: { type: "box", layout: "vertical", paddingAll: "18px", backgroundColor: "#7B3F00", contents: [
+        { type: "text", text: "เงื่อนไขการชำระค่าเช่าฝาก", color: "#FFFFFF", size: "lg", weight: "bold", wrap: true },
+      ] },
+      body: { type: "box", layout: "vertical", paddingAll: "18px", spacing: "md", contents: [
+        ...rules.map((rule, index) => ({ type: "text", text: `${index + 1}. ${rule}`, size: "sm", color: "#173B46", wrap: true })),
+        { type: "separator", margin: "md", color: "#E6D7C7" },
+        { type: "text", text: "กรุณาชำระให้ตรงเวลา เพื่อหลีกเลี่ยงค่าปรับและการระงับการใช้งานเครื่อง", size: "sm", color: "#C2413B", weight: "bold", wrap: true, margin: "md" },
+      ] },
+      footer: { type: "box", layout: "vertical", paddingAll: "14px", contents: [
+        { type: "button", style: "primary", color: "#0D5D65", action: { type: "message", label: "ยืนยันรับทราบ", text: "ยืนยันรับทราบเงื่อนไข" } },
+      ] },
+    },
+  };
+}
+
+function publicAssetUrl(path) {
+  const host = process.env.PUBLIC_BASE_URL ||
+    (process.env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}` : "https://admin-id-bot.vercel.app");
+  return host.replace(/\/$/, "") + "/" + String(path || "").replace(/^\//, "");
+}
+
+function customerTermsImageMessage() {
+  const url = publicAssetUrl("api/assets/customer-terms");
+  return { type: "image", originalContentUrl: url, previewImageUrl: url };
+}
+
+function customerTermsAckMessage() {
+  return {
+    type: "text",
+    text: "กรุณาอ่านเงื่อนไขให้ครบถ้วน แล้วกด “ยืนยันรับทราบ”\nเมื่อต้องการชำระ กรุณากด “ชำระยอด” หรือ “ยอดปิด” เพื่อรับ QR ที่กำหนดยอดถูกต้อง",
+    quickReply: { items: [{ type: "action", action: { type: "message", label: "ยืนยันรับทราบ", text: "ยืนยันรับทราบเงื่อนไข" } }] },
+  };
 }
 
 function customerWelcomeAmount(value, present = true) {
@@ -362,6 +478,7 @@ function customerWelcomeMessage(overview) {
       ["ชื่อ", String(overview.name)],
       ["คิว", String(overview.queue)],
       ["รุ่น", String(overview.model || "ไม่มีข้อมูล")],
+      ["เบอร์โทร", String(overview.phoneMasked || overview.phone || "ไม่มีข้อมูล")],
       ["ยอด", customerWelcomeAmount(overview.principal, overview.principalPresent !== false)],
       ["ค่าเช่า", customerWelcomeAmount(overview.fee, overview.feePresent !== false)],
       ["วันขาย/ฝาก", String(overview.saleDate || "ไม่มีข้อมูล")],
@@ -402,10 +519,10 @@ function customerWelcomeMessage(overview) {
   return customerResultMessage([
       "ผูกบัญชีสำเร็จแล้ว เริ่มใช้งานได้เลยครับ 👇",
       "กดปุ่มด้านล่างเพื่อดูข้อมูลของตัวเอง:",
+      "• ชำระยอด — ค่าเช่า ค่าปรับ และ QR ระบุยอด",
       "• ยอดปิด — ยอดสำหรับปิดรายการวันนี้",
-      "• วันครบกำหนดชำระ — วันที่ต้องชำระรอบถัดไป",
-      "• ยอดค้าง — ยอดที่ยังค้างชำระ",
       "• สถานะ — สถานะรายการปัจจุบัน",
+      "• ข้อมูล — ตรวจข้อมูลรายการที่ผูกไว้",
       "• สิทธิ์ส่วนลด — ตรวจสิทธิ์ลดค่าเช่าเมื่อปิดยอด",
       "• ติดต่อแอดมิน — ส่งคำขอถึงเจ้าหน้าที่",
       "บนมือถือยังมีเมนูลูกค้าด้านล่างแชทด้วย",
@@ -439,6 +556,9 @@ function formatCustomerSelfResult(result, field) {
 
   const blocks = items.slice(0, 5).map((x) => {
     const head = (x.name || "ลูกค้า") + (x.queue ? " | คิว " + x.queue : "");
+    if (field === "payment") {
+      return [head, "ค่าเช่า: " + formatMoney(x.accumulatedFee) + " บาท", "ค่าปรับ: " + formatMoney(x.lateFee) + " บาท", "รวมยอดชำระวันนี้: " + formatMoney(x.paymentTotal) + " บาท", "วันครบกำหนด: " + (x.dueDate || "-")].join("\n");
+    }
     if (field === "close") {
       return [head, "ยอดปิดวันนี้: " + formatMoney(x.calculatedClose) + " บาท", x.discountEligible ? "มีสิทธิ์ลดค่าเช่า " + x.discountPercent + "%" : null, "คำนวณ ณ " + x.calculatedAt].filter(Boolean).join("\n");
     }
@@ -454,6 +574,18 @@ function formatCustomerSelfResult(result, field) {
     }
     if (field === "status") {
       return [head, "สถานะ: " + (x.status || "-"), x.overdueDays > 0 ? "ค้าง " + x.overdueDays + " วัน" : "ยังไม่เกินกำหนด"].join("\n");
+    }
+    if (field === "info") {
+      return [
+        "ชื่อ: " + (x.name || "-"),
+        "คิว: " + (x.queue || "-"),
+        "รุ่น: " + (x.model || "-"),
+        "เบอร์โทร: " + (x.phoneMasked || x.phone || "-"),
+        "ยอด: " + formatMoney(x.principal) + " บาท",
+        "ค่าเช่า: " + formatMoney(x.fee) + " บาท",
+        "วันขาย/ฝาก: " + (x.saleDate || "-"),
+        "สถานะ: " + (x.status || "-"),
+      ].join("\n");
     }
     if (field === "discount") {
       return [
@@ -578,7 +710,8 @@ async function handleEvent(event) {
     const groupId = event.source?.groupId || "";
 
     if (sourceType === "user" && lineUserId) {
-      await startLoading(lineUserId, 60);
+      // Start the indicator without delaying the data lookup.
+      startLoading(lineUserId, 60);
     }
 
     const command = parseCommand(text);
@@ -653,10 +786,10 @@ async function handleEvent(event) {
           String(overview.name || "").trim().replace(/\s+/g, " ") === fullName.replace(/\s+/g, " ")
           ? overview : null;
         await replyMessage(event.replyToken, confirmed && verifiedOverview
-          ? [customerWelcomeMessage(verifiedOverview)]
+          ? [customerWelcomeMessage(verifiedOverview), customerTermsImageMessage(), customerTermsAckMessage()]
           : [
               { type: "text", text: replyText },
-              ...(confirmed ? [customerWelcomeMessage()] : []),
+              ...(confirmed ? [customerWelcomeMessage(), customerTermsImageMessage(), customerTermsAckMessage()] : []),
             ]);
         if (confirmed) await safeLinkCustomerMenu(lineUserId);
         return;
@@ -664,6 +797,19 @@ async function handleEvent(event) {
 
       if (text === "ยกเลิกผูกบัญชี") {
         await replyMessage(event.replyToken, [{ type: "text", text: "บัญชีที่ผูกแล้วเปลี่ยนเองไม่ได้ กรุณาติดต่อแอดมินเพื่อระงับหรือแก้ไขข้อมูล" }]);
+        return;
+      }
+
+      if (text === "ยืนยันรับทราบเงื่อนไข") {
+        const self = await callSheetsBridge({ action: "getCustomerSelf", lineUserId, field: "status" });
+        if (!self?.bound) {
+          await logCustomerOutcome(lineUserId, text, "ยังไม่ผูกบัญชี", "ไม่มีสิทธิ์");
+          await replyMessage(event.replyToken, [{ type: "text", text: "ได้รับข้อมูลแล้ว กำลังรอตรวจสอบ กรุณารอสักครู่นะครับ" }]);
+          return;
+        }
+        await logCustomerOutcome(lineUserId, text, "ลูกค้ายืนยันรับทราบเงื่อนไข", "สำเร็จ");
+        await replyMessage(event.replyToken, [customerResultMessage("บันทึกการยืนยันรับทราบเงื่อนไขเรียบร้อยแล้ว\nกรุณาชำระให้ตรงตามวันและยอดที่ระบบแจ้ง", "ยืนยันเรียบร้อย")]);
+        await safeLinkCustomerMenu(lineUserId);
         return;
       }
 
@@ -710,6 +856,7 @@ async function handleEvent(event) {
       if (customerField) {
         auditAction = text;
         const field = customerField;
+        const lookupStartedAt = Date.now();
         const result = await callSheetsBridge({
           action: "getCustomerSelf",
           lineUserId,
@@ -717,18 +864,24 @@ async function handleEvent(event) {
         });
         const resultText = formatCustomerSelfResult(result, field);
         const message = result.bound
-          ? customerResultMessage(resultText)
+          ? (["payment", "close"].includes(field) ? customerPaymentMessage(result, field) : customerResultMessage(resultText, field === "info" ? "ข้อมูลลูกค้า" : "ข้อมูลล่าสุด"))
           : { type: "text", text: resultText };
         const hasItems = Array.isArray(result?.items) && result.items.length > 0;
-        await logCustomerOutcome(
-          lineUserId, text,
-          !result?.bound ? (result?.message || "ยังไม่ได้ผูกบัญชี") :
-            hasItems ? "แสดงข้อมูลลูกค้า" : "ไม่พบข้อมูลต้นทาง",
-          !result?.bound ? "ไม่มีสิทธิ์" : hasItems ? "สำเร็จ" : "ข้อมูลไม่ตรง",
-          hasItems ? "" : (result?.bound ? "ข้อมูลต้นทางหายหรือชื่อไม่ตรง" : "")
-        );
         await replyMessage(event.replyToken, [message]);
-        if (result.bound && !result.suspended) await safeLinkCustomerMenu(lineUserId);
+        console.info("Customer self response timing", {
+          field,
+          bridgeMs: Date.now() - lookupStartedAt,
+        });
+        await Promise.allSettled([
+          logCustomerOutcome(
+            lineUserId, text,
+            !result?.bound ? (result?.message || "ยังไม่ได้ผูกบัญชี") :
+              hasItems ? "แสดงข้อมูลลูกค้า" : "ไม่พบข้อมูลต้นทาง",
+            !result?.bound ? "ไม่มีสิทธิ์" : hasItems ? "สำเร็จ" : "ข้อมูลไม่ตรง",
+            hasItems ? "" : (result?.bound ? "ข้อมูลต้นทางหายหรือชื่อไม่ตรง" : "")
+          ),
+          result.bound && !result.suspended ? safeLinkCustomerMenu(lineUserId) : Promise.resolve(),
+        ]);
         return;
       }
     }
@@ -758,6 +911,19 @@ async function handleEvent(event) {
     }
 
     if (!access.allowed) {
+      // A verified customer must stay in the customer experience even when the text
+      // is not one of the known buttons; never show the staff/Admin-ID denial.
+      try {
+        const self = await callSheetsBridge({ action: "getCustomerSelf", lineUserId, field: "status" });
+        if (self?.bound) {
+          await logCustomerOutcome(lineUserId, text, "ไม่พบตัวเลือกลูกค้า", "ไม่เข้าใจคำสั่ง");
+          await replyMessage(event.replyToken, [customerResultMessage("หากมีข้อสงสัยเพิ่มเติมนอกจากตัวเลือก กรุณากด “ติดต่อแอดมิน”", "เลือกบริการที่ต้องการ")]);
+          await safeLinkCustomerMenu(lineUserId);
+          return;
+        }
+      } catch (error) {
+        console.warn("Customer fallback check failed", error);
+      }
       const registration = await callSheetsBridge({
         action: "registerStaff",
         lineUserId,
@@ -829,13 +995,13 @@ async function handleEvent(event) {
       await replyMessage(event.replyToken, [
         {
           type: "text",
-          text: access.message || registration?.message || "บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID",
+          text: "ได้รับข้อมูลแล้ว กำลังรอตรวจสอบ กรุณารอสักครู่นะครับ",
         },
       ]);
       return;
     }
 
-    if (access.role === "เจ้าของ" && text === "ส่งแจ้งลูกค้า") {
+    if (access.role === "เจ้าของ" && ["ส่งแจ้งลูกค้า", "ส่งแจ้งเตือนทันที"].includes(text)) {
       const result = await callSheetsBridge({
         action: "listCustomerNotificationSheets",
         lineUserId,
@@ -1228,7 +1394,7 @@ async function handleEvent(event) {
               console.warn("Could not load approved customer overview", error);
             }
           }
-          await pushMessage(result.customerLineUserId, [customerMessage])
+          await pushMessage(result.customerLineUserId, result.approved ? [customerMessage, customerTermsImageMessage(), customerTermsAckMessage()] : [customerMessage])
             .catch((error) => console.warn("Customer binding result push failed", error));
           if (result.approved) await safeLinkCustomerMenu(result.customerLineUserId);
         }

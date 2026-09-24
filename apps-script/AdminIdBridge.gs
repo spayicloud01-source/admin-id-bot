@@ -1,7 +1,11 @@
 const CONFIG = {
-  VERSION: '2026.09.24-105',
+  VERSION: '2026.09.24-106',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
+  CUSTOMER_BINDING_TARGETS: [
+    { source: 'v6', sheet: 'V6/10-69' },
+    { source: 'v1/v3', sheet: 'v3/10-69' }
+  ],
   SOURCE_SHEET: 'ลิ้งชีต',
   STAFF_SHEET: 'เจ้าหน้าที่',
   HISTORY_SHEET: 'ประวัติลูกค้า',
@@ -1868,12 +1872,22 @@ function customerBindingOwnerIds_() {
 }
 
 function findExactCustomerForBinding_(queue, fullName) {
-  const pilotSource = String(CONFIG.CUSTOMER_PILOT_SOURCE || '').trim();
-  const pilotSheet = String(CONFIG.CUSTOMER_PILOT_SHEET || '').trim();
+  const targets = (CONFIG.CUSTOMER_BINDING_TARGETS || [{
+    source: CONFIG.CUSTOMER_PILOT_SOURCE,
+    sheet: CONFIG.CUSTOMER_PILOT_SHEET
+  }]).map(function(t) {
+    return { source: String(t.source || '').trim(), sheet: String(t.sheet || '').trim() };
+  }).filter(function(t) { return t.source && t.sheet; });
+
+  function isTarget(source, sheet) {
+    return targets.some(function(t) {
+      return normalizeGeneral_(t.source) === normalizeGeneral_(source) &&
+        normalizeGeneral_(t.sheet) === normalizeGeneral_(sheet);
+    });
+  }
 
   const verified = findVerifiedIdentity_(queue, fullName).filter(function(v) {
-    return String(v.source || '').trim() === pilotSource &&
-      String(v.sheet || '').trim() === pilotSheet;
+    return isTarget(v.source, v.sheet);
   });
   if (verified.length === 1) {
     const v = verified[0];
@@ -1892,13 +1906,26 @@ function findExactCustomerForBinding_(queue, fullName) {
   const queueKey = normalizeGeneral_(queue);
   const nameKey = normalizeGeneral_(fullName);
   if (!queueKey || !nameKey) return [];
-  const matches = searchCustomer_(pilotSource + ':' + queue, true) || [];
+  let matches = [];
+  targets.forEach(function(t) {
+    matches = matches.concat(searchCustomer_(t.source + ':' + queue, true) || []);
+  });
+  const seen = {};
   return matches.filter(function(c) {
-    return String(c.source || '').trim() === pilotSource &&
-      String(c.sheet || '').trim() === pilotSheet &&
+    const key = [c.source, c.sheet, normalizeGeneral_(c.queue)].join('|');
+    if (seen[key]) return false;
+    seen[key] = true;
+    return isTarget(c.source, c.sheet) &&
       normalizeGeneral_(c.queue) === queueKey &&
       normalizeGeneral_(c.name) === nameKey;
   });
+}
+
+function maskCustomerPhone_(value) {
+  const raw = String(value || '').trim();
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length < 7) return raw;
+  return digits.slice(0, 3) + '-xxx-' + digits.slice(-4);
 }
 
 function customerBindingOverview_(c) {
@@ -1907,6 +1934,7 @@ function customerBindingOverview_(c) {
     name: String(c.name || '').trim(),
     queue: String(c.queue || '').trim(),
     model: String(c.model || '').trim(),
+    phoneMasked: maskCustomerPhone_(c.phone),
     principal: String(c.principal || '').trim(),
     fee: String(c.fee || '').trim(),
     saleDate: saleDate ? formatThaiDate_(saleDate) : String(c.saleDate || '').trim()
@@ -1921,7 +1949,8 @@ function logCustomerBindingEvent_(lineUserId, queue, fullName, result, status, n
       role: 'ลูกค้า',
       command: 'ผูกบัญชี',
       query: [String(queue || '').trim(), String(fullName || '').trim()].filter(Boolean).join(' '),
-      source: String(CONFIG.CUSTOMER_PILOT_SOURCE || '') + '/' + String(CONFIG.CUSTOMER_PILOT_SHEET || ''),
+      source: (CONFIG.CUSTOMER_BINDING_TARGETS || []).map(function(t){ return t.source + '/' + t.sheet; }).join(',') ||
+        String(CONFIG.CUSTOMER_PILOT_SOURCE || '') + '/' + String(CONFIG.CUSTOMER_PILOT_SHEET || ''),
       result: String(result || ''),
       actionName: 'customerBinding',
       status: String(status || ''),
@@ -2026,11 +2055,11 @@ function requestCustomerBindingLocked_(body) {
 
   const matches = findExactCustomerForBinding_(queue, fullName);
   if (!matches.length) {
-    logCustomerBindingEvent_(lineUserId, queue, fullName, 'ไม่พบข้อมูลตรง', 'ไม่สำเร็จ', 'V6/10-69');
+    logCustomerBindingEvent_(lineUserId, queue, fullName, 'ไม่พบข้อมูลตรง', 'ไม่สำเร็จ', 'V6/10-69 หรือ v1/v3/v3/10-69');
     return {
       ok: true,
       bound: false,
-      message: 'ข้อมูลไม่ตรงหรือไม่พบใน V6/10-69 กรุณาตรวจสอบคิว ชื่อ และนามสกุลอีกครั้ง'
+      message: 'ข้อมูลไม่ตรงหรือไม่พบในรายการที่เปิดใช้งาน กรุณาตรวจสอบคิว ชื่อ และนามสกุลอีกครั้ง'
     };
   }
   if (matches.length > 1) {
@@ -2072,7 +2101,7 @@ function requestCustomerBindingLocked_(body) {
 
   const now = new Date();
   const note = 'ยืนยันอัตโนมัติและล็อก LINE ID: คิว + ชื่อตรง ' +
-    String(CONFIG.CUSTOMER_PILOT_SOURCE) + '/' + String(CONFIG.CUSTOMER_PILOT_SHEET);
+    String(c.source || '') + '/' + String(c.sheet || '');
 
   let rowNo;
   if (reusableRowNo) {
@@ -2187,11 +2216,13 @@ function calculateCustomerSelfSummary_(c) {
   const feeApplied = discountEligible
     ? accumulatedFee * (1 - discountPercent / 100)
     : accumulatedFee;
+  const discountAmount = Math.max(0, accumulatedFee - feeApplied);
 
   return {
     name: String(c.name || '').trim(),
     queue: String(c.queue || '').trim(),
     model: String(c.model || '').trim(),
+    phoneMasked: maskCustomerPhone_(c.phone),
     source: String(c.source || '').trim(),
     status: String(c.status || '').trim(),
     principal: principal,
@@ -2204,8 +2235,11 @@ function calculateCustomerSelfSummary_(c) {
     outstanding: parseMoney_(c.outstanding),
     overdueDays: overdueDays,
     lateFee: lateFee,
+    paymentTotal: accumulatedFee + lateFee,
     discountEligible: discountEligible,
     discountPercent: discountEligible ? discountPercent : 0,
+    discountAmount: discountAmount,
+    feeApplied: feeApplied,
     calculatedClose: principal + feeApplied + lateFee,
     calculatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
   };
@@ -2965,16 +2999,42 @@ function findCustomerIdentity_(sourceName, sheetName, queueValue) {
 
   const rowCount = Math.min(lastRow - h.headerRow, CONFIG.MAX_ROWS_PER_TAB);
   const maxCol = Math.max.apply(null, Object.keys(h).filter(function(k){ return k !== 'headerRow'; }).map(function(k){ return h[k]; }).filter(function(v){ return v > 0; }));
-  const values = sh.getRange(startRow, 1, rowCount, maxCol).getDisplayValues();
   const targetQueue = normalizeGeneral_(queueValue);
+  const queueRange = sh.getRange(startRow, h.queue, rowCount, 1);
+  let rowNo = 0;
 
-  for (let r = 0; r < values.length; r++) {
-    const row = values[r];
-    if (normalizeGeneral_(getCell_(row, h.queue)) !== targetQueue) continue;
-    return {
+  // Search inside Sheets first so normal customer lookups don't download thousands of rows.
+  try {
+    const matches = queueRange.createTextFinder(String(queueValue || '').trim())
+      .matchEntireCell(true)
+      .matchCase(false)
+      .useRegularExpression(false)
+      .findAll();
+    for (let i = 0; i < matches.length; i++) {
+      if (normalizeGeneral_(matches[i].getDisplayValue()) === targetQueue) {
+        rowNo = matches[i].getRow();
+        break;
+      }
+    }
+  } catch (err) {}
+
+  // Preserve support for queues containing unusual spacing or formatting.
+  if (!rowNo) {
+    const queues = queueRange.getDisplayValues();
+    for (let r = 0; r < queues.length; r++) {
+      if (normalizeGeneral_(queues[r][0]) === targetQueue) {
+        rowNo = startRow + r;
+        break;
+      }
+    }
+  }
+  if (!rowNo) return null;
+
+  const row = sh.getRange(rowNo, 1, 1, maxCol).getDisplayValues()[0];
+  return {
       source: String(sourceName || '').trim(),
       sheet: sh.getName(),
-      row: startRow + r,
+      row: rowNo,
       queue: getCell_(row, h.queue),
       name: getCell_(row, h.name),
       phone: getCell_(row, h.phone),
@@ -2987,9 +3047,7 @@ function findCustomerIdentity_(sourceName, sheetName, queueValue) {
       dueDate: getCell_(row, h.dueDate),
       outstanding: getCell_(row, h.outstanding),
       closeAmount: getCell_(row, h.closeAmount)
-    };
-  }
-  return null;
+  };
 }
 
 function auditSourceSchemas_(body) {
