@@ -758,15 +758,15 @@ async function handleEvent(event) {
         const fullName = bindingMatch[2].trim();
 
         await startLoading(lineUserId, 60);
-        await showCustomerProgress(lineUserId);
+        const progressPromise = showCustomerProgress(lineUserId);
 
         // If this LINE account is already bound, lock it to that customer before any new lookup.
-        const result = await callSheetsBridge({
+        const [result] = await Promise.all([callSheetsBridge({
           action: "requestCustomerBinding",
           lineUserId,
           queue,
           fullName,
-        });
+        }), progressPromise]);
 
         // A binding can be committed even if the bridge omits its reply text.
         // Confirm the persisted identity before telling a real customer it failed.
@@ -871,12 +871,12 @@ async function handleEvent(event) {
         const field = customerField;
         const lookupStartedAt = Date.now();
         await startLoading(lineUserId, 60);
-        await showCustomerProgress(lineUserId);
-        const result = await callSheetsBridge({
+        const progressPromise = showCustomerProgress(lineUserId);
+        const [result] = await Promise.all([callSheetsBridge({
           action: "getCustomerSelf",
           lineUserId,
           field,
-        });
+        }), progressPromise]);
         const resultText = formatCustomerSelfResult(result, field);
         const message = result.bound
           ? (["payment", "close"].includes(field) ? customerPaymentMessage(result, field) : customerResultMessage(resultText, field === "info" ? "ข้อมูลลูกค้า" : "ข้อมูลล่าสุด"))
