@@ -8,12 +8,13 @@ process.env.SHEETS_BRIDGE_SECRET='bridge-secret';
 process.env.GOOGLE_APPS_SCRIPT_URL='https://example.test/bridge';
 let binding;
 const replies=[];
+const bindingRequests=[];
 const json=(body,status=200)=>({ok:status<400,status,json:async()=>body,text:async()=>JSON.stringify(body)});
 globalThis.fetch=async(url,options={})=>{
  const method=options.method||'GET';
  if(url.startsWith('https://example.test/bridge')) {
   const input=JSON.parse(options.body);
-  if(input.action==='requestCustomerBinding') return json({ok:true,...binding});
+  if(input.action==='requestCustomerBinding') {bindingRequests.push(input);return json({ok:true,...binding});}
   if(input.action==='checkAccess') return json({ok:true,allowed:false,message:'บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID'});
   return json({ok:true,bound:false});
  }
@@ -22,8 +23,8 @@ globalThis.fetch=async(url,options={})=>{
  if(url.endsWith('/content')) return json({});
  return json({});
 };
-async function send(id){
- const raw=Buffer.from(JSON.stringify({events:[{type:'message',message:{type:'text',text:'6121 สมชาย ใจดี'},replyToken:'reply',source:{type:'user',userId:id}}]}));
+async function send(id,text='6121 สมชาย ใจดี'){
+ const raw=Buffer.from(JSON.stringify({events:[{type:'message',message:{type:'text',text},replyToken:'reply',source:{type:'user',userId:id}}]}));
  const req=Readable.from([raw]);req.method='POST';req.headers={'x-line-signature':crypto.createHmac('sha256',process.env.LINE_CHANNEL_SECRET).update(raw).digest('base64')};
  const res={status(status){this.code=status;return this},json(data){this.body=data;return this}};
  await handler(req,res);assert.equal(res.code,200);
@@ -38,4 +39,9 @@ assert.deepEqual(fields,[['ชื่อ','สมชาย ใจดี'],['ค�
 assert.deepEqual(card.quickReply.items.map(x=>x.action.text),['ยอดปิด','วันครบกำหนดชำระ','ยอดค้าง','สถานะ','สิทธิ์ส่วนลด','ติดต่อแอดมิน']);
 binding={bound:false,message:'ข้อมูลไม่ตรง'};
 const rejected=await send('U-other');assert.equal(rejected.length,1);assert.equal(rejected[0].type,'text');assert.equal(rejected[0].text,'ข้อมูลไม่ตรง');
+binding={bound:true,message:'ตรวจสอบข้อมูลถูกต้องแล้ว',customerOverview:{name:'ภาณุ พันธ์',queue:'610-21',model:'iPhone 15',principal:'12,000',fee:'1,200',saleDate:'24/09/2026'}};
+const hyphenated=await send('U-hyphen','610-21 ภาณุ พันธ์');
+assert.equal(bindingRequests.at(-1).queue,'610-21');
+assert.equal(bindingRequests.at(-1).fullName,'ภาณุ พันธ์');
+assert.equal(hyphenated[0].type,'flex');
 console.log('PASS: verified overview card, exact fields, six buttons; rejected binding has no card');
