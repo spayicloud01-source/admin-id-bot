@@ -10,11 +10,15 @@ process.env.PUBLIC_BASE_URL='https://admin-id-bot.example';
 let binding;
 let selfResult={bound:false};
 const replies=[];
+const loadingRequests=[];
+const progressMessages=[];
 const bindingRequests=[];
 const auditLogs=[];
 const json=(body,status=200)=>({ok:status<400,status,json:async()=>body,text:async()=>JSON.stringify(body)});
 globalThis.fetch=async(url,options={})=>{
  const method=options.method||'GET';
+ if(url.endsWith('/chat/loading/start')) {loadingRequests.push(JSON.parse(options.body));return json({});}
+ if(url.endsWith('/message/push')) {progressMessages.push(...JSON.parse(options.body).messages);return json({});}
  if(url.startsWith('https://example.test/bridge')) {
  const input=JSON.parse(options.body);
   if(input.action==='logAction') {auditLogs.push(input);return json({ok:true,logged:true});}
@@ -37,6 +41,8 @@ async function send(id,text='6121 สมชาย ใจดี'){
 }
 binding={bound:true,message:'ตรวจสอบข้อมูลถูกต้องแล้ว',customerOverview:{name:'สมชาย ใจดี',queue:'6121',model:'iPhone 15 Pro Max',principal:'15,000',fee:'1,500',saleDate:'24/09/2026'}};
 const messages=await send('U-customer');
+assert.deepEqual(loadingRequests.at(-1),{chatId:'U-customer',loadingSeconds:60});
+assert.match(progressMessages.at(-1).text,/กำลังตรวจสอบข้อมูลลูกค้า/);
 assert.equal(messages.length,3);
 const card=messages[0];assert.equal(card.type,'flex');
 const fields=card.contents.body.contents.filter(x=>x.type==='box').map(x=>x.contents.map(y=>y.text));
