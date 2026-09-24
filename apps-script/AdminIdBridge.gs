@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.24-108',
+  VERSION: '2026.09.24-109',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -189,7 +189,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.24-108', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.24-109', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -276,7 +276,7 @@ function setSettingValue_(key, value) {
     sh.getRange(i + 2, 2).setValue(value);
     sh.getRange(i + 2, 5).setValue(true);
     SETTINGS_MEMORY_CACHE_ = null;
-    try { CacheService.getScriptCache().remove('admin-id-settings-v108'); } catch (err) {}
+    try { CacheService.getScriptCache().remove('admin-id-settings-v109'); } catch (err) {}
     return true;
   }
   return false;
@@ -335,7 +335,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.24-108', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.24-109', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -1665,7 +1665,7 @@ function approveStaff_(body) {
 
 function getSettingValue_(key, fallback) {
   if (!SETTINGS_MEMORY_CACHE_) {
-    const cacheKey = 'admin-id-settings-v108';
+    const cacheKey = 'admin-id-settings-v109';
     try {
       const cached = CacheService.getScriptCache().get(cacheKey);
       if (cached) SETTINGS_MEMORY_CACHE_ = JSON.parse(cached);
@@ -1967,9 +1967,11 @@ function findExactCustomerForBinding_(queue, fullName) {
   const queueKey = normalizeGeneral_(queue);
   const nameKey = normalizeGeneral_(fullName);
   if (!queueKey || !nameKey) return [];
-  let matches = [];
+  const matches = [];
   targets.forEach(function(t) {
-    matches = matches.concat(searchCustomerInConfiguredTab_(t.source, t.sheet, queue) || []);
+    let customer = null;
+    try { customer = findCustomerIdentity_(t.source, t.sheet, queue); } catch (err) {}
+    if (customer && normalizeGeneral_(customer.name) === nameKey) matches.push(customer);
   });
   const seen = {};
   return matches.filter(function(c) {
@@ -3075,7 +3077,7 @@ function auditSourceWriteCapabilities_(body) {
 }
 
 function findCustomerIdentity_(sourceName, sheetName, queueValue) {
-  const cacheKey = 'customer-v108-' + Utilities.base64EncodeWebSafe(
+  const cacheKey = 'customer-v109-' + Utilities.base64EncodeWebSafe(
     Utilities.computeDigest(
       Utilities.DigestAlgorithm.SHA_256,
       [sourceName, sheetName, normalizeGeneral_(queueValue)].join('|')
