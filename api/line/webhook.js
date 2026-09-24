@@ -2,6 +2,7 @@ export const maxDuration = 60;
 import crypto from "node:crypto";
 import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.js";
 import { parseCommand, formatCustomerInfo, formatHistory } from "../../lib/commands.js";
+import { linkVerifiedCustomerMenu } from "../../lib/customerRichMenu.js";
 
 function getRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -154,6 +155,23 @@ async function safeLogAction(payload) {
   }
 }
 
+async function safeLinkCustomerMenu(lineUserId) {
+  try {
+    // A person can be in both sheets. Never replace an owner's or staff member's menu.
+    const staff = await callSheetsBridge({
+      action: "checkAccess", lineUserId, sourceType: "user", groupId: "",
+      permission: "ดูข้อมูลลูกค้า",
+    });
+    // A disabled or permission-limited staff account also returns allowed=false.
+    // Only a LINE ID absent from the staff sheet may receive the customer menu.
+    if (!staff.allowed && staff.message === "บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID") {
+      await linkVerifiedCustomerMenu(lineUserId);
+    }
+  } catch (error) {
+    console.warn("Could not link customer rich menu", error);
+  }
+}
+
 async function startLoading(chatId, loadingSeconds = 60) {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token || !chatId) return;
@@ -260,7 +278,7 @@ function customerWelcomeMessage() {
       "• สถานะ — สถานะรายการปัจจุบัน",
       "• สิทธิ์ส่วนลด — ตรวจสิทธิ์ลดค่าเช่าเมื่อปิดยอด",
       "• ติดต่อแอดมิน — ส่งคำขอถึงเจ้าหน้าที่",
-      "ถ้าปุ่มหาย พิมพ์ สถานะ เพื่อเรียกปุ่มอีกครั้งครับ",
+      "เมนูลูกค้าอยู่ด้านล่างแชทในแอป LINE หากยังไม่ขึ้น พิมพ์ สถานะ อีกครั้งครับ",
     ].join("\n"),
     quickReply: customerSelfQuickReply(),
   };
@@ -502,6 +520,7 @@ async function handleEvent(event) {
           { type: "text", text: replyText },
           ...(confirmed ? [customerWelcomeMessage()] : []),
         ]);
+        if (confirmed) await safeLinkCustomerMenu(lineUserId);
         return;
       }
 
@@ -544,6 +563,7 @@ async function handleEvent(event) {
             ? "ส่งแจ้งแอดมินแล้วครับ กรุณารอสักครู่"
             : "ยังส่งแจ้งแอดมินไม่สำเร็จ กรุณาลองอีกครั้ง"
         }]);
+        await safeLinkCustomerMenu(lineUserId);
         return;
       }
 
@@ -560,6 +580,7 @@ async function handleEvent(event) {
         };
         if (result.bound) message.quickReply = customerSelfQuickReply();
         await replyMessage(event.replyToken, [message]);
+        if (result.bound && !result.suspended) await safeLinkCustomerMenu(lineUserId);
         return;
       }
     }
@@ -1036,6 +1057,7 @@ async function handleEvent(event) {
             text: customerText,
             ...(result.approved ? { quickReply: customerSelfQuickReply() } : {}),
           }]).catch((error) => console.warn("Customer binding result push failed", error));
+          if (result.approved) await safeLinkCustomerMenu(result.customerLineUserId);
         }
       } else if (command.action === "readinessCheck") {
         if (!Array.isArray(result.checks)) {
