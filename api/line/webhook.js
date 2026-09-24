@@ -204,9 +204,24 @@ async function startLoading(chatId, loadingSeconds = 60) {
     if (!response.ok) {
       const text = await response.text();
       console.warn(`LINE loading failed: ${response.status} ${text}`);
+      return false;
     }
+    console.info("LINE loading started", { chatId, loadingSeconds });
+    return true;
   } catch (error) {
     console.warn("LINE loading error", error);
+    return false;
+  }
+}
+
+async function showCustomerProgress(chatId) {
+  try {
+    await pushMessage(chatId, [{
+      type: "text",
+      text: "กำลังตรวจสอบข้อมูลลูกค้าในชีตที่เปิดใช้งาน กรุณารอสักครู่ครับ"
+    }]);
+  } catch (error) {
+    console.warn("Customer progress message failed", error);
   }
 }
 
@@ -613,7 +628,7 @@ async function handleEvent(event) {
       type: "text",
       text: [
         "ยินดีต้อนรับครับ",
-        "กรุณาแจ้ง คิว + ชื่อ + นามสกุล ให้ตรงกับข้อมูลในระบบ",
+        "กรุณาส่ง คิว + ชื่อ + นามสกุล ให้ตรงกับข้อมูลในระบบ",
         "ตัวอย่าง: 6101 สมชาย ใจดี"
       ].join("\n")
     }]);
@@ -709,11 +724,6 @@ async function handleEvent(event) {
     const sourceType = event.source?.type || "";
     const groupId = event.source?.groupId || "";
 
-    if (sourceType === "user" && lineUserId) {
-      // Confirm the LINE loading indicator before starting a potentially slow Sheets lookup.
-      await startLoading(lineUserId, 60);
-    }
-
     const command = parseCommand(text);
 
     // Customer self-service is public in 1:1 chat during the V6/10-69 pilot.
@@ -746,6 +756,9 @@ async function handleEvent(event) {
         auditAction = "ผูกบัญชี";
         const queue = bindingMatch[1];
         const fullName = bindingMatch[2].trim();
+
+        await startLoading(lineUserId, 60);
+        await showCustomerProgress(lineUserId);
 
         // If this LINE account is already bound, lock it to that customer before any new lookup.
         const result = await callSheetsBridge({
@@ -857,6 +870,8 @@ async function handleEvent(event) {
         auditAction = text;
         const field = customerField;
         const lookupStartedAt = Date.now();
+        await startLoading(lineUserId, 60);
+        await showCustomerProgress(lineUserId);
         const result = await callSheetsBridge({
           action: "getCustomerSelf",
           lineUserId,
