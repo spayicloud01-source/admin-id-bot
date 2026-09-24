@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.24-106',
+  VERSION: '2026.09.24-107',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -21,6 +21,8 @@ const CONFIG = {
   HEADER_SCAN_ROWS: 20,
   HEADER_SCAN_COLS: 40,
   SEARCH_CACHE_SECONDS: 300,
+  CUSTOMER_CACHE_SECONDS: 20,
+  SETTINGS_CACHE_SECONDS: 30,
   REMINDER_ENDPOINT: 'https://admin-id-bot.vercel.app/api/reminders/run',
   EXCLUDED_TAB_PATTERNS: [
     /^LINE แจ้งค่าเช่า$/i,
@@ -30,6 +32,8 @@ const CONFIG = {
     /Dashboard/i
   ]
 };
+
+let SETTINGS_MEMORY_CACHE_ = null;
 
 function doGet() {
   return json_({
@@ -185,7 +189,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.24-106', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.24-107', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -271,6 +275,8 @@ function setSettingValue_(key, value) {
     if (String(values[i][0] || '').trim() !== key) continue;
     sh.getRange(i + 2, 2).setValue(value);
     sh.getRange(i + 2, 5).setValue(true);
+    SETTINGS_MEMORY_CACHE_ = null;
+    try { CacheService.getScriptCache().remove('admin-id-settings-v107'); } catch (err) {}
     return true;
   }
   return false;
@@ -329,7 +335,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.24-106', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.24-107', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -1658,6 +1664,42 @@ function approveStaff_(body) {
 }
 
 function getSettingValue_(key, fallback) {
+  if (!SETTINGS_MEMORY_CACHE_) {
+    const cacheKey = 'admin-id-settings-v107';
+    try {
+      const cached = CacheService.getScriptCache().get(cacheKey);
+      if (cached) SETTINGS_MEMORY_CACHE_ = JSON.parse(cached);
+    } catch (err) {}
+
+    if (!SETTINGS_MEMORY_CACHE_) {
+      const map = {};
+      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const sh = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
+      if (sh && sh.getLastRow() >= 2) {
+        const values = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues();
+        values.forEach(function(row) {
+          const settingKey = String(row[0] || '').trim();
+          if (!settingKey || row[4] === false) return;
+          map[settingKey] = row[1];
+        });
+      }
+      SETTINGS_MEMORY_CACHE_ = map;
+      try {
+        CacheService.getScriptCache().put(
+          cacheKey,
+          JSON.stringify(map),
+          CONFIG.SETTINGS_CACHE_SECONDS
+        );
+      } catch (err) {}
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(SETTINGS_MEMORY_CACHE_, key)) {
+    const value = SETTINGS_MEMORY_CACHE_[key];
+    return value == null || value === '' ? fallback : value;
+  }
+  return fallback;
+  /* legacy direct-sheet lookup retained below for rollback reference
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sh = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
   if (!sh || sh.getLastRow() < 2) return fallback;
@@ -1668,6 +1710,7 @@ function getSettingValue_(key, fallback) {
     return values[i][1] == null || values[i][1] === '' ? fallback : values[i][1];
   }
   return fallback;
+  */
 }
 
 function parseMoney_(value) {
@@ -1733,19 +1776,37 @@ function latestDiscountStart_(customer, fallbackDate) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!sh || sh.getLastRow() < 2) return fallbackDate;
-
-  const raw = sh.getRange(2, 1, sh.getLastRow() - 1, 16).getValues();
-  const display = sh.getRange(2, 1, sh.getLastRow() - 1, 16).getDisplayValues();
   const allowed = { 'ชำระค่าเช่า': true, 'ค่าปรับ': true, 'ต่อรอบ': true };
+  const queueText = String(customer.queue || '').trim();
+  const queueKey = normalizeGeneral_(queueText);
+  const queueRange = sh.getRange(2, 4, sh.getLastRow() - 1, 1);
+  let rowNumbers = [];
 
-  for (let i = raw.length - 1; i >= 0; i--) {
-    const row = display[i];
+  try {
+    rowNumbers = queueRange.createTextFinder(queueText)
+      .matchEntireCell(true)
+      .matchCase(false)
+      .useRegularExpression(false)
+      .findAll()
+      .map(function(cell) { return cell.getRow(); });
+  } catch (err) {}
+
+  if (!rowNumbers.length) {
+    const queues = queueRange.getDisplayValues();
+    for (let i = 0; i < queues.length; i++) {
+      if (normalizeGeneral_(queues[i][0]) === queueKey) rowNumbers.push(i + 2);
+    }
+  }
+
+  rowNumbers.sort(function(a, b) { return b - a; });
+  for (let i = 0; i < rowNumbers.length; i++) {
+    const row = sh.getRange(rowNumbers[i], 1, 1, 16).getValues()[0];
     const sameSource = String(row[1] || '').trim() === String(customer.source || '').trim();
     const sameSheet = String(row[2] || '').trim() === String(customer.sheet || '').trim();
-    const sameQueue = String(row[3] || '').trim() === String(customer.queue || '').trim();
+    const sameQueue = normalizeGeneral_(row[3]) === queueKey;
     if (!(sameSource && sameSheet && sameQueue)) continue;
     if (!allowed[String(row[8] || '').trim()]) continue;
-    const d = parseDateFlexible_(raw[i][0]) || parseDateFlexible_(row[0]);
+    const d = parseDateFlexible_(row[0]);
     if (d) return d;
   }
   return fallbackDate;
@@ -2971,6 +3032,17 @@ function auditSourceWriteCapabilities_(body) {
 }
 
 function findCustomerIdentity_(sourceName, sheetName, queueValue) {
+  const cacheKey = 'customer-v107-' + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(
+      Utilities.DigestAlgorithm.SHA_256,
+      [sourceName, sheetName, normalizeGeneral_(queueValue)].join('|')
+    )
+  ).slice(0, 60);
+  try {
+    const cached = CacheService.getScriptCache().get(cacheKey);
+    if (cached) return JSON.parse(cached);
+  } catch (err) {}
+
   const backend = SpreadsheetApp.getActiveSpreadsheet();
   const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!src || src.getLastRow() < 2) return null;
@@ -3031,7 +3103,7 @@ function findCustomerIdentity_(sourceName, sheetName, queueValue) {
   if (!rowNo) return null;
 
   const row = sh.getRange(rowNo, 1, 1, maxCol).getDisplayValues()[0];
-  return {
+  const customer = {
       source: String(sourceName || '').trim(),
       sheet: sh.getName(),
       row: rowNo,
@@ -3048,6 +3120,14 @@ function findCustomerIdentity_(sourceName, sheetName, queueValue) {
       outstanding: getCell_(row, h.outstanding),
       closeAmount: getCell_(row, h.closeAmount)
   };
+  try {
+    CacheService.getScriptCache().put(
+      cacheKey,
+      JSON.stringify(customer),
+      CONFIG.CUSTOMER_CACHE_SECONDS
+    );
+  } catch (err) {}
+  return customer;
 }
 
 function auditSourceSchemas_(body) {
