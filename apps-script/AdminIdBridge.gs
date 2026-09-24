@@ -1901,6 +1901,18 @@ function findExactCustomerForBinding_(queue, fullName) {
   });
 }
 
+function customerBindingOverview_(c) {
+  const saleDate = parseDateFlexible_(c.saleDate);
+  return {
+    name: String(c.name || '').trim(),
+    queue: String(c.queue || '').trim(),
+    model: String(c.model || '').trim(),
+    principal: String(c.principal || '').trim(),
+    fee: String(c.fee || '').trim(),
+    saleDate: saleDate ? formatThaiDate_(saleDate) : String(c.saleDate || '').trim()
+  };
+}
+
 function logCustomerBindingEvent_(lineUserId, queue, fullName, result, status, note) {
   try {
     logAction_({
@@ -1969,6 +1981,8 @@ function requestCustomerBindingLocked_(body) {
     if (sameQueue && sameName && status === 'ใช้งาน') {
       try { sh.getRange(i + 2, 13).setValue(new Date()); } catch (err) {}
       logCustomerBindingEvent_(lineUserId, queue, fullName, 'ผูกอยู่แล้ว', 'สำเร็จ', 'ส่งข้อมูลเดิมซ้ำ');
+      let existing = null;
+      try { existing = findCustomerIdentity_(r[4], r[5], r[6]); } catch (err) {}
       return {
         ok: true,
         bound: true,
@@ -1978,6 +1992,8 @@ function requestCustomerBindingLocked_(body) {
         queue: String(r[6] || '').trim(),
         source: String(r[4] || '').trim(),
         sheet: String(r[5] || '').trim(),
+        customerOverview: existing && normalizeGeneral_(existing.name) === normalizeGeneral_(r[2])
+          ? customerBindingOverview_(existing) : null,
         message: 'บัญชี LINE นี้ผูกกับข้อมูลลูกค้าเรียบร้อยแล้ว\nชื่อ: ' +
           String(r[2] || '').trim() + '\nคิว: ' + String(r[6] || '').trim()
       };
@@ -2114,6 +2130,7 @@ function requestCustomerBindingLocked_(body) {
     queue: String(c.queue || '').trim(),
     source: String(c.source || '').trim(),
     sheet: String(c.sheet || '').trim(),
+    customerOverview: customerBindingOverview_(c),
     message: 'ตรวจสอบข้อมูลถูกต้องแล้ว\nชื่อ: ' + String(c.name || '').trim() +
       '\nคิว: ' + String(c.queue || '').trim() +
       '\nผูก LINE นี้เรียบร้อยแล้ว และไม่สามารถตรวจสอบชื่ออื่นด้วย LINE นี้ได้'
@@ -2174,10 +2191,14 @@ function calculateCustomerSelfSummary_(c) {
   return {
     name: String(c.name || '').trim(),
     queue: String(c.queue || '').trim(),
+    model: String(c.model || '').trim(),
     source: String(c.source || '').trim(),
     status: String(c.status || '').trim(),
     principal: principal,
     fee: fee,
+    principalPresent: String(c.principal || '').trim() !== '',
+    feePresent: String(c.fee || '').trim() !== '',
+    saleDate: saleDate ? formatThaiDate_(saleDate) : String(c.saleDate || '').trim(),
     accumulatedFee: accumulatedFee,
     dueDate: dueDate ? formatThaiDate_(dueDate) : String(c.dueDate || ''),
     outstanding: parseMoney_(c.outstanding),

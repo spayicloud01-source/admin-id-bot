@@ -266,11 +266,63 @@ function customerSelfQuickReply() {
   };
 }
 
-function customerWelcomeMessage() {
+function customerWelcomeAmount(value, present = true) {
+  if (!present || value === null || value === undefined || String(value).trim() === "") return "ไม่มีข้อมูล";
+  const raw = String(value).replace(/[,฿]|บาท/g, "").trim();
+  const amount = Number(raw);
+  return Number.isFinite(amount) ? amount.toLocaleString("th-TH", { maximumFractionDigits: 2 }) + " บาท" : String(value).trim();
+}
+
+function customerWelcomeMessage(overview) {
+  if (overview?.name && overview?.queue) {
+    const fields = [
+      ["ชื่อ", String(overview.name)],
+      ["คิว", String(overview.queue)],
+      ["รุ่น", String(overview.model || "ไม่มีข้อมูล")],
+      ["ยอด", customerWelcomeAmount(overview.principal, overview.principalPresent !== false)],
+      ["ค่าเช่า", customerWelcomeAmount(overview.fee, overview.feePresent !== false)],
+      ["วันขาย/ฝาก", String(overview.saleDate || "ไม่มีข้อมูล")],
+    ];
+    const rows = fields.map(([label, value]) => ({
+      type: "box", layout: "horizontal", spacing: "md",
+      contents: [
+        { type: "text", text: label, size: "sm", color: "#60717B", flex: 3 },
+        { type: "text", text: value, size: "sm", color: "#173B46", weight: "bold", wrap: true, flex: 5 },
+      ],
+    }));
+    return {
+      type: "flex",
+      altText: "ผูกบัญชีสำเร็จ • ข้อมูลรายการคิว " + overview.queue,
+      contents: {
+        type: "bubble",
+        size: "mega",
+        header: {
+          type: "box", layout: "vertical", paddingAll: "20px", spacing: "sm", backgroundColor: "#0D5D65",
+          contents: [
+            { type: "text", text: "ผูกบัญชีสำเร็จ", size: "lg", color: "#FFFFFF", weight: "bold" },
+            { type: "text", text: "ข้อมูลรายการของคุณ", size: "sm", color: "#D8F2EF" },
+          ],
+        },
+        body: {
+          type: "box", layout: "vertical", paddingAll: "20px", spacing: "md",
+          contents: [
+            ...rows,
+            { type: "separator", margin: "md", color: "#DDE9EA" },
+            { type: "text", text: "ยอดและค่าเช่าอ้างอิงจากรายการในชีต ณ วันที่ตรวจสอบ", size: "xs", color: "#73848B", wrap: true, margin: "md" },
+          ],
+        },
+        footer: {
+          type: "box", layout: "vertical", paddingAll: "18px", backgroundColor: "#F1F8F8",
+          contents: [{ type: "text", text: "กดเมนูด้านล่างเพื่อดูยอดปิด วันชำระ และข้อมูลล่าสุด", size: "sm", color: "#0D5D65", wrap: true }],
+        },
+      },
+      quickReply: customerSelfQuickReply(),
+    };
+  }
   return {
     type: "text",
     text: [
-      "เริ่มใช้งานได้เลยครับ 👇",
+      "ผูกบัญชีสำเร็จแล้ว เริ่มใช้งานได้เลยครับ 👇",
       "กดปุ่มด้านล่างเพื่อดูข้อมูลของตัวเอง:",
       "• ยอดปิด — ยอดสำหรับปิดรายการวันนี้",
       "• วันครบกำหนดชำระ — วันที่ต้องชำระรอบถัดไป",
@@ -516,10 +568,17 @@ async function handleEvent(event) {
             ? "ผูกบัญชีสำเร็จแล้ว\nชื่อ: " + fullName + "\nคิว: " + queue
             : "ยังยืนยันการผูกบัญชีไม่ได้ กรุณาพิมพ์ สถานะ เพื่อตรวจสอบก่อนลองใหม่";
         }
-        await replyMessage(event.replyToken, [
-          { type: "text", text: replyText },
-          ...(confirmed ? [customerWelcomeMessage()] : []),
-        ]);
+        const overview = result?.customerOverview;
+        const verifiedOverview = confirmed && overview &&
+          String(overview.queue || "").trim() === queue &&
+          String(overview.name || "").trim().replace(/\s+/g, " ") === fullName.replace(/\s+/g, " ")
+          ? overview : null;
+        await replyMessage(event.replyToken, confirmed && verifiedOverview
+          ? [customerWelcomeMessage(verifiedOverview)]
+          : [
+              { type: "text", text: replyText },
+              ...(confirmed ? [customerWelcomeMessage()] : []),
+            ]);
         if (confirmed) await safeLinkCustomerMenu(lineUserId);
         return;
       }
@@ -1052,11 +1111,24 @@ async function handleEvent(event) {
           const customerText = result.approved
             ? "ผูกบัญชีสำเร็จแล้ว\nพิมพ์ ยอดปิด เพื่อดูยอดปิดของคุณได้ทันที"
             : "คำขอผูกบัญชีไม่ได้รับการอนุมัติ กรุณาติดต่อเจ้าหน้าที่";
-          await pushMessage(result.customerLineUserId, [{
-            type: "text",
-            text: customerText,
+          let customerMessage = {
+            type: "text", text: customerText,
             ...(result.approved ? { quickReply: customerSelfQuickReply() } : {}),
-          }]).catch((error) => console.warn("Customer binding result push failed", error));
+          };
+          if (result.approved) {
+            try {
+              const self = await callSheetsBridge({ action: "getCustomerSelf", lineUserId: result.customerLineUserId, field: "menu" });
+              const overview = (self?.items || []).find((item) =>
+                String(item.queue || "").trim() === String(result.queue || "").trim() &&
+                String(item.name || "").trim() === String(result.customerName || "").trim()
+              );
+              if (self?.bound && overview) customerMessage = customerWelcomeMessage(overview);
+            } catch (error) {
+              console.warn("Could not load approved customer overview", error);
+            }
+          }
+          await pushMessage(result.customerLineUserId, [customerMessage])
+            .catch((error) => console.warn("Customer binding result push failed", error));
           if (result.approved) await safeLinkCustomerMenu(result.customerLineUserId);
         }
       } else if (command.action === "readinessCheck") {
