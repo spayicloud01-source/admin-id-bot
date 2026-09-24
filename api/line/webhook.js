@@ -448,74 +448,6 @@ async function handleEvent(event) {
         const fullName = bindingMatch[2].trim();
 
         // If this LINE account is already bound, lock it to that customer before any new lookup.
-        const currentBinding = await callSheetsBridge({
-          action: "getCustomerSelf",
-          lineUserId,
-          field: "status",
-        }).catch(() => null);
-
-        if (currentBinding?.bound && Array.isArray(currentBinding.items) && currentBinding.items.length) {
-          const bound = currentBinding.items[0];
-          const sameQueue = String(bound?.queue || "").replace(/\s+/g, "").toLowerCase() === String(queue).replace(/\s+/g, "").toLowerCase();
-          const sameName = String(bound?.name || "").replace(/\s+/g, "").toLowerCase() === String(fullName).replace(/\s+/g, "").toLowerCase();
-
-          if (!(sameQueue && sameName)) {
-            await safeLogAction({
-              lineUserId,
-              staffName: bound?.name || "",
-              role: "ลูกค้า",
-              command: "ตรวจชื่อใหม่หลังผูกแล้ว",
-              query: queue + " " + fullName,
-              source: [bound?.source, bound?.sheet].filter(Boolean).join("/"),
-              result: "ปฏิเสธ",
-              actionName: "customerBindingLocked",
-              status: "ปฏิเสธ",
-              note: "LINE นี้ผูกกับคิว " + (bound?.queue || "-"),
-            });
-          }
-
-          const message = {
-            type: "text",
-            text: sameQueue && sameName
-              ? [
-                  "บัญชี LINE นี้ผูกกับข้อมูลลูกค้าเรียบร้อยแล้ว",
-                  "ชื่อ: " + (bound.name || "-"),
-                  "คิว: " + (bound.queue || "-")
-                ].join("\n")
-              : [
-                  "บัญชี LINE นี้ผูกกับลูกค้าแล้ว",
-                  "ชื่อ: " + (bound.name || "-"),
-                  "คิว: " + (bound.queue || "-"),
-                  "ไม่สามารถใช้ LINE นี้ตรวจสอบชื่อหรือคิวอื่นได้"
-                ].join("\n"),
-            quickReply: customerSelfQuickReply(),
-          };
-          await replyMessage(event.replyToken, [message]);
-          return;
-        }
-
-        const pilotSearch = await callSheetsBridge({
-          action: "searchCustomer",
-          query: "v6:" + queue,
-        });
-
-        const exactPilotMatches = (pilotSearch?.matches || []).filter((x) =>
-          String(x?.source || "").trim() === "v6" &&
-          String(x?.sheet || "").trim() === "V6/10-69" &&
-          String(x?.queue || "").replace(/\s+/g, "").toLowerCase() === String(queue).replace(/\s+/g, "").toLowerCase() &&
-          String(x?.name || "").replace(/\s+/g, "").toLowerCase() === String(fullName).replace(/\s+/g, "").toLowerCase()
-        );
-
-        if (exactPilotMatches.length !== 1) {
-          await replyMessage(event.replyToken, [{
-            type: "text",
-            text: exactPilotMatches.length > 1
-              ? "พบข้อมูลซ้ำมากกว่า 1 รายการ กรุณาติดต่อเจ้าหน้าที่"
-              : "ข้อมูลไม่ตรงหรือไม่พบใน V6/10-69 กรุณาตรวจสอบคิว ชื่อ และนามสกุลอีกครั้ง"
-          }]);
-          return;
-        }
-
         const result = await callSheetsBridge({
           action: "requestCustomerBinding",
           lineUserId,
@@ -523,38 +455,11 @@ async function handleEvent(event) {
           fullName,
         });
 
-        let finalResult = result;
-        if (!result?.bound && result?.requested && result?.rowNo && Array.isArray(result?.ownerLineUserIds) && result.ownerLineUserIds[0]) {
-          try {
-            const resolved = await callSheetsBridge({
-              action: "resolveCustomerBinding",
-              lineUserId: result.ownerLineUserIds[0],
-              query: String(result.rowNo),
-              decision: "อนุมัติ",
-            });
-            if (resolved?.approved) {
-              finalResult = {
-                ...result,
-                bound: true,
-                autoApproved: true,
-                message: [
-                  "ตรวจสอบข้อมูลถูกต้องแล้ว",
-                  "ชื่อ: " + (result.customerName || fullName),
-                  "คิว: " + (result.queue || queue),
-                  "สามารถตรวจสอบข้อมูลจากปุ่มด้านล่างได้เลย"
-                ].join("\n")
-              };
-            }
-          } catch (error) {
-            console.warn("Auto activate customer binding failed", error);
-          }
-        }
-
         const message = {
           type: "text",
-          text: finalResult?.message || (finalResult?.bound ? "ตรวจสอบข้อมูลถูกต้องแล้ว" : "ไม่สามารถผูกบัญชีได้"),
+          text: result?.message || (result?.bound ? "ตรวจสอบข้อมูลถูกต้องแล้ว" : "ไม่สามารถผูกบัญชีได้"),
         };
-        if (finalResult?.bound || finalResult?.alreadyBound) {
+        if (result?.bound && !result?.suspended) {
           message.quickReply = customerSelfQuickReply();
         }
         await replyMessage(event.replyToken, [message]);
@@ -562,8 +467,7 @@ async function handleEvent(event) {
       }
 
       if (text === "ยกเลิกผูกบัญชี") {
-        const result = await callSheetsBridge({ action: "cancelCustomerBindings", lineUserId });
-        await replyMessage(event.replyToken, [{ type: "text", text: result.message || "ดำเนินการแล้ว" }]);
+        await replyMessage(event.replyToken, [{ type: "text", text: "บัญชีที่ผูกแล้วเปลี่ยนเองไม่ได้ กรุณาติดต่อแอดมินเพื่อระงับหรือแก้ไขข้อมูล" }]);
         return;
       }
 
@@ -583,19 +487,23 @@ async function handleEvent(event) {
           "คิว: " + (c.queue || "-"),
           "ชีต: " + [c.source, c.sheet].filter(Boolean).join(" / "),
           "LINE User ID: " + (c.lineUserId || lineUserId),
+          "เวลา: " + new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }).format(new Date()),
         ].join("\n");
-        await Promise.all(
-          (result.recipients || []).map((id) =>
-            pushMessage(id, [{ type: "text", text: alertText }]).catch((error) => {
-              console.warn("Customer contact admin push failed", error);
-            })
-          )
+        const outcomes = await Promise.allSettled(
+          (result.recipients || []).map((id) => pushMessage(id, [{ type: "text", text: alertText }]))
         );
+        const delivered = outcomes.filter((x) => x.status === "fulfilled").length;
+        await safeLogAction({
+          lineUserId, staffName: c.name || "", role: "ลูกค้า", command: "ติดต่อแอดมิน",
+          query: c.queue || "", source: [c.source, c.sheet].join("/"),
+          result: "ส่งสำเร็จ " + delivered + "/" + outcomes.length,
+          actionName: "customerContactDelivery", status: delivered ? "สำเร็จ" : "ไม่สำเร็จ", note: ""
+        });
         await replyMessage(event.replyToken, [{
           type: "text",
-          text: (result.recipients || []).length
+          text: delivered
             ? "ส่งแจ้งแอดมินแล้วครับ กรุณารอสักครู่"
-            : "ยังไม่พบแอดมินที่พร้อมรับแจ้งเตือน"
+            : "ยังส่งแจ้งแอดมินไม่สำเร็จ กรุณาลองอีกครั้ง"
         }]);
         return;
       }
@@ -714,20 +622,43 @@ async function handleEvent(event) {
         sourceType,
         groupId,
       });
-      const items = (result.items || []).slice(0, 13).map((x) => ({
+      const sources = [...new Set((result.items || []).map((x) => x.source))];
+      const items = sources.slice(0, 13).map((source) => ({
         type: "action",
         action: {
           type: "message",
-          label: String(x.sheet || x.source || "ชีต").slice(0, 20),
-          text: "แจ้งชีต " + x.source + "|" + x.sheet
+          label: String(source).slice(0, 20),
+          text: "แจ้งแหล่ง " + source
         }
       }));
       await replyMessage(event.replyToken, [{
         type: "text",
         text: items.length
-          ? "เลือกชีตที่จะส่งแจ้งลูกค้า"
-          : "ยังไม่มีลูกค้าที่ผูก LINE ในชีต",
+          ? "เลือกแหล่งข้อมูลก่อน แล้วเลือกชีตที่จะส่งแจ้งลูกค้า"
+          : "ยังไม่พบแหล่งข้อมูลที่เปิดใช้งาน",
         ...(items.length ? { quickReply: { items } } : {})
+      }]);
+      return;
+    }
+
+    if (access.role === "เจ้าของ" && text.startsWith("แจ้งแหล่ง ")) {
+      const selector = text.slice("แจ้งแหล่ง ".length).trim();
+      const pageMatch = selector.match(/^(.*?)\s+(\d+)$/);
+      const source = pageMatch ? pageMatch[1] : selector;
+      const page = pageMatch ? Math.max(1, Number(pageMatch[2])) : 1;
+      const result = await callSheetsBridge({ action: "listCustomerNotificationSheets", lineUserId, sourceType, groupId });
+      const sheets = (result.items || []).filter((x) => x.source === source);
+      const visible = sheets.slice((page - 1) * 12, page * 12);
+      const choices = visible.map((x) => ({
+        type: "action", action: { type: "message", label: String(x.sheet).slice(0, 20), text: "แจ้งชีต " + source + "|" + x.sheet }
+      }));
+      if (sheets.length > page * 12) {
+        choices.push({ type: "action", action: { type: "message", label: "ชีตถัดไป", text: "แจ้งแหล่ง " + source + " " + (page + 1) } });
+      }
+      await replyMessage(event.replyToken, [{
+        type: "text",
+        text: choices.length ? "เลือกชีตในแหล่ง " + source + " (หน้า " + page + ")" : "ไม่พบชีตในหน้านี้",
+        ...(choices.length ? { quickReply: { items: choices } } : {})
       }]);
       return;
     }
@@ -757,6 +688,7 @@ async function handleEvent(event) {
           "",
           "ปุ่มด้านล่าง = ส่งทุกคนในชีต",
           "ส่งรายคน พิมพ์: ส่งแจ้ง " + key + " due <คิว>",
+          "ส่งหลายคน พิมพ์: ส่งแจ้ง " + key + " due <คิว1>,<คิว2>",
           "เปลี่ยน due เป็น close หรือ outstanding ได้"
         ].join("\n"),
         quickReply: ownerNotificationFieldQuickReply(source, sheet, !!selected.autoEnabled)
@@ -796,7 +728,7 @@ async function handleEvent(event) {
       const args = text.slice("ส่งแจ้ง ".length).trim().split(/\s+/);
       const key = args.shift() || "";
       const field = args.shift() || "";
-      const queue = args.shift() || "";
+      const selection = args.shift() || "";
       const p = key.indexOf("|");
       if (p <= 0 || !["close","outstanding","due"].includes(field)) {
         await replyMessage(event.replyToken, [{ type: "text", text: "เลือกรายการส่งใหม่จากปุ่ม ส่งแจ้งลูกค้า" }]);
@@ -812,8 +744,12 @@ async function handleEvent(event) {
         source,
         sheet,
         field,
-        queue,
+        ...(selection.includes(",") ? { queues: selection } : { queue: selection }),
       });
+      if (!batch?.allowed) {
+        await replyMessage(event.replyToken, [{ type: "text", text: batch?.message || "ไม่มีสิทธิ์ส่งแจ้ง" }]);
+        return;
+      }
       const sentResults = await Promise.all((batch.items || []).map(async (item) => {
         try {
           await pushMessage(item.lineUserId, [{
@@ -836,7 +772,7 @@ async function handleEvent(event) {
         staffName: access.staffName || "",
         role: "เจ้าของ",
         command: "ส่งแจ้งลูกค้า",
-        query: source + "/" + sheet + " " + field + (queue ? " " + queue : " ทั้งหมด"),
+        query: source + "/" + sheet + " " + field + (selection ? " " + selection : " ทั้งหมด"),
         source: source + "/" + sheet,
         result: "ส่งสำเร็จ " + sent + " / ไม่สำเร็จ " + failed,
         actionName: "manualCustomerNotification",
