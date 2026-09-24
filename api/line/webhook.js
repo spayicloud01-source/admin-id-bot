@@ -257,20 +257,96 @@ function staffImageQuickReply() {
   };
 }
 
+const CUSTOMER_SELF_ACTIONS = [
+  ["ยอดปิด", "ยอดปิด"],
+  ["วันครบกำหนด", "วันครบกำหนดชำระ"],
+  ["ยอดค้าง", "ยอดค้าง"],
+  ["สถานะ", "สถานะ"],
+  ["สิทธิ์ส่วนลด", "สิทธิ์ส่วนลด"],
+  ["ติดต่อแอดมิน", "ติดต่อแอดมิน"],
+];
+
 function customerSelfQuickReply() {
   return {
-    items: [
-      ["ยอดปิด", "ยอดปิด"],
-      ["วันครบกำหนดชำระ", "วันครบกำหนดชำระ"],
-      ["ยอดค้าง", "ยอดค้าง"],
-      ["สถานะ", "สถานะ"],
-      ["สิทธิ์ส่วนลด", "สิทธิ์ส่วนลด"],
-      ["ติดต่อแอดมิน", "ติดต่อแอดมิน"],
-    ].map(([label, text]) => ({
+    items: CUSTOMER_SELF_ACTIONS.map(([label, text]) => ({
       type: "action",
       action: { type: "message", label, text },
     })),
   };
+}
+
+function customerPersistentButtons() {
+  const buttons = CUSTOMER_SELF_ACTIONS.map(([label, text]) => ({
+    type: "button",
+    style: "secondary",
+    height: "sm",
+    flex: 1,
+    action: { type: "message", label, text },
+  }));
+  return [0, 2, 4].map((start) => ({
+    type: "box",
+    layout: "horizontal",
+    spacing: "sm",
+    contents: buttons.slice(start, start + 2),
+  }));
+}
+
+function customerPersistentFooter(title = "เลือกดูข้อมูล") {
+  return {
+    type: "box", layout: "vertical", paddingAll: "14px", spacing: "sm", backgroundColor: "#F1F8F8",
+    contents: [
+      { type: "text", text: title, size: "sm", color: "#0D5D65", weight: "bold" },
+      ...customerPersistentButtons(),
+      { type: "text", text: "ปุ่มในบัตรนี้กดซ้ำได้ตลอด", size: "xs", color: "#73848B", wrap: true },
+    ],
+  };
+}
+
+function customerResultMessage(text, title = "ข้อมูลล่าสุด") {
+  const value = String(text || "ไม่พบข้อมูล");
+  return {
+    type: "flex",
+    altText: value.replace(/\s*\n\s*/g, " • ").slice(0, 400),
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box", layout: "vertical", paddingAll: "18px", spacing: "md",
+        contents: [
+          { type: "text", text: title, size: "md", color: "#0D5D65", weight: "bold" },
+          { type: "text", text: value, size: "sm", color: "#173B46", wrap: true },
+        ],
+      },
+      footer: customerPersistentFooter(),
+    },
+    quickReply: customerSelfQuickReply(),
+  };
+}
+
+function customerFieldForText(value) {
+  const text = String(value || "").trim().replace(/\s+/g, "");
+  const exact = {
+    "ยอดปิด": "close",
+    "วันครบกำหนดชำระ": "due",
+    "วันครบกำหนด": "due",
+    "วันจ่าย": "due",
+    "กำหนดจ่าย": "due",
+    "กำหนดชำระ": "due",
+    "จ่าย": "due",
+    "ยอดค้าง": "outstanding",
+    "สถานะ": "status",
+    "สถานะทั้งหมด": "status",
+    "สิทธิ์ส่วนลด": "discount",
+    "ค่าเช่า": "fee",
+  };
+  if (exact[text]) return exact[text];
+  if (/(?:จ่าย|ชำระ).*(?:วัน|เมื่อไหร่|ไหนดี)|วัน.*(?:จ่าย|ชำระ)|กำหนด.*(?:จ่าย|ชำระ)/.test(text)) return "due";
+  if (/ยอด.*ปิด|ปิด.*ยอด/.test(text)) return "close";
+  if (/ยอด.*ค้าง|ค้าง.*(?:เท่า|ยอด)/.test(text)) return "outstanding";
+  if (/ส่วนลด|ลดค่าเช่า/.test(text)) return "discount";
+  if (/ค่าเช่า/.test(text)) return "fee";
+  if (/สถานะ/.test(text)) return "status";
+  return "";
 }
 
 function customerWelcomeAmount(value, present = true) {
@@ -318,17 +394,12 @@ function customerWelcomeMessage(overview) {
             { type: "text", text: "ยอดและค่าเช่าอ้างอิงจากรายการในชีต ณ วันที่ตรวจสอบ", size: "xs", color: "#73848B", wrap: true, margin: "md" },
           ],
         },
-        footer: {
-          type: "box", layout: "vertical", paddingAll: "18px", backgroundColor: "#F1F8F8",
-          contents: [{ type: "text", text: "กดเมนูด้านล่างเพื่อดูยอดปิด วันชำระ และข้อมูลล่าสุด", size: "sm", color: "#0D5D65", wrap: true }],
-        },
+        footer: customerPersistentFooter(),
       },
       quickReply: customerSelfQuickReply(),
     };
   }
-  return {
-    type: "text",
-    text: [
+  return customerResultMessage([
       "ผูกบัญชีสำเร็จแล้ว เริ่มใช้งานได้เลยครับ 👇",
       "กดปุ่มด้านล่างเพื่อดูข้อมูลของตัวเอง:",
       "• ยอดปิด — ยอดสำหรับปิดรายการวันนี้",
@@ -337,10 +408,8 @@ function customerWelcomeMessage(overview) {
       "• สถานะ — สถานะรายการปัจจุบัน",
       "• สิทธิ์ส่วนลด — ตรวจสิทธิ์ลดค่าเช่าเมื่อปิดยอด",
       "• ติดต่อแอดมิน — ส่งคำขอถึงเจ้าหน้าที่",
-      "เมนูลูกค้าอยู่ด้านล่างแชทในแอป LINE หากยังไม่ขึ้น พิมพ์ สถานะ อีกครั้งครับ",
-    ].join("\n"),
-    quickReply: customerSelfQuickReply(),
-  };
+      "บนมือถือยังมีเมนูลูกค้าด้านล่างแชทด้วย",
+    ].join("\n"), "เริ่มใช้งาน");
 }
 
 function ownerNotificationFieldQuickReply(source, sheet, autoEnabled = false) {
@@ -517,15 +586,7 @@ async function handleEvent(event) {
     // Customer self-service is public in 1:1 chat during the V6/10-69 pilot.
     // Do not require staff permissions before verifying queue + exact full name.
     if (sourceType === "user" && lineUserId) {
-      const customerFieldMap = {
-        "ยอดปิด": "close",
-        "วันครบกำหนดชำระ": "due",
-        "วันจ่าย": "due",
-        "ยอดค้าง": "outstanding",
-        "สถานะ": "status",
-        "สถานะทั้งหมด": "status",
-        "สิทธิ์ส่วนลด": "discount",
-      };
+      const customerField = customerFieldForText(text);
 
       const explicitBindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(.+\S)$/);
       const plainBindingMatch = text.match(/^(?:คิว\s*)?(\d{3,}(?:-\d+)*)\s+(.+\S)$/);
@@ -646,19 +707,18 @@ async function handleEvent(event) {
         return;
       }
 
-      if (customerFieldMap[text]) {
+      if (customerField) {
         auditAction = text;
-        const field = customerFieldMap[text];
+        const field = customerField;
         const result = await callSheetsBridge({
           action: "getCustomerSelf",
           lineUserId,
           field,
         });
-        const message = {
-          type: "text",
-          text: formatCustomerSelfResult(result, field),
-        };
-        if (result.bound) message.quickReply = customerSelfQuickReply();
+        const resultText = formatCustomerSelfResult(result, field);
+        const message = result.bound
+          ? customerResultMessage(resultText)
+          : { type: "text", text: resultText };
         const hasItems = Array.isArray(result?.items) && result.items.length > 0;
         await logCustomerOutcome(
           lineUserId, text,
