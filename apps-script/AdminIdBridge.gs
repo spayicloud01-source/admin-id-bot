@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.26-110',
+  VERSION: '2026.09.26-111',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -189,7 +189,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.26-110', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.26-111', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -239,7 +239,7 @@ function postDeploySelfTest_() {
 
   try {
     const triggers = ScriptApp.getProjectTriggers().filter(function(t) {
-      return t.getHandlerFunction() === 'triggerDailyReminder_';
+      return ['triggerDailyReminder', 'triggerDailyReminder_'].indexOf(t.getHandlerFunction()) !== -1;
     });
     if (!triggers.length) warnings.push('ยังไม่ได้ติดตั้งแจ้งเตือนรายวัน');
   } catch (err) {
@@ -335,7 +335,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.26-110', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.26-111', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -367,7 +367,7 @@ function readinessCheck_(body) {
   let reminderTriggerCount = -1;
   try {
     reminderTriggerCount = ScriptApp.getProjectTriggers().filter(function(t) {
-      return t.getHandlerFunction() === 'triggerDailyReminder_';
+      return ['triggerDailyReminder', 'triggerDailyReminder_'].indexOf(t.getHandlerFunction()) !== -1;
     }).length;
     add('แจ้งเตือนรายวัน', reminderTriggerCount > 0, reminderTriggerCount ? 'ติดตั้งแล้ว' : 'ยังไม่ติดตั้ง');
   } catch (err) {
@@ -1305,6 +1305,13 @@ function triggerDailyReminder_() {
   console.log('Reminder endpoint: ' + response.getResponseCode() + ' ' + response.getContentText().slice(0, 500));
 }
 
+// Public wrapper: Apps Script hides functions ending with "_" from the
+// manual trigger picker. Keep the private implementation above for internal
+// calls, and expose this stable handler for the daily time-driven trigger.
+function triggerDailyReminder() {
+  return triggerDailyReminder_();
+}
+
 function installReminderTrigger_(body) {
   const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'จัดการเจ้าหน้าที่' });
   if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
@@ -1319,11 +1326,11 @@ function installReminderTrigger_(body) {
       ok: true,
       installed: false,
       manualRequired: true,
-      message: 'ต้องติดตั้ง Trigger จาก Apps Script UI: triggerDailyReminder_ แบบ Time-driven วันละครั้ง'
+      message: 'ต้องติดตั้ง Trigger จาก Apps Script UI: triggerDailyReminder แบบ Time-driven วันละครั้ง'
     };
   }
   triggers.forEach(function(t) {
-    if (t.getHandlerFunction() === 'triggerDailyReminder_') ScriptApp.deleteTrigger(t);
+    if (['triggerDailyReminder', 'triggerDailyReminder_'].indexOf(t.getHandlerFunction()) !== -1) ScriptApp.deleteTrigger(t);
   });
 
   const timeText = String(getSettingValue_('REMIND_TIME', '09:00'));
@@ -1331,7 +1338,7 @@ function installReminderTrigger_(body) {
   let hour = m ? Number(m[1]) : 9;
   if (!Number.isInteger(hour) || hour < 0 || hour > 23) hour = 9;
 
-  ScriptApp.newTrigger('triggerDailyReminder_')
+  ScriptApp.newTrigger('triggerDailyReminder')
     .timeBased()
     .everyDays(1)
     .atHour(hour)
@@ -1352,7 +1359,7 @@ function getReminderTriggerStatus_(body) {
   }
   try {
     const triggers = ScriptApp.getProjectTriggers().filter(function(t) {
-      return t.getHandlerFunction() === 'triggerDailyReminder_';
+      return ['triggerDailyReminder', 'triggerDailyReminder_'].indexOf(t.getHandlerFunction()) !== -1;
     });
     return {
       ok: true,
