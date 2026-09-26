@@ -4,7 +4,7 @@ const CONFIG = {
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
     { source: 'v6', sheet: 'V6/10-69' },
-    { source: 'v1/v3', sheet: 'v3/10' }
+    { source: 'v1/v3', sheet: 'v3/10-69' }
   ],
   SOURCE_SHEET: 'ลิ้งชีต',
   STAFF_SHEET: 'เจ้าหน้าที่',
