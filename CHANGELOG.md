@@ -4,6 +4,21 @@
 
 ## 26 กันยายน 2569
 
+### Deploy ระบบแจ้งเตือนลูกค้าเวอร์ชัน 111
+
+- แก้ฟังก์ชันทริกเกอร์จากฟังก์ชัน private ที่ลงท้าย `_` เป็น public wrapper `triggerDailyReminder` เพื่อให้เลือกสร้าง Time-driven trigger ใน Apps Script UI ได้
+- รองรับการตรวจและลบทริกเกอร์ชื่อเก่า `triggerDailyReminder_` เพื่อไม่ให้เกิดทริกเกอร์ซ้ำหลังอัปเกรด
+- Deploy Apps Script เป็นเวอร์ชัน `2026.09.26-111` (Deployment version 34) โดยคง Web App URL เดิม
+- ติดตั้งทริกเกอร์ `triggerDailyReminder` แบบรายวัน ช่วงเวลา 09:00–10:00 น. เขตเวลาเอเชีย/กรุงเทพ
+- ตั้งชีตนำร่องแจ้งเตือนอัตโนมัติเป็น `v6|V6/10-69`
+- Vercel deployment สำเร็จ และ `/api/health` รายงาน `appVersion`/`bridgeVersion` ตรงกันที่ `2026.09.26-111`
+- ผล health: `readyForFullTest: true`, self-test ผ่าน 18/19 และ critical checks ผ่าน 15/15
+- รายการไม่บังคับที่ยังไม่ได้เชื่อม: OK Slip (ไม่กระทบระบบแจ้งเตือนลูกค้า)
+- ผลการทดสอบในเครื่อง: ผ่าน `customer binding safety`, `automatic reminder requires explicit sheet selection`, `notification selection and duplicate protection` และตรวจ syntax ผ่าน
+- Commit โค้ดทริกเกอร์: `4ba10b9e45018722a505b3250f2d07edfa787cec`
+- Commit health version: `22d71a19d554280022c13f271f6084c76b9732e3`
+- สถานะ: Deploy และเปิดใช้งานจริงแล้ว
+
 ### ระบบแจ้งเตือนลูกค้าแบบเลือกแหล่งและชีต
 
 - ยืนยัน Flow เจ้าของ: เลือกแหล่งข้อมูล → เลือกชีต → ส่งรายคน / ส่งทุกคน / เปิดแจ้งอัตโนมัติ
@@ -17,7 +32,6 @@
 - ไฟล์ที่แก้: `apps-script/AdminIdBridge.gs`, `api/health.js`, `tests/customer-safety.cjs`
 - ผลการทดสอบ: ผ่าน `customer binding safety`, `automatic reminder requires explicit sheet selection`, `notification selection and duplicate protection` และตรวจ syntax ผ่าน
 - สถานะ: อัปโค้ดเข้า GitHub หลังรวมงานชุดนี้ แต่ยังไม่ได้ Deploy Apps Script
-
 
 ### แก้ชื่อแถบลูกค้า v1/v3
 
