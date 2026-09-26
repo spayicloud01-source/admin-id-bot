@@ -164,7 +164,7 @@
   try{
     var qs=new URLSearchParams(location.search);
     var incoming=qs.get("token");
-    if(incoming){ try{sessionStorage.setItem("adminIdWebToken",incoming);}catch(e){} history.replaceState({},document.title,location.pathname); }
+    if(incoming){ try{sessionStorage.setItem("adminIdWebToken",incoming);}catch(e){} }
     try{TOKEN=sessionStorage.getItem("adminIdWebToken")||"";}catch(e){TOKEN=incoming||"";}
   }catch(e){ TOKEN=""; }
 
