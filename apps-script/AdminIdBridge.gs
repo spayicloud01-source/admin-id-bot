@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.24-109',
+  VERSION: '2026.09.26-110',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -189,7 +189,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.24-109', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.26-110', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -335,7 +335,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.24-109', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.26-110', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -813,9 +813,11 @@ function customerNotificationSheetKey_(source, sheet) {
 function getCustomerAutoReminderSheetKeys_() {
   const props = PropertiesService.getScriptProperties();
   const raw = String(props.getProperty('CUSTOMER_AUTO_REMINDER_SHEETS') || '').trim();
+  // No implicit pilot sheet: the owner must explicitly choose each source/tab
+  // before automatic customer reminders are allowed to run.
   const keys = raw
     ? raw.split(',').map(function(x){ return String(x || '').trim(); }).filter(Boolean)
-    : [customerNotificationSheetKey_(CONFIG.CUSTOMER_PILOT_SOURCE, CONFIG.CUSTOMER_PILOT_SHEET)];
+    : [];
   return keys.filter(function(v, i, a){ return a.indexOf(v) === i; });
 }
 
@@ -891,6 +893,7 @@ function listCustomerNotificationSheets_(body) {
       if (!source || !id) return;
       const sourceBook = SpreadsheetApp.openById(id);
       sourceBook.getSheets().forEach(function(tab) {
+        if (tab.isSheetHidden()) return;
         const sheet = tab.getName();
         if (CONFIG.EXCLUDED_TAB_PATTERNS.some(function(p) { return p.test(sheet); })) return;
         map[customerNotificationSheetKey_(source, sheet)] = { source: source, sheet: sheet, count: 0 };
@@ -1238,6 +1241,21 @@ function getCustomerReminderBatchLocked_(body) {
     });
   }
 
+  if (items.length) {
+    logAction_({
+      lineUserId: '',
+      staffName: 'ระบบ',
+      role: 'ระบบ',
+      command: 'เตรียมแจ้งเตือนอัตโนมัติ',
+      query: items.length + ' ราย',
+      source: enabledKeys.join(','),
+      result: 'เตรียมส่ง ' + items.length + ' ราย',
+      actionName: 'customerAutoReminderBatch',
+      status: 'เตรียมส่ง',
+      note: ''
+    });
+  }
+
   return {
     ok: true,
     items: items,
@@ -1253,12 +1271,25 @@ function markCustomerReminderSent_(body) {
   }
   const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!sh || rowNo > sh.getLastRow()) return { ok: false, error: 'ไม่พบรายการแจ้งเตือน' };
-  const currentStatus = String(sh.getRange(rowNo, 9).getDisplayValue() || '').trim();
+  const row = sh.getRange(rowNo, 1, 1, 11).getDisplayValues()[0];
+  const currentStatus = String(row[8] || '').trim();
   if (currentStatus !== 'รอส่ง') return { ok: false, error: 'รายการนี้ไม่ได้รอส่งแล้ว', rowNo: rowNo };
 
   const sent = body.sent === true;
   sh.getRange(rowNo, 9).setValue(sent ? 'ส่งแล้ว' : 'ส่งไม่สำเร็จ');
   if (sent) sh.getRange(rowNo, 10).setValue(new Date());
+  logAction_({
+    lineUserId: String(row[4] || '').trim(),
+    staffName: String(row[3] || '').trim(),
+    role: 'ลูกค้า',
+    command: 'ผลส่งแจ้งลูกค้า',
+    query: [String(row[2] || '').trim(), String(row[1] || '').trim()].filter(Boolean).join(' '),
+    source: String(row[10] || '').trim(),
+    result: sent ? 'ส่งสำเร็จ' : 'ส่งไม่สำเร็จ',
+    actionName: 'customerNotificationDelivery',
+    status: sent ? 'สำเร็จ' : 'ไม่สำเร็จ',
+    note: 'คิวแจ้งเตือนแถว ' + rowNo
+  });
   return { ok: true, rowNo: rowNo, sent: sent };
 }
 

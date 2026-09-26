@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const vm = require('node:vm');
 
 const logs = [];
+const scriptProps = {};
 const rows = [[
   'วันที่ขอ', 'LINE User ID', 'ชื่อลูกค้า', 'เบอร์โทร', 'แหล่งข้อมูล', 'ชีต',
   'คิว', 'สถานะ', 'ผู้อนุมัติ', 'วันที่อนุมัติ', 'รับแจ้งเตือน', 'หมายเหตุ', 'ใช้งานล่าสุด'
@@ -25,6 +26,12 @@ const context = vm.createContext({
   console,
   Utilities: { formatDate: (date) => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-') },
   LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+  PropertiesService: {
+    getScriptProperties: () => ({
+      getProperty: (key) => Object.prototype.hasOwnProperty.call(scriptProps, key) ? scriptProps[key] : null,
+      setProperty: (key, value) => { scriptProps[key] = String(value); },
+    }),
+  },
 });
 vm.runInContext(fs.readFileSync('apps-script/AdminIdBridge.gs', 'utf8'), context);
 vm.runInContext(`
@@ -66,6 +73,15 @@ assert.ok(logs.some((x) => x.id === 'U-first' && x.status === 'สำเร็�
 assert.ok(logs.some((x) => x.id === 'U-first' && x.status === 'ปฏิเสธ'));
 console.log('customer binding safety: passed');
 
+assert.deepEqual(Array.from(context.getCustomerAutoReminderSheetKeys_()), []);
+scriptProps.CUSTOMER_AUTO_REMINDER_SHEETS = 'v6|V6/10-69,v1/v3|v3/10-69';
+assert.deepEqual(
+  Array.from(context.getCustomerAutoReminderSheetKeys_()),
+  ['v6|V6/10-69', 'v1/v3|v3/10-69']
+);
+delete scriptProps.CUSTOMER_AUTO_REMINDER_SHEETS;
+console.log('automatic reminder requires explicit sheet selection: passed');
+
 const customerRows = [rows[0],
   [new Date(), 'U-first', 'ภาณุ', '', 'v6', 'V6/10-69', '6121', 'ใช้งาน'],
   [new Date(), 'U-third', 'มานี', '', 'v6', 'V6/10-69', '6122', 'ใช้งาน']
@@ -99,7 +115,7 @@ vm.runInContext(`
 const send = (selection) => context.buildCustomerNotificationBatch_(Object.assign({
   source: 'v6', sheet: 'V6/10-69', field: 'due', lineUserId: 'U-owner'
 }, selection));
-assert.equal(send({ queues: '6121,6122' }).items.length, 2);
+assert.equal(send({}).items.length, 2);
 assert.equal(send({ queues: '6121,6122' }).items.length, 0);
 assert.equal(send({ queue: '6121' }).items.length, 0);
 assert.equal(notificationRows.length, 3);
