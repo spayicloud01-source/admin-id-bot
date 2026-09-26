@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta name="theme-color" content="#0b1220" />
+  <title>Admin ID — ระบบติดตามลูกค้า</title>
+  <style>
+    :root{--bg:#f4f7fb;--card:#fff;--ink:#111827;--muted:#6b7280;--line:#e5e7eb;--nav:#0b1220;--blue:#2563eb;--green:#16a34a;--orange:#ea580c;--red:#dc2626;--shadow:0 8px 28px rgba(15,23,42,.08)}
+    *{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Thai",sans-serif;background:var(--bg);color:var(--ink)}
+    button,select,input{font:inherit}.top{background:var(--nav);color:#fff;padding:18px 18px 22px;position:sticky;top:0;z-index:5;box-shadow:0 4px 18px rgba(0,0,0,.16)}
+    .topin{max-width:1180px;margin:auto;display:flex;gap:16px;align-items:center;justify-content:space-between}.brand{display:flex;gap:12px;align-items:center}.logo{width:42px;height:42px;border-radius:13px;background:linear-gradient(135deg,#22c55e,#2563eb);display:grid;place-items:center;font-weight:800}.brand h1{font-size:18px;margin:0}.brand p{margin:3px 0 0;color:#aeb8c8;font-size:12px}.status{font-size:12px;display:flex;gap:7px;align-items:center}.dot{width:9px;height:9px;border-radius:50%;background:#94a3b8}.dot.ok{background:#22c55e}.wrap{max-width:1180px;margin:22px auto;padding:0 16px 42px}
+    .source{background:#fff;border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:var(--shadow);display:grid;grid-template-columns:1fr 1fr auto;gap:12px;align-items:end}.field label{display:block;font-size:12px;color:var(--muted);font-weight:700;margin:0 0 7px}.field select{width:100%;border:1px solid #d7dce4;border-radius:11px;padding:11px 12px;background:#fff}.btn{border:0;border-radius:11px;padding:11px 16px;font-weight:750;cursor:pointer}.btn.primary{background:var(--blue);color:#fff}.btn.soft{background:#eef2ff;color:#3730a3}.btn.green{background:#dcfce7;color:#166534}.btn:disabled{opacity:.45;cursor:not-allowed}
+    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:16px 0}.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px;box-shadow:0 3px 14px rgba(15,23,42,.04)}.metric{font-size:27px;font-weight:800;margin-top:8px}.label{font-size:12px;color:var(--muted);font-weight:700}.sub{font-size:12px;color:var(--muted);margin-top:5px}
+    .panel{background:#fff;border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow);overflow:hidden}.tabs{display:flex;gap:4px;padding:10px;border-bottom:1px solid var(--line);overflow:auto}.tab{white-space:nowrap;border:0;background:transparent;border-radius:10px;padding:10px 14px;font-weight:750;color:#64748b;cursor:pointer}.tab.active{background:#eff6ff;color:#1d4ed8}.content{padding:18px}.view{display:none}.view.active{display:block}.sectionhead{display:flex;justify-content:space-between;gap:12px;align-items:center;margin-bottom:14px}.sectionhead h2{font-size:17px;margin:0}.hint{font-size:12px;color:var(--muted)}
+    .empty{border:1px dashed #cbd5e1;border-radius:16px;padding:38px 18px;text-align:center;background:#f8fafc}.empty b{display:block;margin-bottom:6px}.empty p{margin:0 auto;color:var(--muted);font-size:13px;max-width:520px;line-height:1.65}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.action{border:1px solid var(--line);border-radius:14px;padding:15px}.action b{font-size:14px}.action p{color:var(--muted);font-size:12px;line-height:1.55;margin:6px 0 12px}.pill{display:inline-block;padding:5px 8px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:11px;font-weight:700}.warning{margin-top:16px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:13px;padding:12px 14px;font-size:12px;line-height:1.55}
+    .foot{margin-top:14px;color:#94a3b8;font-size:11px;text-align:center}
+    @media(max-width:760px){.topin{align-items:flex-start}.brand p{max-width:230px}.source{grid-template-columns:1fr}.cards{grid-template-columns:1fr 1fr}.grid2{grid-template-columns:1fr}.metric{font-size:23px}.status span:last-child{display:none}}
+  </style>
+</head>
+<body>
+<header class="top">
+  <div class="topin">
+    <div class="brand"><div class="logo">ID</div><div><h1>Admin ID — หลังบ้าน</h1><p>LINE OA → Vercel → Apps Script → Google Sheets</p></div></div>
+    <div class="status"><span id="dot" class="dot"></span><span id="sys">กำลังตรวจระบบ…</span></div>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="source">
+    <div class="field"><label>1. เลือกแหล่งข้อมูล</label><select id="source"><option value="">— เลือกแหล่งก่อน —</option><option>v6</option><option>v1/v3</option><option disabled>แหล่งอื่น ๆ จะดึงจากระบบจริง</option></select></div>
+    <div class="field"><label>2. เลือกชีต</label><select id="sheet" disabled><option value="">— เลือกชีต —</option></select></div>
+    <button id="use" class="btn primary" disabled>ใช้ชีตนี้</button>
+  </section>
+
+  <section class="cards">
+    <div class="card"><div class="label">ลูกค้าในชีต</div><div class="metric">—</div><div class="sub">รอเชื่อมข้อมูลจริง</div></div>
+    <div class="card"><div class="label">ถึงกำหนดวันนี้</div><div class="metric">—</div><div class="sub">คำนวณจากชีตที่เลือก</div></div>
+    <div class="card"><div class="label">รอแจ้งเตือน</div><div class="metric">—</div><div class="sub">คิวแจ้งเตือน</div></div>
+    <div class="card"><div class="label">ส่งสำเร็จวันนี้</div><div class="metric">—</div><div class="sub">จาก Log ระบบ</div></div>
+  </section>
+
+  <section class="panel">
+    <div class="tabs">
+      <button class="tab active" data-view="customers">ลูกค้า</button>
+      <button class="tab" data-view="notify">แจ้งเตือน</button>
+      <button class="tab" data-view="queue">คิวแจ้งเตือน</button>
+      <button class="tab" data-view="logs">Log ระบบ</button>
+      <button class="tab" data-view="system">สถานะระบบ</button>
+    </div>
+    <div class="content">
+      <div id="customers" class="view active">
+        <div class="sectionhead"><h2>รายชื่อลูกค้า</h2><span id="chosen" class="pill">ยังไม่ได้เลือกชีต</span></div>
+        <div class="empty"><b>เลือกแหล่งข้อมูลและชีตก่อน</b><p>หน้าเว็บจะไม่ล็อกอยู่ที่ V6/10-69 เมื่อเชื่อม API แล้ว รายชื่อลูกค้าจะโหลดตามชีตที่เจ้าของเลือกเท่านั้น</p></div>
+      </div>
+      <div id="notify" class="view">
+        <div class="sectionhead"><h2>ส่งแจ้งเตือน</h2><span class="hint">Manual / ตามวันครบกำหนด</span></div>
+        <div class="grid2">
+          <div class="action"><b>ส่งหาลูกค้ารายคน</b><p>ค้นหาและเลือกลูกค้าในชีตปัจจุบัน ก่อนส่งจะแสดงข้อความให้ตรวจอีกครั้ง</p><button class="btn soft" disabled>เลือกลูกค้า</button></div>
+          <div class="action"><b>ส่งทั้งหมดในชีต</b><p>สร้าง Batch จากชีตที่เลือก รองรับการกันส่งซ้ำและบันทึก Log</p><button class="btn green" disabled>สร้างรายการส่ง</button></div>
+        </div>
+        <div class="warning">เพื่อความปลอดภัย รุ่นนี้ยังไม่เปิดปุ่มส่งข้อมูลจริงจากหน้าเว็บ จนกว่าจะเพิ่มการยืนยันตัวตนเจ้าของเว็บ ฝั่ง LINE เดิมไม่ได้ถูกแก้ไข</div>
+      </div>
+      <div id="queue" class="view"><div class="sectionhead"><h2>คิวแจ้งเตือน</h2></div><div class="empty"><b>คิวจะขึ้นตามชีตที่เลือก</b><p>ใช้ข้อมูลจาก “คิวแจ้งเตือน” และการสร้าง Batch ของระบบเดิม</p></div></div>
+      <div id="logs" class="view"><div class="sectionhead"><h2>Log ระบบ</h2></div><div class="empty"><b>ประวัติการทำงาน</b><p>จะแสดงเวลา ผู้สั่ง แหล่งข้อมูล ชีต ลูกค้า ประเภทการแจ้งเตือน และผลการส่ง</p></div></div>
+      <div id="system" class="view">
+        <div class="sectionhead"><h2>สถานะระบบ</h2><button class="btn soft" onclick="checkHealth()">ตรวจใหม่</button></div>
+        <div class="grid2">
+          <div class="action"><b>Vercel API</b><p id="healthText">กำลังตรวจ…</p></div>
+          <div class="action"><b>Apps Script Bridge</b><p id="bridgeText">ตรวจผ่าน /api/health</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+  <div class="foot">Admin ID Web Dashboard • Prototype 1 • ไม่แสดงข้อมูลลูกค้าจริงจนกว่าจะเปิดระบบยืนยันตัวตนเว็บ</div>
+</main>
+
+<script>
+const source=document.getElementById('source'),sheet=document.getElementById('sheet'),useBtn=document.getElementById('use'),chosen=document.getElementById('chosen');
+const map={'v6':['V6/10-69'],'v1/v3':['v3/10-69']};
+source.addEventListener('change',()=>{sheet.innerHTML='<option value="">— เลือกชีต —</option>';(map[source.value]||[]).forEach(x=>sheet.insertAdjacentHTML('beforeend','<option>'+x+'</option>'));sheet.disabled=!source.value;useBtn.disabled=true});
+sheet.addEventListener('change',()=>useBtn.disabled=!sheet.value);
+useBtn.addEventListener('click',()=>{chosen.textContent=source.value+' / '+sheet.value;document.querySelector('#customers .empty b').textContent='เลือกแล้ว: '+sheet.value;document.querySelector('#customers .empty p').textContent='โครงหน้าเว็บพร้อมแล้ว ขั้นถัดไปเชื่อม API เพื่อดึงรายชื่อลูกค้าจริงจากชีตนี้'});
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{document.querySelectorAll('.tab,.view').forEach(x=>x.classList.remove('active'));t.classList.add('active');document.getElementById(t.dataset.view).classList.add('active')});
+async function checkHealth(){const dot=document.getElementById('dot'),sys=document.getElementById('sys'),ht=document.getElementById('healthText'),bt=document.getElementById('bridgeText');dot.className='dot';sys.textContent='กำลังตรวจระบบ…';ht.textContent='กำลังตรวจ…';try{const r=await fetch('/api/health',{cache:'no-store'}),j=await r.json();if(!r.ok||j.ok===false)throw new Error(j.error||'API error');dot.className='dot ok';sys.textContent='ระบบออนไลน์';ht.textContent='ออนไลน์ • '+(j.environment||j.service||'production');bt.textContent=j.appsScriptVersion?'Bridge '+j.appsScriptVersion:(j.version?'Version '+j.version:'เชื่อมต่อได้')}catch(e){sys.textContent='ตรวจระบบไม่สำเร็จ';ht.textContent=String(e.message||e);bt.textContent='ยังยืนยันไม่ได้'}}
+checkHealth();
+</script>
+</body>
+</html>
