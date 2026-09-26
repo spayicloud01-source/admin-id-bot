@@ -28,7 +28,7 @@
 </section>
 
 <section class="cards">
-<div class="card"><div class="label">ลูกค้าที่ผูก LINE</div><div id="customerCount" class="metric">—</div><div class="sub">ตามชีตที่เลือก</div></div>
+<div class="card clickable" id="cardCustomers"><div class="label">ลูกค้าที่ผูก LINE</div><div id="customerCount" class="metric">—</div><div id="customerSub" class="sub">รวมทุกชีต</div></div>
 <div class="card clickable" id="cardToday"><div class="label">ครบกำหนดวันนี้</div><div id="todayCount" class="metric">—</div><div class="sub">ทุกแหล่งที่ระบบอ่านได้</div></div>
 <div class="card clickable" id="cardUpcoming"><div class="label">ใกล้ครบกำหนด</div><div id="upcomingCount" class="metric">—</div><div class="sub">จากระบบแจ้งเตือน</div></div>
 <div class="card clickable" id="cardOverdue"><div class="label">ค้างชำระ</div><div id="overdueCount" class="metric">—</div><div class="sub">จากระบบแจ้งเตือน</div></div>
@@ -120,6 +120,48 @@
       });
     }).catch(function(){ byId("healthText").textContent="ตรวจไม่สำเร็จ"; return false; });
   }
+  function totalBoundCustomers(){
+    var total=0,i,n;
+    for(i=0;i<ITEMS.length;i++){n=Number(ITEMS[i].count||0);if(!isNaN(n))total+=n;}
+    return total;
+  }
+  function updateCustomerCount(){
+    if(SELECTED){
+      byId("customerCount").textContent=Number(SELECTED.count||0);
+      byId("customerSub").textContent="ชีต "+SELECTED.sheet;
+    }else{
+      byId("customerCount").textContent=totalBoundCustomers();
+      byId("customerSub").textContent="รวมทุกชีต";
+    }
+  }
+  function openCustomers(){
+    byId("dueTitle").textContent="ลูกค้าที่ผูก LINE";
+    var rows=ITEMS.filter(function(x){return Number(x.count||0)>0;});
+    if(!rows.length){
+      byId("dueList").innerHTML='<div class="empty"><b>ยังไม่มีลูกค้าที่ผูก LINE</b><p>ยังไม่พบรายการสถานะใช้งานในระบบ</p></div>';
+      byId("dueModal").classList.remove("hidden");
+      return;
+    }
+    var out="",i,x;
+    for(i=0;i<rows.length;i++){
+      x=rows[i];
+      out+='<div class="item"><div class="itemtop"><div><div class="itemname">'+escapeHtml(x.source||"-")+' / '+escapeHtml(x.sheet||"-")+'</div><div class="itemmeta">ลูกค้าที่ผูก LINE '+Number(x.count||0)+' ราย'+(x.autoEnabled?' • แจ้งเตือนอัตโนมัติเปิด':'')+'</div></div><span class="pill">'+Number(x.count||0)+' ราย</span></div><button class="btn soft itembtn" data-customer-source="'+escapeHtml(x.source||"")+'" data-customer-sheet="'+escapeHtml(x.sheet||"")+'">เลือกชีตนี้</button></div>';
+    }
+    byId("dueList").innerHTML=out;
+    var bs=byId("dueList").querySelectorAll("[data-customer-source]"),j;
+    for(j=0;j<bs.length;j++){bs[j].onclick=function(){
+      var s=this.getAttribute("data-customer-source"),sh=this.getAttribute("data-customer-sheet"),k;
+      byId("source").value=s;fillSheets();byId("sheet").value=sh;
+      SELECTED=null;
+      for(k=0;k<ITEMS.length;k++){if(ITEMS[k].source===s&&ITEMS[k].sheet===sh){SELECTED=ITEMS[k];break;}}
+      byId("chosen").textContent=s+" / "+sh;
+      byId("sheetTitle").textContent="เลือกแล้ว: "+sh;
+      byId("sheetDesc").textContent="ลูกค้าที่ผูก LINE และใช้งานในชีตนี้ "+(SELECTED?Number(SELECTED.count||0):0)+" ราย"+(SELECTED&&SELECTED.autoEnabled?" • เปิดแจ้งเตือนอัตโนมัติ":"");
+      updateCustomerCount();syncButtons();
+      byId("dueModal").classList.add("hidden");
+    };}
+    byId("dueModal").classList.remove("hidden");
+  }
   function dueLabel(mode){return mode==="today"?"ครบกำหนดวันนี้":mode==="upcoming"?"ใกล้ครบกำหนด":"ค้างชำระ";}
   function openDue(mode){
     byId("dueTitle").textContent=dueLabel(mode);
@@ -167,7 +209,7 @@
         }
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"โหลดข้อมูลไม่ได้");
         ITEMS=x.j.sheets||[];
-        fillSources(); showApp();
+        fillSources(); updateCustomerCount(); showApp();
         byId("dot").className="dot ok";
         byId("sys").textContent="ระบบออนไลน์";
         byId("authText").textContent="ยืนยันแล้ว • "+((x.j.owner&&x.j.owner.name)||"เจ้าของ");
@@ -225,7 +267,7 @@
     var i; SELECTED=null;
     for(i=0;i<ITEMS.length;i++){if(ITEMS[i].source===byId("source").value&&ITEMS[i].sheet===byId("sheet").value){SELECTED=ITEMS[i];break;}}
     byId("chosen").textContent=byId("source").value+" / "+byId("sheet").value;
-    byId("customerCount").textContent=SELECTED?SELECTED.count:0;
+    updateCustomerCount();
     byId("sheetTitle").textContent="เลือกแล้ว: "+byId("sheet").value;
     byId("sheetDesc").textContent="ลูกค้าที่ผูก LINE และใช้งานในชีตนี้ "+(SELECTED?SELECTED.count:0)+" ราย"+(SELECTED&&SELECTED.autoEnabled?" • เปิดแจ้งเตือนอัตโนมัติ":"");
     syncButtons();
@@ -236,6 +278,7 @@
     for(j=0;j<all.length;j++)all[j].classList.remove("active");
     this.classList.add("active");byId(this.getAttribute("data-view")).classList.add("active");
   };}
+  byId("cardCustomers").onclick=openCustomers;
   byId("cardToday").onclick=function(){openDue("today");};
   byId("cardUpcoming").onclick=function(){openDue("upcoming");};
   byId("cardOverdue").onclick=function(){openDue("overdue");};
