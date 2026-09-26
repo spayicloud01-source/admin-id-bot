@@ -22,44 +22,92 @@ export default async function handler(req, res) {
     if (!session) return res.status(401).json({ ok: false, error: "กรุณาเข้าเว็บผ่าน LINE OA ใหม่" });
 
     const body = typeof req.body === "object" && req.body ? req.body : {};
-    const source = String(body.source || "").trim();
-    const sheet = String(body.sheet || "").trim();
     const field = String(body.field || "").trim();
     const queue = String(body.queue || "").trim();
     const queues = Array.isArray(body.queues) ? body.queues.map(String).join(",") : String(body.queues || "").trim();
-    if (!source || !sheet || !["close","outstanding","due"].includes(field)) {
+
+    let targets = Array.isArray(body.targets) ? body.targets : [];
+    if (!targets.length && body.source && body.sheet) {
+      targets = [{ source: body.source, sheet: body.sheet }];
+    }
+    targets = targets
+      .map((x) => ({ source: String(x?.source || "").trim(), sheet: String(x?.sheet || "").trim() }))
+      .filter((x) => x.source && x.sheet);
+
+    const seenTargets = new Set();
+    targets = targets.filter((x) => {
+      const key = x.source + "|" + x.sheet;
+      if (seenTargets.has(key)) return false;
+      seenTargets.add(key);
+      return true;
+    });
+
+    if (!targets.length || !["close","outstanding","due"].includes(field)) {
       return res.status(400).json({ ok: false, error: "ข้อมูลส่งแจ้งเตือนไม่ครบ" });
     }
 
-    const batch = await callSheetsBridge({
-      action: "buildCustomerNotificationBatch",
-      lineUserId: session.sub,
-      source, sheet, field, queue, queues,
-    });
-    if (batch?.allowed === false) return res.status(403).json({ ok: false, error: batch.message || "ไม่มีสิทธิ์" });
+    let prepared = 0, sent = 0, failed = 0;
+    const details = [];
 
-    const items = Array.isArray(batch?.items) ? batch.items : [];
-    let sent = 0, failed = 0;
-    for (const item of items) {
-      let ok = false;
-      try {
-        await pushText(item.lineUserId, item.message);
-        ok = true; sent++;
-      } catch (error) {
-        failed++;
-        console.warn("Web customer notification failed", item.queue, error);
+    for (const target of targets) {
+      const batch = await callSheetsBridge({
+        action: "buildCustomerNotificationBatch",
+        lineUserId: session.sub,
+        source: target.source,
+        sheet: target.sheet,
+        field,
+        queue,
+        queues,
+      });
+
+      if (batch?.allowed === false) {
+        details.push({ ...target, prepared: 0, sent: 0, failed: 0, error: batch.message || "ไม่มีสิทธิ์" });
+        continue;
       }
-      try {
-        await callSheetsBridge({ action: "markCustomerReminderSent", rowNo: item.rowNo, sent: ok });
-      } catch (error) {
-        console.warn("Web notification mark failed", item.rowNo, error);
+
+      const items = Array.isArray(batch?.items) ? batch.items : [];
+      prepared += items.length;
+      let targetSent = 0, targetFailed = 0;
+
+      for (const item of items) {
+        let ok = false;
+        try {
+          await pushText(item.lineUserId, item.message);
+          ok = true;
+          sent++;
+          targetSent++;
+        } catch (error) {
+          failed++;
+          targetFailed++;
+          console.warn("Web customer notification failed", target.source, target.sheet, item.queue, error);
+        }
+        try {
+          await callSheetsBridge({ action: "markCustomerReminderSent", rowNo: item.rowNo, sent: ok });
+        } catch (error) {
+          console.warn("Web notification mark failed", item.rowNo, error);
+        }
       }
+
+      details.push({
+        ...target,
+        prepared: items.length,
+        sent: targetSent,
+        failed: targetFailed,
+        message: batch?.message || "",
+      });
     }
 
     return res.status(200).json({
-      ok: true, source, sheet, field,
-      prepared: items.length, sent, failed,
-      message: items.length ? ("ส่งสำเร็จ " + sent + " / " + items.length + " ราย") : (batch?.message || "ไม่มีรายการใหม่"),
+      ok: true,
+      field,
+      targetCount: targets.length,
+      prepared,
+      sent,
+      failed,
+      details,
+      message: prepared
+        ? ("ส่งสำเร็จ " + sent + " / " + prepared + " ราย จาก " + targets.length + " ชีต")
+        : ("ไม่มีรายการใหม่ใน " + targets.length + " ชีต"),
     });
   } catch (error) {
     return res.status(500).json({ ok: false, error: String(error?.message || error).slice(0, 180) });
