@@ -4,6 +4,7 @@ import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.
 import { parseCommand, formatCustomerInfo, formatHistory } from "../../lib/commands.js";
 import { linkVerifiedCustomerMenu } from "../../lib/customerRichMenu.js";
 import { paymentQrUrl } from "../../lib/paymentQr.js";
+import { createWebSession } from "../../lib/webAuth.js";
 
 function getRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -723,6 +724,44 @@ async function handleEvent(event) {
     const lineUserId = event.source?.userId || "";
     const sourceType = event.source?.type || "";
     const groupId = event.source?.groupId || "";
+
+    if (sourceType === "user" && lineUserId && (text === "เข้าเว็บ" || text === "เปิดเว็บ")) {
+      const webAccess = await callSheetsBridge({
+        action: "checkAccess",
+        lineUserId,
+        sourceType,
+        groupId,
+        permission: "จัดการเจ้าหน้าที่",
+        allowSystemControl: true,
+      });
+      if (!webAccess?.allowed || String(webAccess?.role || "").trim() !== "เจ้าของ") {
+        await replyMessage(event.replyToken, [{ type: "text", text: "เมนูเว็บสำหรับเจ้าของระบบเท่านั้น" }]);
+        return;
+      }
+      const token = createWebSession({
+        lineUserId,
+        staffName: webAccess.staffName || "เจ้าของ",
+        role: "เจ้าของ",
+      });
+      const url = "https://admin-id-bot.vercel.app/?token=" + encodeURIComponent(token);
+      await replyMessage(event.replyToken, [{
+        type: "text",
+        text: "ลิงก์เข้าเว็บหลังบ้าน (ใช้ได้ 4 ชั่วโมง)\n" + url + "\n\nห้ามส่งต่อลิงก์นี้ให้ผู้อื่น"
+      }]);
+      await safeLogAction({
+        lineUserId,
+        staffName: webAccess.staffName || "",
+        role: "เจ้าของ",
+        command: "เข้าเว็บ",
+        query: "",
+        source: "LINE ส่วนตัว",
+        result: "ออกลิงก์เข้าเว็บ",
+        actionName: "webLogin",
+        status: "สำเร็จ",
+        note: "session 4 ชั่วโมง",
+      });
+      return;
+    }
 
     const command = parseCommand(text);
 
