@@ -62,25 +62,136 @@
 </div>
 </main>
 <script>
-let TOKEN="", ITEMS=[], SELECTED=null;
-const qs=new URLSearchParams(location.search), incoming=qs.get("token");
-if(incoming){sessionStorage.setItem("adminIdWebToken",incoming);history.replaceState({},document.title,location.pathname)}
-TOKEN=sessionStorage.getItem("adminIdWebToken")||"";
-const source=document.getElementById("source"),sheet=document.getElementById("sheet"),useBtn=document.getElementById("use"),chosen=document.getElementById("chosen");
-function authHeaders(){return TOKEN?{Authorization:"Bearer "+TOKEN}:{}}
-function showLogin(){document.getElementById("app").classList.add("hidden");document.getElementById("login").classList.remove("hidden");document.getElementById("dot").className="dot";document.getElementById("sys").textContent="รอยืนยันผ่าน LINE"}
-function showApp(){document.getElementById("login").classList.add("hidden");document.getElementById("app").classList.remove("hidden")}
-function fillSources(){const sources=[...new Set(ITEMS.map(x=>x.source))];source.innerHTML='<option value="">— เลือกแหล่งก่อน —</option>'+sources.map(x=>'<option>'+escapeHtml(x)+'</option>').join("")}
-function fillSheets(){const rows=ITEMS.filter(x=>x.source===source.value);sheet.innerHTML='<option value="">— เลือกชีต —</option>'+rows.map(x=>'<option>'+escapeHtml(x.sheet)+'</option>').join("");sheet.disabled=!source.value;useBtn.disabled=true;SELECTED=null;syncButtons()}
-function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]))}
-source.addEventListener("change",fillSheets);sheet.addEventListener("change",()=>{useBtn.disabled=!sheet.value;syncButtons()});
-useBtn.addEventListener("click",()=>{SELECTED=ITEMS.find(x=>x.source===source.value&&x.sheet===sheet.value)||null;chosen.textContent=source.value+" / "+sheet.value;document.getElementById("customerCount").textContent=SELECTED?SELECTED.count:0;document.getElementById("sheetTitle").textContent="เลือกแล้ว: "+sheet.value;document.getElementById("sheetDesc").textContent="ลูกค้าที่ผูก LINE และใช้งานในชีตนี้ "+(SELECTED?.count||0)+" ราย"+(SELECTED?.autoEnabled?" • เปิดแจ้งเตือนอัตโนมัติ":"");syncButtons()});
-function syncButtons(){const ok=!!(SELECTED&&source.value&&sheet.value);document.getElementById("sendAll").disabled=!ok;document.getElementById("sendOne").disabled=!ok}
-document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{document.querySelectorAll(".tab,.view").forEach(x=>x.classList.remove("active"));t.classList.add("active");document.getElementById(t.dataset.view).classList.add("active")});
-async function checkHealth(){try{const r=await fetch("/api/health",{cache:"no-store"}),j=await r.json();document.getElementById("healthText").textContent=r.ok?"ออนไลน์ • "+(j.appVersion||j.version||"พร้อมใช้งาน"):"ผิดพลาด";return r.ok}catch(e){document.getElementById("healthText").textContent="ตรวจไม่สำเร็จ";return false}}
-async function loadConfig(){await checkHealth();if(!TOKEN){showLogin();return}try{const r=await fetch("/api/web/config",{headers:authHeaders(),cache:"no-store"}),j=await r.json();if(r.status===401||r.status===403){sessionStorage.removeItem("adminIdWebToken");TOKEN="";showLogin();return}if(!r.ok||!j.ok)throw new Error(j.error||"โหลดข้อมูลไม่ได้");ITEMS=j.sheets||[];fillSources();showApp();document.getElementById("dot").className="dot ok";document.getElementById("sys").textContent="ระบบออนไลน์";document.getElementById("authText").textContent="ยืนยันแล้ว • "+(j.owner?.name||"เจ้าของ");document.getElementById("todayCount").textContent=j.summary?.today??"—";document.getElementById("upcomingCount").textContent=j.summary?.upcoming??"—";document.getElementById("overdueCount").textContent=j.summary?.overdue??"—"}catch(e){document.getElementById("sys").textContent="โหลดหลังบ้านไม่สำเร็จ";document.getElementById("healthText").textContent=String(e.message||e)}}
-async function sendNotification(one){if(!SELECTED)return;const q=one?document.getElementById("queue").value.trim():"";if(one&&!q){alert("กรุณาใส่เลขคิว");return}const field=document.getElementById(one?"fieldOne":"fieldAll").value;const label={due:"กำหนดครบวันชำระ",outstanding:"ยอดค้าง",close:"ยอดปิด"}[field];const target=one?"คิว "+q:"ลูกค้าทุกคนที่ผูก LINE ในชีตนี้";if(!confirm("ยืนยันส่ง “"+label+"” ไปหา "+target+"\n\n"+SELECTED.source+" / "+SELECTED.sheet+" ?"))return;const btn=document.getElementById(one?"sendOne":"sendAll"),box=document.getElementById("sendResult");btn.disabled=true;btn.textContent="กำลังส่ง…";box.classList.add("hidden");try{const r=await fetch("/api/web/send",{method:"POST",headers:{"Content-Type":"application/json",...authHeaders()},body:JSON.stringify({source:SELECTED.source,sheet:SELECTED.sheet,field,queue:q})}),j=await r.json();if(r.status===401){sessionStorage.removeItem("adminIdWebToken");location.reload();return}if(!r.ok||!j.ok)throw new Error(j.error||"ส่งไม่สำเร็จ");box.textContent=j.message+(j.failed?" • ไม่สำเร็จ "+j.failed+" ราย":"");box.classList.remove("hidden")}catch(e){box.textContent="ผิดพลาด: "+String(e.message||e);box.classList.remove("hidden")}finally{btn.textContent=one?"ตรวจและส่งรายคน":"ตรวจและส่งทุกคน";syncButtons()}}
-document.getElementById("sendAll").onclick=()=>sendNotification(false);document.getElementById("sendOne").onclick=()=>sendNotification(true);
-loadConfig();
+(function(){
+  var TOKEN = "";
+  var ITEMS = [];
+  var SELECTED = null;
+
+  function byId(id){ return document.getElementById(id); }
+  function authHeaders(){ var h={}; if(TOKEN){ h.Authorization="Bearer "+TOKEN; } return h; }
+  function showLogin(){
+    byId("app").classList.add("hidden");
+    byId("login").classList.remove("hidden");
+    byId("dot").className="dot";
+    byId("sys").textContent="รอยืนยันผ่าน LINE";
+  }
+  function showApp(){
+    byId("login").classList.add("hidden");
+    byId("app").classList.remove("hidden");
+  }
+  function escapeHtml(s){
+    return String(s==null?"":s).replace(/[&<>"']/g,function(c){
+      return {"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c];
+    });
+  }
+  function fillSources(){
+    var seen={}, sources=[], i, x;
+    for(i=0;i<ITEMS.length;i++){ x=ITEMS[i].source; if(x&&!seen[x]){seen[x]=true;sources.push(x);} }
+    var out='<option value="">— เลือกแหล่งก่อน —</option>';
+    for(i=0;i<sources.length;i++) out+='<option>'+escapeHtml(sources[i])+'</option>';
+    byId("source").innerHTML=out;
+  }
+  function fillSheets(){
+    var s=byId("source").value, out='<option value="">— เลือกชีต —</option>', i;
+    for(i=0;i<ITEMS.length;i++){ if(ITEMS[i].source===s) out+='<option>'+escapeHtml(ITEMS[i].sheet)+'</option>'; }
+    byId("sheet").innerHTML=out;
+    byId("sheet").disabled=!s;
+    byId("use").disabled=true;
+    SELECTED=null;
+    syncButtons();
+  }
+  function syncButtons(){
+    var ok=!!(SELECTED&&byId("source").value&&byId("sheet").value);
+    byId("sendAll").disabled=!ok;
+    byId("sendOne").disabled=!ok;
+  }
+  function checkHealth(){
+    return fetch("/api/health",{cache:"no-store"}).then(function(r){
+      return r.json().then(function(j){
+        byId("healthText").textContent=r.ok?"ออนไลน์ • "+(j.appVersion||j.version||"พร้อมใช้งาน"):"ผิดพลาด";
+        return r.ok;
+      });
+    }).catch(function(){ byId("healthText").textContent="ตรวจไม่สำเร็จ"; return false; });
+  }
+  function loadConfig(){
+    checkHealth().then(function(){
+      if(!TOKEN){ showLogin(); return; }
+      fetch("/api/web/config",{headers:authHeaders(),cache:"no-store"}).then(function(r){
+        return r.json().then(function(j){ return {r:r,j:j}; });
+      }).then(function(x){
+        if(x.r.status===401||x.r.status===403){
+          try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}
+          TOKEN=""; showLogin(); return;
+        }
+        if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"โหลดข้อมูลไม่ได้");
+        ITEMS=x.j.sheets||[];
+        fillSources(); showApp();
+        byId("dot").className="dot ok";
+        byId("sys").textContent="ระบบออนไลน์";
+        byId("authText").textContent="ยืนยันแล้ว • "+((x.j.owner&&x.j.owner.name)||"เจ้าของ");
+        byId("todayCount").textContent=(x.j.summary&&x.j.summary.today!=null)?x.j.summary.today:"—";
+        byId("upcomingCount").textContent=(x.j.summary&&x.j.summary.upcoming!=null)?x.j.summary.upcoming:"—";
+        byId("overdueCount").textContent=(x.j.summary&&x.j.summary.overdue!=null)?x.j.summary.overdue:"—";
+      }).catch(function(e){
+        showApp();
+        byId("sys").textContent="โหลดหลังบ้านไม่สำเร็จ";
+        byId("healthText").textContent=String((e&&e.message)||e);
+      });
+    });
+  }
+  function sendNotification(one){
+    if(!SELECTED)return;
+    var q=one?byId("queue").value.trim():"";
+    if(one&&!q){ alert("กรุณาใส่เลขคิว"); return; }
+    var field=byId(one?"fieldOne":"fieldAll").value;
+    var labels={due:"กำหนดครบวันชำระ",outstanding:"ยอดค้าง",close:"ยอดปิด"};
+    var target=one?"คิว "+q:"ลูกค้าทุกคนที่ผูก LINE ในชีตนี้";
+    if(!confirm("ยืนยันส่ง “"+labels[field]+"” ไปหา "+target+"\n\n"+SELECTED.source+" / "+SELECTED.sheet+" ?"))return;
+    var btn=byId(one?"sendOne":"sendAll"), box=byId("sendResult");
+    btn.disabled=true; btn.textContent="กำลังส่ง…"; box.classList.add("hidden");
+    var headers=authHeaders(); headers["Content-Type"]="application/json";
+    fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({source:SELECTED.source,sheet:SELECTED.sheet,field:field,queue:q})})
+      .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
+      .then(function(x){
+        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){} location.reload();return;}
+        if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"ส่งไม่สำเร็จ");
+        box.textContent=x.j.message+(x.j.failed?" • ไม่สำเร็จ "+x.j.failed+" ราย":"");
+        box.classList.remove("hidden");
+      }).catch(function(e){box.textContent="ผิดพลาด: "+String((e&&e.message)||e);box.classList.remove("hidden");})
+      .then(function(){btn.textContent=one?"ตรวจและส่งรายคน":"ตรวจและส่งทุกคน";syncButtons();});
+  }
+
+  try{
+    var qs=new URLSearchParams(location.search);
+    var incoming=qs.get("token");
+    if(incoming){ try{sessionStorage.setItem("adminIdWebToken",incoming);}catch(e){} history.replaceState({},document.title,location.pathname); }
+    try{TOKEN=sessionStorage.getItem("adminIdWebToken")||"";}catch(e){TOKEN=incoming||"";}
+  }catch(e){ TOKEN=""; }
+
+  byId("source").addEventListener("change",fillSheets);
+  byId("sheet").addEventListener("change",function(){byId("use").disabled=!byId("sheet").value;syncButtons();});
+  byId("use").addEventListener("click",function(){
+    var i; SELECTED=null;
+    for(i=0;i<ITEMS.length;i++){if(ITEMS[i].source===byId("source").value&&ITEMS[i].sheet===byId("sheet").value){SELECTED=ITEMS[i];break;}}
+    byId("chosen").textContent=byId("source").value+" / "+byId("sheet").value;
+    byId("customerCount").textContent=SELECTED?SELECTED.count:0;
+    byId("sheetTitle").textContent="เลือกแล้ว: "+byId("sheet").value;
+    byId("sheetDesc").textContent="ลูกค้าที่ผูก LINE และใช้งานในชีตนี้ "+(SELECTED?SELECTED.count:0)+" ราย"+(SELECTED&&SELECTED.autoEnabled?" • เปิดแจ้งเตือนอัตโนมัติ":"");
+    syncButtons();
+  });
+  var tabs=document.querySelectorAll(".tab"), i;
+  for(i=0;i<tabs.length;i++){tabs[i].onclick=function(){
+    var all=document.querySelectorAll(".tab,.view"),j;
+    for(j=0;j<all.length;j++)all[j].classList.remove("active");
+    this.classList.add("active");byId(this.getAttribute("data-view")).classList.add("active");
+  };}
+  byId("sendAll").onclick=function(){sendNotification(false);};
+  byId("sendOne").onclick=function(){sendNotification(true);};
+  window.loadConfig=loadConfig;
+
+  if(!TOKEN) showLogin();
+  else showApp();
+  loadConfig();
+})();
 </script>
 </body></html>
