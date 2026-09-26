@@ -129,9 +129,7 @@
         byId("dot").className="dot ok";
         byId("sys").textContent="ระบบออนไลน์";
         byId("authText").textContent="ยืนยันแล้ว • "+((x.j.owner&&x.j.owner.name)||"เจ้าของ");
-        byId("todayCount").textContent=(x.j.summary&&x.j.summary.today!=null)?x.j.summary.today:"—";
-        byId("upcomingCount").textContent=(x.j.summary&&x.j.summary.upcoming!=null)?x.j.summary.upcoming:"—";
-        byId("overdueCount").textContent=(x.j.summary&&x.j.summary.overdue!=null)?x.j.summary.overdue:"—";
+        loadSummary();
       }).catch(function(e){
         showApp();
         byId("sys").textContent="โหลดหลังบ้านไม่สำเร็จ";
@@ -139,6 +137,17 @@
       });
     });
   }
+  function loadSummary(){
+    fetch("/api/web/summary",{headers:authHeaders(),cache:"no-store"}).then(function(r){
+      return r.json();
+    }).then(function(j){
+      if(!j||!j.ok||!j.summary)return;
+      byId("todayCount").textContent=j.summary.today!=null?j.summary.today:"—";
+      byId("upcomingCount").textContent=j.summary.upcoming!=null?j.summary.upcoming:"—";
+      byId("overdueCount").textContent=j.summary.overdue!=null?j.summary.overdue:"—";
+    }).catch(function(){});
+  }
+
   function sendNotification(one){
     if(!SELECTED)return;
     var q=one?byId("queue").value.trim():"";
