@@ -125,7 +125,7 @@
     byId("dueTitle").textContent=dueLabel(mode);
     byId("dueList").innerHTML='<div class="empty"><b>กำลังโหลด…</b><p>กำลังอ่านข้อมูลจากชีต</p></div>';
     byId("dueModal").classList.remove("hidden");
-    fetch("/api/web/due?mode="+encodeURIComponent(mode),{headers:authHeaders(),cache:"no-store"})
+    fetch("/api/web/summary?mode="+encodeURIComponent(mode),{headers:authHeaders(),cache:"no-store"})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
         if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){} location.reload();return;}
