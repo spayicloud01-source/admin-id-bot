@@ -20,7 +20,7 @@ export default async function handler(req, res) {
       return res.status(200).json({
         ok: true,
         mode,
-        items: Array.isArray(result?.items) ? result.items : [],
+        items: Array.isArray(result?.items) ? result.items.filter((item) => String(item?.name || "").trim()) : [],
         totalShown: Number(result?.totalShown || 0),
         message: result?.message || "",
       });
