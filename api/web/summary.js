@@ -10,6 +10,22 @@ export default async function handler(req, res) {
     const session = sessionFromRequest(req);
     if (!session) return res.status(401).json({ ok: false, error: "กรุณาเข้าเว็บผ่าน LINE OA ใหม่" });
 
+    const mode = String(req.query?.mode || "").trim();
+    if (["today","upcoming","overdue"].includes(mode)) {
+      const result = await callSheetsBridge({
+        action: "listDueCustomers",
+        lineUserId: session.sub,
+        dueMode: mode,
+      });
+      return res.status(200).json({
+        ok: true,
+        mode,
+        items: Array.isArray(result?.items) ? result.items : [],
+        totalShown: Number(result?.totalShown || 0),
+        message: result?.message || "",
+      });
+    }
+
     const reminder = await callSheetsBridge({
       action: "getReminderBatch",
       lineUserId: session.sub,
@@ -25,6 +41,9 @@ export default async function handler(req, res) {
       } : null,
     });
   } catch (error) {
+    if (String(req.query?.mode || "")) {
+      return res.status(500).json({ ok: false, error: String(error?.message || error).slice(0, 180) });
+    }
     return res.status(200).json({ ok: true, summary: null, warning: String(error?.message || error).slice(0, 180) });
   }
 }
