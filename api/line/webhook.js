@@ -1229,12 +1229,12 @@ async function handleEvent(event) {
     }
 
     auditAction = command?.action || "ตรวจสิทธิ์";
-    const directOwnerValidatedActions = new Set(["readinessCheck"]);
+    const directOwnerValidatedActions = new Set(["readinessCheck", "resolveReviewQueue"]);
     let access;
 
     if (directOwnerValidatedActions.has(command?.action)) {
-      // readinessCheck performs its own owner validation in Apps Script.
-      // Avoid a second pre-check that can incorrectly route the owner into registration fallback.
+      // These actions perform their own owner validation in Apps Script.
+      // Avoid a redundant pre-check that can consume the full webhook timeout.
       access = {
         allowed: true,
         staffName: "",
