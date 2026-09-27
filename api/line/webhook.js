@@ -1229,16 +1229,16 @@ async function handleEvent(event) {
     }
 
     auditAction = command?.action || "ตรวจสิทธิ์";
-    const directOwnerValidatedActions = new Set(["readinessCheck", "resolveReviewQueue"]);
+    const internallyValidatedActions = new Set(["readinessCheck", "resolveReviewQueue", "queuePayment"]);
     let access;
 
-    if (directOwnerValidatedActions.has(command?.action)) {
-      // These actions perform their own owner validation in Apps Script.
-      // Avoid a redundant pre-check that can consume the full webhook timeout.
+    if (internallyValidatedActions.has(command?.action)) {
+      // These actions validate the requester again inside Apps Script.
+      // Avoid a redundant bridge call that can consume the full webhook timeout.
       access = {
         allowed: true,
         staffName: "",
-        role: "เจ้าของ",
+        role: ["readinessCheck", "resolveReviewQueue"].includes(command?.action) ? "เจ้าของ" : "เจ้าหน้าที่",
       };
     } else {
       access = await callSheetsBridge({
