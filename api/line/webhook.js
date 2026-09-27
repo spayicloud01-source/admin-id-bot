@@ -1688,19 +1688,28 @@ async function handleEvent(event) {
               groupId,
               paymentLookup: true,
             });
-            return (Array.isArray(found?.matches) ? found.matches : []).filter((m) =>
-              String(m?.source || "").trim().toLowerCase() === sourceName.toLowerCase() &&
-              String(m?.sheet || "").trim().toLowerCase() === sheetName.toLowerCase() &&
-              String(m?.queue || "").trim().toLowerCase().replace(/\s+/g, "") === targetQueue
-            );
+            return {
+              failed: false,
+              matches: (Array.isArray(found?.matches) ? found.matches : []).filter((m) =>
+                String(m?.source || "").trim().toLowerCase() === sourceName.toLowerCase() &&
+                String(m?.sheet || "").trim().toLowerCase() === sheetName.toLowerCase() &&
+                String(m?.queue || "").trim().toLowerCase().replace(/\s+/g, "") === targetQueue
+              ),
+            };
           } catch (error) {
             console.warn("Scoped payment lookup failed", sourceName, sheetName, error?.message);
-            return [];
+            return { failed: true, matches: [] };
           }
         }));
-        const exactMatches = foundByScope.flat();
+        const exactMatches = foundByScope.flatMap((scope) => scope.matches);
 
-        if (exactMatches.length === 0) {
+        if (foundByScope.some((scope) => scope.failed)) {
+          result = {
+            ok: true,
+            queued: false,
+            message: "ยังตรวจคิวจากชีตที่อนุญาตได้ไม่ครบ จึงยังไม่ส่งรายการเข้าคิวตรวจสอบ กรุณาลองใหม่ภายหลัง",
+          };
+        } else if (exactMatches.length === 0) {
           result = { ok: true, queued: false, message: "ไม่พบคิวในแถบ V6/10-69 หรือ v3/10-69" };
         } else if (exactMatches.length > 1) {
           result = { ok: true, queued: false, needsSelection: true, matches: exactMatches };
@@ -2287,10 +2296,16 @@ async function handleEvent(event) {
       result: "ทำรายการไม่สำเร็จ", actionName: "webhookError", status: "ผิดพลาด",
       note: String(error?.name || "Error").slice(0, 80)
     });
+    const failedAction = auditAction;
+    const errorText = failedAction === "queuePayment"
+      ? "ระบบตอบกลับไม่ครบ ยังยืนยันไม่ได้ว่าส่งรายการเข้าคิวตรวจสอบแล้วหรือไม่\nกรุณาตรวจคิวตรวจสอบก่อน หากมีรายการอยู่แล้วอย่าส่งซ้ำ"
+      : failedAction === "resolveReviewQueue"
+        ? "ระบบตอบกลับไม่ครบ ยังยืนยันผลการกดผ่านไม่ได้\nกรุณาตรวจสถานะคิวและยอดในชีตต้นทางก่อน อย่ากดผ่านซ้ำ"
+        : "ระบบเชื่อมต่อชีตขัดข้อง กรุณาลองใหม่ภายหลัง";
     await replyMessage(event.replyToken, [
       {
         type: "text",
-        text: "ระบบค้นหาลูกค้ายังไม่พร้อมใช้งาน กรุณาลองใหม่ภายหลัง",
+        text: errorText,
       },
     ]);
   }
