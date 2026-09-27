@@ -1320,10 +1320,13 @@ async function handleEvent(event) {
           );
         }
 
+        const registrationReply = registration?.alreadyRegistered && access?.message
+          ? access.message
+          : (registration.message || "รออนุมัติ");
         await replyMessage(event.replyToken, [
           {
             type: "text",
-            text: registration.message || "รออนุมัติ",
+            text: registrationReply,
           },
         ]);
         return;
