@@ -230,7 +230,7 @@ async function showCustomerProgress(chatId) {
 
 function menuQuickReply(role) {
   const base = [
-    ["ค้นลูกค้า", "ช่วยเหลือ"],
+    ["ค้นลูกค้า", "ค้นลูกค้า"],
     ["ครบกำหนดวันนี้", "ครบกำหนดวันนี้"],
     ["ใกล้ครบกำหนด", "ใกล้ครบกำหนด"],
     ["ค้างชำระ", "ค้างชำระทั้งหมด"],
@@ -1532,7 +1532,7 @@ async function handleEvent(event) {
       return;
     }
 
-    if (text === "เมนู") {
+    if (text === "เมนู" || text === "คำสั่ง") {
       const messages = [];
       if (sourceType === "user") {
         const paymentAccess = await callSheetsBridge({
@@ -1563,13 +1563,21 @@ async function handleEvent(event) {
       return;
     }
 
+    if (text === "ค้นลูกค้า") {
+      await replyMessage(event.replyToken, [{
+        type: "text",
+        text: "ค้นลูกค้า\nพิมพ์ ค้นหา ตามด้วยคิว ชื่อ เบอร์ หรือ Apple ID\nตัวอย่าง: ค้นหา 310-4\nระบบจะค้นเมื่อลงคำสั่งครบเท่านั้น",
+      }]);
+      return;
+    }
+
     if (text === "ช่วยเหลือ" || text === "แนะนำการใช้งาน") {
       await replyMessage(event.replyToken, [
         {
           type: "text",
           text: [
             "คำสั่ง Admin ID",
-            "• พิมพ์ชื่อ / เบอร์ / คิว / Apple ID เพื่อค้นหา",
+            "• กด เมนู → ค้นลูกค้า แล้วพิมพ์ ค้นหา <คิว / ชื่อ / เบอร์ / Apple ID>",
             "• ถ้าคิวซ้ำ ใช้ แหล่ง:คิว เช่น v6:101",
             "• ประวัติ <คำค้น>",
             "• ดูโน้ต <คำค้น>",
@@ -1834,6 +1842,8 @@ async function handleEvent(event) {
             return;
           }
         }
+      } else if (command.action === "searchCustomer") {
+        responseText = formatCustomerMatches(result.matches || []);
       } else if (command.action === "verifyCustomerIdentity") {
         responseText = result.needsSelection
           ? "พบหลายรายการ กรุณาระบุคำค้นให้ชัดขึ้น\n\n" + formatCustomerMatches(result.matches || [])
@@ -2261,33 +2271,10 @@ async function handleEvent(event) {
       return;
     }
 
-    const result = await callSheetsBridge({
-      action: "searchCustomer",
-      query: text,
-      lineUserId,
-      sourceType,
-      groupId,
-    });
-
-    await replyMessage(event.replyToken, [
-      {
-        type: "text",
-        text: formatCustomerMatches(result.matches || []),
-      },
-    ]);
-
-    await safeLogAction({
-      lineUserId,
-      staffName: access.staffName || "",
-      role: access.role || "",
-      command: "ค้นหา",
-      query: text,
-      source: sourceType,
-      result: Array.isArray(result.matches) ? String(result.matches.length) + " รายการ" : "0 รายการ",
-      actionName: "searchCustomer",
-      status: "สำเร็จ",
-      note: ""
-    });
+    await replyMessage(event.replyToken, [{
+      type: "text",
+      text: "กด เมนู แล้วเลือกคำสั่งที่ต้องการ\nหากต้องการค้นลูกค้า กด ค้นลูกค้า แล้วพิมพ์ ค้นหา <คิวหรือชื่อ>",
+    }]);
   } catch (error) {
     console.error("LINE request failed", { action: auditAction, name: error?.name, message: error?.message });
     await safeLogAction({
