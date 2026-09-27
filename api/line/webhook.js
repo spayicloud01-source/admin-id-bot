@@ -242,7 +242,7 @@ function menuQuickReply(role) {
 
   const ownerOnly = [
     ["ส่งแจ้งทันที", "ส่งแจ้งเตือนทันที"],
-    ["เจ้าหน้าที่", "เจ้าหน้าที่"],
+    ["จัดการระบบ", "จัดการระบบ"],
     ["ลูกค้ารออนุมัติ", "ลูกค้ารออนุมัติ"],
     ["กิจกรรมวันนี้", "กิจกรรมวันนี้"],
     ["สถานะระบบ", "สถานะระบบ"],
@@ -1563,6 +1563,29 @@ async function handleEvent(event) {
       return;
     }
 
+    if (text === "จัดการระบบ") {
+      if (access.role !== "เจ้าของ") {
+        await replyMessage(event.replyToken, [{ type: "text", text: "เมนูนี้สำหรับเจ้าของระบบเท่านั้น" }]);
+        return;
+      }
+      await replyMessage(event.replyToken, [{
+        type: "text",
+        text: "จัดการระบบ (ไม่ต้องค้นลูกค้า)\nเลือกคำสั่งด้านล่าง\nเปิดกลุ่มต้องพิมพ์ในกลุ่ม LINE ที่ต้องการเปิด",
+        quickReply: {
+          items: [
+            ["เจ้าหน้าที่", "เจ้าหน้าที่"],
+            ["ให้สิทธิ์", "ให้สิทธิ์"],
+            ["เปิดกลุ่ม", "เปิดกลุ่ม"],
+            ["ติดตั้งแจ้งเตือน", "ติดตั้งแจ้งเตือน"],
+            ["เมนู", "เมนู"],
+          ].map(([label, value]) => ({
+            type: "action", action: { type: "message", label, text: value }
+          })),
+        },
+      }]);
+      return;
+    }
+
     if (text === "ค้นลูกค้า") {
       await replyMessage(event.replyToken, [{
         type: "text",
@@ -1591,7 +1614,7 @@ async function handleEvent(event) {
             "• สถานะ <คำค้น>",
             access.role === "เจ้าของ" ? "• รายงานวันนี้ / สถานะระบบ / ตรวจชีตต้นทาง" : null,
             access.role === "เจ้าของ" ? "• คิวตรวจสอบ / ดูคิว <เลข> / ผ่านคิว <เลข> / ไม่ผ่านคิว <เลข>" : null,
-            access.role === "เจ้าของ" ? "• เจ้าหน้าที่ / สิทธิ์เจ้าหน้าที่ <ชื่อ> / ระงับ <ชื่อ> / เปิดใช้ <ชื่อ>" : null,
+            access.role === "เจ้าของ" ? "• กด เมนู → จัดการระบบ เพื่อดู เจ้าหน้าที่ / ให้สิทธิ์ / เปิดกลุ่ม / ติดตั้งแจ้งเตือน" : null,
             access.role === "เจ้าของ" ? "• ให้สิทธิ์ <ชื่อ> <สิทธิ์> / ถอนสิทธิ์ <ชื่อ> <สิทธิ์>" : null,
             access.role === "เจ้าของ" ? "• เปิดกลุ่ม / ปิดกลุ่ม / สถานะกลุ่ม" : null,
             access.role === "เจ้าของ" ? "• ติดตั้งแจ้งเตือน / สถานะแจ้งเตือน / ทดสอบแจ้งเตือน" : null
@@ -1610,6 +1633,13 @@ async function handleEvent(event) {
         await replyMessage(event.replyToken, [{
           type: "text",
           text: "รับชำระ\nพิมพ์: <เลขคิว> <ยอดชำระจริง>\nตัวอย่าง: 310-4 1200\nระบบจะเลือกคิวที่ตรงเป๊ะก่อน หากยังซ้ำจึงค่อยให้ระบุเพิ่มเติม\nรายการจะเข้าคิวตรวจสอบก่อน ยังไม่แก้ยอดในชีตต้นทาง",
+        }]);
+        return;
+      }
+      if (command.action === "setStaffPermission" && (!command.query || !command.targetPermission)) {
+        await replyMessage(event.replyToken, [{
+          type: "text",
+          text: "พิมพ์ ให้สิทธิ์ <ชื่อเจ้าหน้าที่> <สิทธิ์>\nตัวอย่าง: ให้สิทธิ์ สุธิดา ดูรายงาน",
         }]);
         return;
       }
