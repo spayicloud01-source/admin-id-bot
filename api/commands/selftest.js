@@ -15,6 +15,8 @@ export default async function handler(req, res) {
     ["อนุมัติลูกค้า 12", "resolveCustomerBinding", "12"],
     ["ไม่อนุมัติลูกค้า 12", "resolveCustomerBinding", "12"],
     ["รออนุมัติ", "listPendingStaff", ""],
+    ["ค้นหา 310-4", "searchCustomer", "310-4"],
+    ["ค้นหา ไอรดา", "searchCustomer", "ไอรดา"],
     ["สรุปยอด 101", "getCalculatedSummary", "101"],
     ["สิทธิ์ส่วนลด 101", "getCalculatedSummary", "101"],
     ["บันทึกชำระ 101 1,250", "queuePayment", "101"],
