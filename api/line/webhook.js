@@ -1320,8 +1320,9 @@ async function handleEvent(event) {
           );
         }
 
-        const registrationReply = registration?.alreadyRegistered && access?.message
-          ? access.message
+        const deniedPermission = command?.permission ? "บัญชีนี้ไม่มีสิทธิ์ " + command.permission : "";
+        const registrationReply = registration?.alreadyRegistered
+          ? (access?.message || deniedPermission || "บัญชีนี้ไม่มีสิทธิ์ใช้คำสั่งนี้")
           : (registration.message || "รออนุมัติ");
         await replyMessage(event.replyToken, [
           {
