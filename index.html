@@ -14,6 +14,59 @@
 .empty{border:1px dashed #cbd5e1;border-radius:16px;padding:30px 18px;text-align:center;background:#f8fafc}.empty b{display:block;margin-bottom:6px}.empty p{margin:0 auto;color:var(--muted);font-size:13px;max-width:560px;line-height:1.65}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px}.action{border:1px solid var(--line);border-radius:14px;padding:15px}.action b{font-size:14px}.action p{color:var(--muted);font-size:12px;line-height:1.55;margin:6px 0 12px}.actionbuttons{display:flex;gap:8px;flex-wrap:wrap}.toolresult{margin-top:12px;max-height:420px;overflow:auto}.toolresult .item{background:#f8fafc}.pill{display:inline-block;padding:5px 8px;border-radius:999px;background:#f1f5f9;color:#475569;font-size:11px;font-weight:700}.warning{margin-top:16px;background:#fff7ed;border:1px solid #fed7aa;color:#9a3412;border-radius:13px;padding:12px 14px;font-size:12px;line-height:1.55}.success{margin-top:12px;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;border-radius:13px;padding:12px 14px;font-size:12px;line-height:1.55}.hidden{display:none!important}.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}.foot{margin-top:14px;color:#94a3b8;font-size:11px;text-align:center}.modal{position:fixed;inset:0;background:rgba(15,23,42,.48);z-index:20;display:flex;align-items:flex-end;justify-content:center}.modal.hidden{display:none}.sheetmodal{width:100%;max-width:760px;max-height:82vh;background:#fff;border-radius:20px 20px 0 0;overflow:hidden;box-shadow:0 -10px 40px rgba(0,0,0,.18)}.modalhead{display:flex;justify-content:space-between;align-items:center;padding:16px 18px;border-bottom:1px solid var(--line)}.modalhead h3{margin:0;font-size:17px}.closex{border:0;background:#f1f5f9;border-radius:10px;width:36px;height:36px;font-size:22px}.list{padding:10px 14px 18px;overflow:auto;max-height:70vh}.item{border:1px solid var(--line);border-radius:14px;padding:13px;margin:8px 0}.itemtop{display:flex;justify-content:space-between;gap:12px}.itemname{font-weight:800}.itemmeta{font-size:12px;color:var(--muted);line-height:1.6;margin-top:5px}.itembtn{margin-top:10px;width:100%}
 @media(max-width:980px){.cards{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:760px){.topin{align-items:flex-start}.brand p{max-width:230px}.source{grid-template-columns:1fr}.cards{grid-template-columns:1fr 1fr}.grid2,.row{grid-template-columns:1fr}.metric{font-size:23px}.status span:last-child{display:none}}
+
+/* 2026-09-28 dashboard refresh: clearer hierarchy, mobile-first controls */
+:root{--bg:#f6f8fc;--card:#ffffff;--ink:#0f172a;--muted:#64748b;--line:#e7ebf1;--nav:#0f172a;--blue:#2563eb;--green:#16a34a;--orange:#f59e0b;--red:#dc2626;--shadow:0 10px 30px rgba(15,23,42,.07)}
+body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);line-height:1.45}
+.top{padding:14px 18px;background:rgba(15,23,42,.97);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)}
+.logo{width:44px;height:44px;border-radius:14px;box-shadow:0 6px 18px rgba(37,99,235,.25)}
+.brand h1{font-size:19px;letter-spacing:-.2px}.brand p{font-size:11px;color:#94a3b8}
+.status{background:rgba(255,255,255,.08);padding:7px 10px;border-radius:999px}
+.wrap{margin-top:18px}
+.source{border:0;border-radius:20px;padding:18px;box-shadow:var(--shadow);position:relative}
+.source:before{content:"เลือกข้อมูลที่ต้องการจัดการ";grid-column:1/-1;font-size:14px;font-weight:850;color:#0f172a;margin-bottom:2px}
+.field label{font-size:12px;color:#475569}.field select,.field input{min-height:44px;border-color:#dbe2ea;border-radius:12px;transition:.18s ease;outline:none}
+.field select:focus,.field input:focus{border-color:#60a5fa;box-shadow:0 0 0 3px rgba(59,130,246,.12)}
+.btn{min-height:42px;border-radius:12px;transition:.16s ease;box-shadow:0 1px 1px rgba(15,23,42,.03)}
+.btn:not(:disabled):hover{transform:translateY(-1px)}.btn:not(:disabled):active{transform:translateY(0) scale(.99)}
+.btn.primary{box-shadow:0 6px 14px rgba(37,99,235,.18)}
+.selectedbar{padding-top:4px;border-top:1px solid #f1f5f9;margin-top:2px}
+.chip{padding:8px 11px;background:#eff6ff;border:1px solid #dbeafe}
+.cards{gap:10px;margin:14px 0 18px}
+.card{border:0;border-radius:18px;padding:15px 16px;min-height:112px;box-shadow:0 5px 18px rgba(15,23,42,.055);position:relative;overflow:hidden}
+.card:after{content:"";position:absolute;right:-18px;top:-22px;width:70px;height:70px;border-radius:50%;background:rgba(148,163,184,.08)}
+.card.clickable{transition:.16s ease}.card.clickable:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(15,23,42,.08)}
+.card .label{font-size:12px;color:#64748b}.card .metric{font-size:30px;line-height:1;margin-top:11px;letter-spacing:-.7px}.card .sub{font-size:11px}
+#cardToday{border-left:4px solid #3b82f6}#cardUpcoming{border-left:4px solid #8b5cf6}#cardOverdue{border-left:4px solid #f59e0b}#cardCustomers{border-left:4px solid #10b981}.card.deleted{border:0;border-left:4px solid #ef4444}.card.lock{border:0;border-left:4px solid #eab308}
+.panel{border:0;border-radius:20px;box-shadow:var(--shadow)}
+.tabs{gap:6px;padding:10px 12px;background:#fbfcfe;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}
+.tab{padding:10px 13px;border-radius:11px;font-size:13px}.tab.active{background:#eaf2ff;color:#1d4ed8;box-shadow:inset 0 0 0 1px #dbeafe}
+.content{padding:20px}
+.sectionhead h2{font-size:18px;letter-spacing:-.15px}
+.action{border-color:#edf0f4;border-radius:16px;padding:16px;background:#fff;box-shadow:0 2px 8px rgba(15,23,42,.025)}
+.action b{font-size:14px}.action p{font-size:12px;color:#64748b}
+.empty{border-color:#d7dee8;background:#fbfcfe;border-radius:17px}
+.warning,.success{border-radius:14px}
+.item{border-color:#e8edf3;border-radius:15px;background:#fff}
+.sheetmodal{border-radius:24px 24px 0 0}
+.foot{margin-top:16px;padding:8px;color:#94a3b8}
+@media(max-width:760px){
+  .top{padding:12px 14px}.topin{align-items:center}.brand{gap:10px}.logo{width:40px;height:40px;border-radius:12px}.brand h1{font-size:17px}.brand p{display:none}
+  .status{padding:6px 8px}.status span:last-child{display:none}
+  .wrap{margin:12px auto;padding:0 10px 88px}
+  .source{padding:14px;border-radius:17px;gap:10px}.source:before{font-size:13px}
+  .source .btn#use{width:100%}.selectedbar{gap:7px}.chips{width:100%;flex-basis:100%}.chip{font-size:11px;max-width:100%}
+  .selectedbar>.btn{flex:1}
+  .cards{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.card{min-height:104px;padding:13px 12px;border-radius:15px}.card .metric{font-size:27px}.card .label{font-size:11px}.card .sub{font-size:10px;line-height:1.35}
+  .panel{border-radius:17px}.tabs{position:sticky;top:64px;z-index:4;padding:8px;background:rgba(255,255,255,.96);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+  .tab{padding:9px 11px;font-size:12px}.content{padding:14px}
+  .sectionhead{align-items:flex-start;flex-direction:column;gap:6px}.sectionhead .btn{width:100%}
+  .grid2,.row{grid-template-columns:1fr}.action{padding:14px}.actionbuttons{display:grid;grid-template-columns:1fr 1fr;width:100%}.actionbuttons .btn{width:100%;padding-left:10px;padding-right:10px}
+  #sendAll,#sendOne,#recordPayment,#addNoteBtn{width:100%}
+  .toolresult{max-height:none}
+}
+@media(max-width:390px){.card .metric{font-size:25px}.card{padding:12px 10px}.actionbuttons{grid-template-columns:1fr}}
+
 </style>
 </head>
 <body>
@@ -86,7 +139,7 @@
 <div id="system" class="view"><div class="sectionhead"><h2>สถานะระบบ</h2><button class="btn soft" onclick="loadConfig()">ตรวจใหม่</button></div><div class="grid2"><div class="action"><b>Vercel API</b><p id="healthText">กำลังตรวจ…</p></div><div class="action"><b>สิทธิ์เว็บ</b><p id="authText">ตรวจจาก LINE OA</p></div></div><div class="action" style="margin-top:12px"><b>ตรวจและตั้งค่าระบบ</b><p>ปุ่มตรวจสอบเป็นแบบอ่านข้อมูล ส่วนติดตั้งแจ้งเตือนจะถามยืนยันก่อนดำเนินการ</p><div class="actionbuttons"><button class="btn soft" data-system-action="dailyOwnerReport">รายงานวันนี้</button><button class="btn soft" data-system-action="systemStatus">สถานะระบบ</button><button class="btn soft" data-system-action="getReminderTriggerStatus">สถานะแจ้งเตือน</button><button class="btn green" data-system-action="installReminderTrigger" data-confirm="ติดตั้ง Trigger แจ้งเตือนรายวันใหม่?">ติดตั้งแจ้งเตือน</button><button class="btn soft" data-system-action="auditSourceSchemas">ตรวจชีตต้นทาง</button><button class="btn soft" data-system-action="auditSourceWriteCapabilities">ตรวจช่องเขียนข้อมูล</button></div></div><div id="systemToolResult" class="toolresult"></div></div>
 </div>
 </section>
-<div class="foot">Admin ID Web Dashboard • ลิงก์เจ้าของหมดอายุอัตโนมัติใน 4 ชั่วโมง</div>
+<div class="foot">Admin ID Web Dashboard • สำหรับเจ้าของระบบ</div>
 </div>
 </main>
 <div id="dueModal" class="modal hidden">
