@@ -1,4 +1,4 @@
-import { callSheetsBridge } from "../../lib/sheetsBridge.js";
+import { callSheetsBridge, getBridgeRoutingStatus } from "../../lib/sheetsBridge.js";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -6,14 +6,18 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
 
+  const bridgeRouting = getBridgeRoutingStatus();
   const result = {
     ok: false,
     env: {
-      appsScriptUrl: Boolean(process.env.GOOGLE_APPS_SCRIPT_URL),
-      bridgeSecret: Boolean(process.env.SHEETS_BRIDGE_SECRET),
+      appsScriptUrl: bridgeRouting.legacyFallback ||
+        (bridgeRouting.customer && bridgeRouting.payment && bridgeRouting.notify),
+      bridgeSecret: bridgeRouting.sharedSecret ||
+        (bridgeRouting.customerSecret && bridgeRouting.paymentSecret && bridgeRouting.notifySecret),
       lineSecret: Boolean(process.env.LINE_CHANNEL_SECRET),
       lineToken: Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN),
     },
+    bridgeRouting,
     checks: {},
   };
 
