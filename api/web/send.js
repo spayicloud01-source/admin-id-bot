@@ -123,6 +123,43 @@ async function resolveManualRecipient(session, queue, preferred = {}) {
   return null;
 }
 
+async function getBoundCustomerSummary(queue, recipient) {
+  const self = await callSheetsBridge({
+    action: "getCustomerSelf",
+    lineUserId: recipient.lineUserId,
+    field: "payment",
+  });
+  if (!self?.bound || !Array.isArray(self.items)) return null;
+
+  const queueKey = String(queue || "").trim().toLowerCase();
+  const sourceKey = String(recipient.source || "").trim().toLowerCase();
+  const matches = self.items.filter((item) => {
+    const sameQueue = String(item?.queue || "").trim().toLowerCase() === queueKey;
+    const itemSource = String(item?.source || "").trim().toLowerCase();
+    return sameQueue && (!sourceKey || !itemSource || itemSource === sourceKey);
+  });
+  if (matches.length !== 1) return null;
+
+  const item = matches[0];
+  const source = item.source || recipient.source || "";
+  const sheet = recipient.sheet || "";
+  const name = item.name || recipient.name || "";
+  const resolvedQueue = item.queue || recipient.queue || queue;
+  return {
+    ...item,
+    source,
+    sheet,
+    queue: resolvedQueue,
+    name,
+    customer: {
+      source,
+      sheet,
+      queue: resolvedQueue,
+      name,
+    },
+  };
+}
+
 async function pushMessages(to, messages) {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) throw new Error("LINE_CHANNEL_ACCESS_TOKEN is not configured");
@@ -201,6 +238,46 @@ export default async function handler(req, res) {
     const body = typeof req.body === "object" && req.body ? req.body : {};
 
     const requestedAction = clean(body.action, 60);
+
+    // Manual notification preview already knows the customer's active LINE binding.
+    // Reuse that exact binding to calculate one customer's totals instead of scanning
+    // both approved payment sources first. This is read-only and falls back to the
+    // existing broad lookup when the bound-customer path is unavailable.
+    if (requestedAction === "getCalculatedSummary" && body.resolveRecipient === true) {
+      const queue = clean(body.query, 100);
+      if (queue) {
+        const recipient = await resolveManualRecipient(session, queue);
+        if (recipient) {
+          try {
+            const summary = await getBoundCustomerSummary(queue, recipient);
+            if (summary) {
+              const paymentTotal = Number(summary.paymentTotal ?? ((Number(summary.accumulatedFee || summary.fee || 0) + Number(summary.lateFee || 0)) - Number(summary.paidForCycle || 0)));
+              const closeTotal = Number(summary.calculatedClose || 0);
+              return res.status(200).json({
+                ok: true,
+                summary,
+                qr: {
+                  payment: paymentQrUrl(summary.source, paymentTotal),
+                  close: paymentQrUrl(summary.source, closeTotal),
+                },
+                recipientToken: signManualRecipient({
+                  lineUserId: recipient.lineUserId,
+                  queue: recipient.queue,
+                  source: recipient.source,
+                  sheet: recipient.sheet,
+                  rowNo: recipient.rowNo || null,
+                  summary,
+                  exp: Date.now() + 30 * 60 * 1000,
+                }),
+              });
+            }
+          } catch (error) {
+            console.warn("Bound customer summary lookup failed; falling back", queue, error?.message);
+          }
+        }
+      }
+    }
+
     if (ALLOWED_ADMIN_ACTIONS.has(requestedAction)) {
       const result = await callSheetsBridge({
         action: requestedAction,
