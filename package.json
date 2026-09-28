@@ -3,8 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node tests/run-all.mjs",
-    "build": "npm test && mkdir -p public && cp index.html public/index.html"
+    "test": "node tests/run-all.mjs"
   },
   "dependencies": {
     "qrcode": "1.5.4",
