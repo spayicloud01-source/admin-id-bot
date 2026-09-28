@@ -1107,18 +1107,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
   const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
   const notifySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
-  const today = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
   const type = 'เจ้าของ-' + notificationFieldLabel_(field);
-  const existing = notifySheet.getLastRow() >= 2
-    ? notifySheet.getRange(2, 1, notifySheet.getLastRow() - 1, 11).getValues() : [];
-  const sentToday = {};
-  existing.forEach(function(r) {
-    if (String(r[1] || '') !== type || String(r[10] || '') !== source + '/' + sheet) return;
-    const date = r[0] instanceof Date ? Utilities.formatDate(r[0], 'Asia/Bangkok', 'yyyy-MM-dd') : '';
-    if (date === today && ['ส่งแล้ว', 'รอส่ง'].indexOf(String(r[8] || '').trim()) !== -1) {
-      sentToday[String(r[4] || '').trim() + '|' + normalizeGeneral_(r[2])] = true;
-    }
-  });
 
   const items = [];
   const seen = {};
@@ -1133,7 +1122,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
     const queue = String(r[6] || '').trim();
     if (!lineUserId || !queue) continue;
     const uniqueKey = lineUserId + '|' + normalizeGeneral_(queue);
-    if (seen[uniqueKey] || sentToday[uniqueKey]) continue;
+    if (seen[uniqueKey]) continue;
     seen[uniqueKey] = true;
 
     const c = findCustomerIdentity_(source, sheet, queue);
@@ -1186,7 +1175,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
     source: source,
     sheet: sheet,
     field: field,
-    message: items.length ? 'เตรียมส่ง ' + items.length + ' ราย' : 'ไม่พบผู้รับใหม่ (รายการวันนี้อาจส่งแล้วหรือกำลังส่ง)'
+    message: items.length ? 'เตรียมส่ง ' + items.length + ' ราย' : 'ไม่พบผู้รับที่ตรงเงื่อนไข'
   };
 }
 
