@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.28-122',
+  VERSION: '2026.09.28-123',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -199,7 +199,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.28-122', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.28-123', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -429,7 +429,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.28-121', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.28-123', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -996,23 +996,9 @@ function listCustomerNotificationSheets_(body) {
 
   const sh = customerLineSheet_();
   const rows = sh.getLastRow() >= 2 ? sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues() : [];
+  // The notification dashboard only needs tabs that are actually in use.
+  // Opening every linked workbook here made a normal page load take 40+ seconds.
   const map = {};
-  const links = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.SOURCE_SHEET);
-  if (links && links.getLastRow() >= 2) {
-    links.getRange(2, 1, links.getLastRow() - 1, 3).getDisplayValues().forEach(function(r) {
-      if (!isTrue_(r[2])) return;
-      const source = String(r[0] || '').trim();
-      const id = extractSpreadsheetId_(r[1]);
-      if (!source || !id) return;
-      const sourceBook = SpreadsheetApp.openById(id);
-      sourceBook.getSheets().forEach(function(tab) {
-        if (tab.isSheetHidden()) return;
-        const sheet = tab.getName();
-        if (CONFIG.EXCLUDED_TAB_PATTERNS.some(function(p) { return p.test(sheet); })) return;
-        map[customerNotificationSheetKey_(source, sheet)] = { source: source, sheet: sheet, count: 0 };
-      });
-    });
-  }
   rows.forEach(function(r) {
     if (String(r[7] || '').trim() !== 'ใช้งาน') return;
     const source = String(r[4] || '').trim();
@@ -1023,6 +1009,11 @@ function listCustomerNotificationSheets_(body) {
     map[key].count++;
   });
   const autoKeys = getCustomerAutoReminderSheetKeys_();
+  autoKeys.forEach(function(key) {
+    const p = key.indexOf('|');
+    if (p <= 0 || p >= key.length - 1 || map[key]) return;
+    map[key] = { source: key.slice(0, p), sheet: key.slice(p + 1), count: 0 };
+  });
   return {
     ok: true,
     allowed: true,
@@ -1190,6 +1181,19 @@ function buildCustomerNotificationBatchLocked_(body, access) {
   const notifySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
   const type = 'เจ้าของ-' + notificationFieldLabel_(field);
+  const todayKey = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+  const existingKeys = {};
+  if (notifySheet.getLastRow() >= 2) {
+    const existing = notifySheet.getRange(2, 1, notifySheet.getLastRow() - 1, 11).getValues();
+    existing.forEach(function(r) {
+      const created = r[0] instanceof Date ? r[0] : new Date(r[0]);
+      if (isNaN(created.getTime()) || Utilities.formatDate(created, 'Asia/Bangkok', 'yyyy-MM-dd') !== todayKey) return;
+      if (String(r[1] || '').trim() !== type) return;
+      if (['รอส่ง', 'ส่งแล้ว'].indexOf(String(r[8] || '').trim()) === -1) return;
+      const key = String(r[4] || '').trim() + '|' + normalizeGeneral_(r[2]) + '|' + String(r[10] || '').trim();
+      existingKeys[key] = true;
+    });
+  }
 
   const items = [];
   const seen = {};
@@ -1206,6 +1210,8 @@ function buildCustomerNotificationBatchLocked_(body, access) {
     const uniqueKey = lineUserId + '|' + normalizeGeneral_(queue);
     if (seen[uniqueKey]) continue;
     seen[uniqueKey] = true;
+    const notificationKey = uniqueKey + '|' + source + '/' + sheet;
+    if (existingKeys[notificationKey]) continue;
 
     const c = findCustomerIdentity_(source, sheet, queue);
     if (!c || normalizeGeneral_(c.name) !== normalizeGeneral_(r[2])) continue;
@@ -1225,6 +1231,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
       '',
       source + '/' + sheet
     ]);
+    existingKeys[notificationKey] = true;
     items.push({
       rowNo: notifySheet.getLastRow(),
       lineUserId: lineUserId,
