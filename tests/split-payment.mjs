@@ -100,3 +100,18 @@ test('a partial payment on the due date remains visible when the balance is paid
   assert.equal(f.cells.get('6:41'), 300);
   assert.equal(f.cells.get('6:42'), 700);
 });
+
+test('stale PropertiesService payment total is ignored when no matching payment exists in the source sheet', () => {
+  const f = fixture();
+  f.props.set('cycle:310-2:2026-09-27', JSON.stringify({
+    total: 500,
+    byDay: { '2026-09-20': 500 },
+    reviewRows: [99]
+  }));
+  const result = f.pay(1000, 12);
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.cycleComplete, true);
+  assert.equal(result.paidTotal, 1000);
+  assert.equal(f.cells.get('6:42'), 1000);
+  assert.equal(f.cells.get('6:13').getDate(), 7);
+});
