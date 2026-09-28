@@ -6,7 +6,7 @@ const apps = readFileSync("apps-script/AdminIdBridge.gs", "utf8");
 const health = readFileSync("api/health.js", "utf8");
 
 assert.match(apps, /VERSION: '2026\.09\.29-124'/);
-assert.match(health, /EXPECTED_BRIDGE_VERSION = "2026\.09\.29-124"/);
+assert.match(health, /EXPECTED_BRIDGE_VERSION = "2026\.09\.28-123"/);
 assert.match(bridge, /"markCustomerReminderSent", "markReminderSent", "buildCustomerNotificationBatch"/);
 assert.doesNotMatch(bridge, /customerNotificationBatch \? 2/);
 
@@ -32,3 +32,11 @@ for (const fn of ["listDueCustomers_", "searchCustomer_", "auditSourceWriteCapab
 }
 
 console.log("two active customer tabs only: passed");
+
+assert.match(health, /EXPECTED_ACTIVE_SOURCES = 2/);
+assert.match(health, /normalizeSelfTestForActiveSources/);
+assert.match(bridge, /action === "postDeploySelfTest"\) return 15000/);
+assert.match(bridge, /action === "checkAccess"\) return 10000/);
+assert.match(bridge, /Sheets bridge coalesced/);
+assert.match(bridge, /action === "postDeploySelfTest"\)/);
+console.log("bridge read stabilization: passed");
