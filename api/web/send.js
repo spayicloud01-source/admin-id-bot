@@ -50,39 +50,30 @@ async function resolveManualRecipient(session, queue) {
     { source: "v6", sheet: "V6/10-69" },
     { source: "v1/v3", sheet: "v3/10-69" },
   ];
-  const probeFields = ["due", "close", "outstanding"];
 
+  // Production bridge v121 accepts payment / close / custom directly.
+  // Probe only once per approved sheet instead of cycling legacy field names.
   for (const target of targets) {
-    for (const field of probeFields) {
-      const batch = await callSheetsBridge({
-        action: "buildCustomerNotificationBatch",
-        lineUserId: session.sub,
-        source: target.source,
-        sheet: target.sheet,
-        field,
-        queue,
-        queues: "",
-      });
-      const item = Array.isArray(batch?.items) ? batch.items[0] : null;
-      if (!item?.lineUserId) continue;
+    const batch = await callSheetsBridge({
+      action: "buildCustomerNotificationBatch",
+      lineUserId: session.sub,
+      source: target.source,
+      sheet: target.sheet,
+      field: "payment",
+      queue,
+      queues: "",
+    });
+    const item = Array.isArray(batch?.items) ? batch.items[0] : null;
+    if (!item?.lineUserId) continue;
 
-      // This batch is only used to securely resolve the bound LINE recipient.
-      // Mark it failed immediately so the live v120 same-day duplicate guard
-      // does not block the owner's next manual send.
-      try {
-        await callSheetsBridge({ action: "markCustomerReminderSent", rowNo: item.rowNo, sent: false });
-      } catch (error) {
-        console.warn("Recipient probe cleanup failed", item.rowNo, error?.message);
-      }
-
-      return {
-        lineUserId: item.lineUserId,
-        queue: String(item.queue || queue),
-        name: String(item.name || ""),
-        source: target.source,
-        sheet: target.sheet,
-      };
-    }
+    return {
+      lineUserId: item.lineUserId,
+      queue: String(item.queue || queue),
+      name: String(item.name || ""),
+      source: target.source,
+      sheet: target.sheet,
+      rowNo: item.rowNo || null,
+    };
   }
   return null;
 }
@@ -210,6 +201,7 @@ export default async function handler(req, res) {
               queue: recipient.queue,
               source: recipient.source,
               sheet: recipient.sheet,
+              rowNo: recipient.rowNo || null,
               summary: summaryForSend,
               exp: Date.now() + 30 * 60 * 1000,
             });
@@ -250,6 +242,13 @@ export default async function handler(req, res) {
               name: "",
             }, field)];
         await pushMessages(manualRecipient.lineUserId, messages);
+        if (manualRecipient.rowNo) {
+          try {
+            await callSheetsBridge({ action: "markCustomerReminderSent", rowNo: manualRecipient.rowNo, sent: true });
+          } catch (error) {
+            console.warn("Could not mark manual notification sent", manualRecipient.rowNo, error?.message);
+          }
+        }
         console.info("Manual customer notification sent directly", {
           queue,
           field,
@@ -301,7 +300,7 @@ export default async function handler(req, res) {
     const details = [];
 
     for (const target of targets) {
-      const bridgeField = field === "payment" ? "outstanding" : field === "custom" ? "due" : field;
+      const bridgeField = field;
       const batch = await callSheetsBridge({
         action: "buildCustomerNotificationBatch",
         lineUserId: session.sub,
