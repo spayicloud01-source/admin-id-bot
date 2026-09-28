@@ -5,8 +5,8 @@ const bridge = readFileSync("lib/sheetsBridge.js", "utf8");
 const apps = readFileSync("apps-script/AdminIdBridge.gs", "utf8");
 const health = readFileSync("api/health.js", "utf8");
 
-assert.match(apps, /VERSION: '2026\.09\.28-123'/);
-assert.match(health, /EXPECTED_BRIDGE_VERSION = "2026\.09\.28-123"/);
+assert.match(apps, /VERSION: '2026\.09\.29-124'/);
+assert.match(health, /EXPECTED_BRIDGE_VERSION = "2026\.09\.29-124"/);
 assert.match(bridge, /"markCustomerReminderSent", "markReminderSent", "buildCustomerNotificationBatch"/);
 assert.doesNotMatch(bridge, /customerNotificationBatch \? 2/);
 
@@ -16,3 +16,19 @@ assert.ok(listStart > 0 && listEnd > listStart);
 assert.doesNotMatch(apps.slice(listStart, listEnd), /SpreadsheetApp\.openById/);
 
 console.log("system hardening: passed");
+
+const targetHelpersStart = apps.indexOf("function customerTargetForSource_");
+assert.ok(targetHelpersStart > 0);
+assert.match(apps, /\{ source: 'v6', sheet: 'V6\/10-69' \}/);
+assert.match(apps, /\{ source: 'v1\/v3', sheet: 'v3\/10-69' \}/);
+
+for (const fn of ["listDueCustomers_", "searchCustomer_", "auditSourceWriteCapabilities_", "auditSourceSchemas_"]) {
+  const start = apps.indexOf("function " + fn);
+  assert.ok(start > 0, fn + " missing");
+  const end = apps.indexOf("\nfunction ", start + 20);
+  const block = apps.slice(start, end > start ? end : apps.length);
+  assert.doesNotMatch(block, /getSheets\(\)\.filter/, fn + " must not scan all tabs");
+  assert.match(block, /activeCustomerTab_/, fn + " must use exact active tab");
+}
+
+console.log("two active customer tabs only: passed");

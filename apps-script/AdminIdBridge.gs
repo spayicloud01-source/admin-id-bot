@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.28-123',
+  VERSION: '2026.09.29-124',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -32,6 +32,25 @@ const CONFIG = {
     /Dashboard/i
   ]
 };
+
+function customerTargetForSource_(sourceName) {
+  const sourceKey = normalizeGeneral_(sourceName);
+  return (CONFIG.CUSTOMER_BINDING_TARGETS || []).find(function(t) {
+    return normalizeGeneral_(t.source) === sourceKey;
+  }) || null;
+}
+
+function isActiveCustomerTarget_(sourceName, sheetName) {
+  const target = customerTargetForSource_(sourceName);
+  return !!target && normalizeGeneral_(target.sheet) === normalizeGeneral_(sheetName);
+}
+
+function activeCustomerTab_(workbook, sourceName) {
+  const target = customerTargetForSource_(sourceName);
+  if (!target) return null;
+  const sh = workbook.getSheetByName(String(target.sheet || '').trim());
+  return sh && !sh.isSheetHidden() ? sh : null;
+}
 
 let SETTINGS_MEMORY_CACHE_ = null;
 
@@ -931,7 +950,12 @@ function getCustomerAutoReminderSheetKeys_() {
   const keys = raw
     ? raw.split(',').map(function(x){ return String(x || '').trim(); }).filter(Boolean)
     : [];
-  return keys.filter(function(v, i, a){ return a.indexOf(v) === i; });
+  return keys.filter(function(v, i, a){
+    if (a.indexOf(v) !== i) return false;
+    const p = v.indexOf('|');
+    if (p <= 0 || p >= v.length - 1) return false;
+    return isActiveCustomerTarget_(v.slice(0, p), v.slice(p + 1));
+  });
 }
 
 function setCustomerAutoReminderSheet_(body) {
@@ -979,6 +1003,7 @@ function setCustomerAutoReminderSheet_(body) {
 }
 
 function isConfiguredCustomerNotificationSheet_(source, sheet) {
+  if (!isActiveCustomerTarget_(source, sheet)) return false;
   const backend = SpreadsheetApp.getActiveSpreadsheet();
   const links = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!links || links.getLastRow() < 2) return false;
@@ -1003,7 +1028,7 @@ function listCustomerNotificationSheets_(body) {
     if (String(r[7] || '').trim() !== 'ใช้งาน') return;
     const source = String(r[4] || '').trim();
     const sheet = String(r[5] || '').trim();
-    if (!source || !sheet) return;
+    if (!source || !sheet || !isActiveCustomerTarget_(source, sheet)) return;
     const key = source + '|' + sheet;
     if (!map[key]) map[key] = { source: source, sheet: sheet, count: 0 };
     map[key].count++;
@@ -1092,6 +1117,7 @@ function resolveCustomerNotificationRecipient_(body) {
 
     const source = String(r[4] || '').trim();
     const sheet = String(r[5] || '').trim();
+    if (!isActiveCustomerTarget_(source, sheet)) continue;
     if (sourceFilter && source !== sourceFilter) continue;
     if (sheetFilter && sheet !== sheetFilter) continue;
 
@@ -2519,6 +2545,7 @@ function getActiveCustomerBindings_(lineUserId) {
     const r = values[i];
     if (String(r[1] || '').trim() !== id) continue;
     if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
+    if (!isActiveCustomerTarget_(r[4], r[5])) continue;
     out.push({
       rowNo: i + 2,
       name: String(r[2] || '').trim(),
@@ -2839,11 +2866,6 @@ function listDueCustomers_(body) {
 
   const mode = String(body.dueMode || 'today').trim();
   const statusMode = ['deleted','pending_lock','sold','fraud','installment'].indexOf(mode) !== -1;
-  const upcomingPilotOnly = mode === 'upcoming';
-  const upcomingPilotTargets = {
-    'v6|V6/10-69': true,
-    'v1/v3|v3/10-69': true
-  };
   const remindDays = Number(getSettingValue_('REMIND_BEFORE_DAYS', 1)) || 1;
   const cache = CacheService.getScriptCache();
   const cacheKey = 'due-list:' + mode + ':' + remindDays;
@@ -2864,20 +2886,16 @@ function listDueCustomers_(body) {
   for (let i = 0; i < sources.length && items.length < 50; i++) {
     const sourceName = String(sources[i][0] || '').trim();
     const url = String(sources[i][1] || '').trim();
-    if (!isTrue_(sources[i][2]) || !url) continue;
+    if (!customerTargetForSource_(sourceName) || !isTrue_(sources[i][2]) || !url) continue;
     try {
       const id = extractSpreadsheetId_(url);
       if (!id) continue;
       const ss = SpreadsheetApp.openById(id);
-      let tabs = ss.getSheets().filter(function(sh) {
-        if (sh.isSheetHidden()) return false;
-        return !CONFIG.EXCLUDED_TAB_PATTERNS.some(function(rx){ return rx.test(sh.getName()); });
-      });
-      if (!isTrue_(sources[i][3])) tabs = tabs.slice(0, 1);
+      const targetTab = activeCustomerTab_(ss, sourceName);
+      const tabs = targetTab ? [targetTab] : [];
 
       for (let t = 0; t < tabs.length && items.length < 50; t++) {
         const sh = tabs[t];
-        if (upcomingPilotOnly && !upcomingPilotTargets[sourceName + '|' + sh.getName()]) continue;
         const h = detectHeaders_(sh);
         if (!h || (!statusMode && !h.dueDate) || (statusMode && !h.status)) continue;
         const lastRow = sh.getLastRow();
@@ -3119,23 +3137,16 @@ function searchCustomer_(query, includeDetails) {
     const sourceName = String(sources[i][0] || '').trim();
     const url = String(sources[i][1] || '').trim();
     const enabled = isTrue_(sources[i][2]);
+    if (!customerTargetForSource_(sourceName)) continue;
     if (sourceFilter && normalizeGeneral_(sourceName) !== sourceFilter) continue;
-    const searchAllTabs = isTrue_(sources[i][3]);
     if (!enabled || !url) continue;
 
     try {
       const id = extractSpreadsheetId_(url);
       if (!id) continue;
       const ss = SpreadsheetApp.openById(id);
-      let tabs = ss.getSheets().filter(function(sh) {
-        if (sh.isSheetHidden()) return false;
-        return !CONFIG.EXCLUDED_TAB_PATTERNS.some(function(rx) { return rx.test(sh.getName()); });
-      });
-      if (!searchAllTabs) tabs = tabs.slice(0, 1);
-
-      for (let t = 0; t < tabs.length && results.length < CONFIG.MAX_RESULTS; t++) {
-        searchTab_(tabs[t], sourceName, effectiveQuery, results, true);
-      }
+      const targetTab = activeCustomerTab_(ss, sourceName);
+      if (targetTab) searchTab_(targetTab, sourceName, effectiveQuery, results, true);
     } catch (err) {
       console.log('ค้นไม่ได้: ' + sourceName + ' / ' + err.message);
     }
@@ -3360,15 +3371,13 @@ function auditSourceWriteCapabilities_(body) {
   for (let i = 0; i < rows.length; i++) {
     if (!isTrue_(rows[i][2]) || !String(rows[i][1] || '').trim()) continue;
     const sourceName = String(rows[i][0] || '').trim();
+    if (!customerTargetForSource_(sourceName)) continue;
 
     try {
       const id = extractSpreadsheetId_(rows[i][1]);
       const ss = SpreadsheetApp.openById(id);
-      let tabs = ss.getSheets().filter(function(sh) {
-        return !sh.isSheetHidden() &&
-          !CONFIG.EXCLUDED_TAB_PATTERNS.some(function(rx){ return rx.test(sh.getName()); });
-      });
-      if (!isTrue_(rows[i][3])) tabs = tabs.slice(0, 1);
+      const targetTab = activeCustomerTab_(ss, sourceName);
+      const tabs = targetTab ? [targetTab] : [];
 
       for (let t = 0; t < tabs.length; t++) {
         tabCount++;
@@ -3442,6 +3451,7 @@ function auditSourceWriteCapabilities_(body) {
 }
 
 function findCustomerIdentity_(sourceName, sheetName, queueValue) {
+  if (!isActiveCustomerTarget_(sourceName, sheetName)) return null;
   const cacheKey = 'customer-v109-' + Utilities.base64EncodeWebSafe(
     Utilities.computeDigest(
       Utilities.DigestAlgorithm.SHA_256,
@@ -3460,7 +3470,7 @@ function findCustomerIdentity_(sourceName, sheetName, queueValue) {
   const rows = src.getRange(2, 1, src.getLastRow() - 1, 7).getValues();
   let sourceUrl = '';
   for (let i = 0; i < rows.length; i++) {
-    if (String(rows[i][0] || '').trim() === String(sourceName || '').trim()) {
+    if (String(rows[i][0] || '').trim() === String(sourceName || '').trim() && isTrue_(rows[i][2])) {
       sourceUrl = String(rows[i][1] || '').trim();
       break;
     }
@@ -3556,15 +3566,14 @@ function auditSourceSchemas_(body) {
 
   for (let i = 0; i < rows.length; i++) {
     if (!isTrue_(rows[i][2]) || !String(rows[i][1] || '').trim()) continue;
-    sourceCount++;
     const sourceName = String(rows[i][0] || '').trim();
+    if (!customerTargetForSource_(sourceName)) continue;
+    sourceCount++;
     try {
       const id = extractSpreadsheetId_(rows[i][1]);
       const ss = SpreadsheetApp.openById(id);
-      let tabs = ss.getSheets().filter(function(sh) {
-        return !sh.isSheetHidden() && !CONFIG.EXCLUDED_TAB_PATTERNS.some(function(rx){ return rx.test(sh.getName()); });
-      });
-      if (!isTrue_(rows[i][3])) tabs = tabs.slice(0, 1);
+      const targetTab = activeCustomerTab_(ss, sourceName);
+      const tabs = targetTab ? [targetTab] : [];
 
       for (let t = 0; t < tabs.length; t++) {
         tabCount++;
