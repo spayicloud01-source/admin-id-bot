@@ -197,7 +197,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.28-121', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.28-122', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -2678,7 +2678,7 @@ function listDueCustomers_(body) {
   if (!access.allowed) return { ok: true, items: [], message: access.message || 'ไม่มีสิทธิ์ดูรายงาน' };
 
   const mode = String(body.dueMode || 'today').trim();
-  const statusMode = mode === 'deleted' || mode === 'pending_lock';
+  const statusMode = ['deleted','pending_lock','sold','fraud','installment'].indexOf(mode) !== -1;
   const remindDays = Number(getSettingValue_('REMIND_BEFORE_DAYS', 1)) || 1;
   const cache = CacheService.getScriptCache();
   const cacheKey = 'due-list:' + mode + ':' + remindDays;
@@ -2727,6 +2727,9 @@ function listDueCustomers_(body) {
           const statusClass = customerStatusClass_(status);
           if (mode === 'deleted' && statusClass !== 'deleted') continue;
           if (mode === 'pending_lock' && statusClass !== 'pending_lock') continue;
+          if (mode === 'sold' && statusClass !== 'sold') continue;
+          if (mode === 'fraud' && statusClass !== 'fraud') continue;
+          if (mode === 'installment' && statusClass !== 'installment') continue;
           if (!statusMode && isInactiveDueStatus_(status)) continue;
 
           const dueText = getCell_(row, h.dueDate);
@@ -4755,12 +4758,15 @@ function customerStatusClass_(status) {
   if (parts.some(function(x){ return ['ลบ', 'ลบแล้ว', 'สถานะลบ'].indexOf(x) !== -1; })) return 'deleted';
   if (parts.some(function(x){ return ['ปิด', 'ปิดแล้ว', 'ปิดยอด', 'ปิดบัญชี', 'สถานะปิด'].indexOf(x) !== -1; })) return 'closed';
   if (parts.some(function(x){ return ['รอล็อค', 'รอล็อก', 'รอlock'].indexOf(x) !== -1; })) return 'pending_lock';
+  if (parts.some(function(x){ return ['ขาย', 'ขายแล้ว', 'สถานะขาย'].indexOf(x) !== -1; })) return 'sold';
+  if (parts.some(function(x){ return ['โกง', 'ฉ้อโกง', 'สถานะโกง'].indexOf(x) !== -1; })) return 'fraud';
+  if (parts.some(function(x){ return ['ผ่อน', 'ผ่อนอยู่', 'กำลังผ่อน', 'สถานะผ่อน'].indexOf(x) !== -1; })) return 'installment';
   return 'active';
 }
 
 function isInactiveDueStatus_(status) {
   const statusClass = customerStatusClass_(status);
-  return statusClass === 'deleted' || statusClass === 'closed';
+  return ['deleted','closed','sold','fraud','installment'].indexOf(statusClass) !== -1;
 }
 function normalizePhone_(v) { return String(v || '').replace(/\D/g,''); }
 function normalizeApple_(v) { return String(v || '').toLowerCase().replace(/\s+/g,'').trim(); }
