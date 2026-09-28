@@ -36,7 +36,7 @@ console.log("two active customer tabs only: passed");
 assert.match(health, /EXPECTED_ACTIVE_SOURCES = 2/);
 assert.match(health, /normalizeSelfTestForActiveSources/);
 assert.match(bridge, /action === "postDeploySelfTest"\) return 15000/);
-assert.match(bridge, /action === "checkAccess"\) return 10000/);
 assert.match(bridge, /Sheets bridge coalesced/);
+assert.doesNotMatch(bridge, /action === "checkAccess"\) return \d+/);
 assert.match(bridge, /action === "postDeploySelfTest"\)/);
 console.log("bridge read stabilization: passed");
