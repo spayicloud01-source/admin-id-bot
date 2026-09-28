@@ -64,6 +64,11 @@ test('overdue customer gets one reminder per day, then stops when due date advan
   assert.equal(f.run().items.length, 1);
   assert.equal(f.records[0][1], 'ลูกค้า-ค้างชำระ');
   assert.match(f.records[0][7], /เลยกำหนด 1 วัน/);
+  // If the HTTP response is lost, the existing pending row must be returned
+  // again so Vercel can finish delivery without appending a duplicate row.
+  assert.equal(f.run().items.length, 1);
+  assert.equal(f.records.length, 1);
+  f.records[0][8] = 'ส่งแล้ว';
   assert.equal(f.run().items.length, 0);
   f.customer.dueDate = '7 ต.ค. 26';
   assert.equal(f.run().items.length, 0);
@@ -82,6 +87,7 @@ test('pending-lock accounts remain payable and reminders already queued today ar
   f.customer.status = 'รอล็อค';
   assert.equal(f.run().items.length, 1);
   assert.equal(f.records[0][1], 'ลูกค้า-ครบกำหนด');
+  f.records[0][8] = 'ส่งแล้ว';
   assert.equal(f.run().items.length, 0);
 });
 
@@ -90,5 +96,6 @@ test('active accounts still receive due reminders', () => {
   f.customer.status = '';
   assert.equal(f.run().items.length, 1);
   assert.equal(f.records[0][1], 'ลูกค้า-ครบกำหนด');
+  f.records[0][8] = 'ส่งแล้ว';
   assert.equal(f.run().items.length, 0);
 });

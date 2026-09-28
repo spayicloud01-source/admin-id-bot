@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.28-119',
+  VERSION: '2026.09.28-120',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -197,7 +197,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.28-119', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.28-120', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -427,7 +427,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.28-119', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.28-120', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -1322,7 +1322,9 @@ function getCustomerReminderBatchLocked_(body) {
     const sourceKey = source + '/' + sheet;
     const key = [sourceKey, normalizeGeneral_(c.queue), lineUserId].join('|');
     const found = existingMap[key];
-    if (found && ['ส่งแล้ว', 'รอส่ง'].indexOf(found.status) !== -1) continue;
+    // A previous request can finish writing the queue but lose its HTTP response.
+    // Reuse pending rows on the next attempt; only a confirmed sent row is final.
+    if (found && found.status === 'ส่งแล้ว') continue;
 
     const message = [
       overdue ? 'แจ้งเตือนยอดที่เลยกำหนดชำระ' : 'แจ้งเตือนวันครบกำหนดชำระ',
