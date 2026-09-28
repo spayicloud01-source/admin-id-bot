@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.29-124',
+  VERSION: '2026.09.29-125',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -218,7 +218,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.29-124', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.29-125', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -4021,6 +4021,56 @@ function loadPaymentBackupFromLog_(reviewRowNo) {
   return null;
 }
 
+function reconcilePaymentCycleWithSource_(sheet, headers, sourceRow, calendarStartCol, cycle) {
+  const original = cycle && typeof cycle === 'object' ? cycle : {};
+  const rawByDay = original.byDay && typeof original.byDay === 'object' ? original.byDay : {};
+  const verifiedByDay = {};
+  let verifiedTotal = 0;
+  let changed = false;
+
+  Object.keys(rawByDay).forEach(function(dayKey) {
+    const amount = paymentNumber_(rawByDay[dayKey]);
+    const m = String(dayKey || '').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m || !(amount > 0)) {
+      changed = true;
+      return;
+    }
+
+    const paidDate = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 12, 0, 0);
+    const col = findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, paidDate);
+    if (!col) {
+      changed = true;
+      return;
+    }
+
+    const range = sheet.getRange(sourceRow, col);
+    const currentAmount = paymentNumber_(range.getValue());
+    const formula = String(range.getFormula() || '').trim();
+
+    // Only a hard-written payment cell can validate PropertiesService state.
+    // Calendar formulas are schedule markers, not proof that money was received.
+    if (formula || Math.abs(currentAmount - amount) > 0.005) {
+      changed = true;
+      return;
+    }
+
+    verifiedByDay[dayKey] = amount;
+    verifiedTotal += amount;
+  });
+
+  verifiedTotal = Math.round(verifiedTotal * 100) / 100;
+  if (Math.abs(paymentNumber_(original.total) - verifiedTotal) > 0.005) changed = true;
+
+  return {
+    changed: changed,
+    cycle: {
+      total: verifiedTotal,
+      byDay: verifiedByDay,
+      reviewRows: Array.isArray(original.reviewRows) ? original.reviewRows.slice() : []
+    }
+  };
+}
+
 function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   if (!isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false))) {
     return { ok: false, message: 'ระบบเขียนชีตต้นทางยังปิดอยู่' };
@@ -4069,6 +4119,17 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   let cycle;
   try { cycle = previousCycleRaw ? JSON.parse(previousCycleRaw) : { total: 0, byDay: {} }; }
   catch (err) { return { ok: false, message: 'อ่านยอดรับชำระสะสมไม่ได้ กรุณาตรวจคิวก่อน' }; }
+
+  const calendarStartCol = headers.note ? headers.note + 1 : Math.max(headers.dueDate + 1, 15);
+  const reconciledCycle = reconcilePaymentCycleWithSource_(
+    sheet, headers, sourceRow, calendarStartCol, cycle
+  );
+  cycle = reconciledCycle.cycle;
+  if (reconciledCycle.changed) {
+    if (cycle.total > 0) props.setProperty(cycleKey, JSON.stringify(cycle));
+    else props.deleteProperty(cycleKey);
+  }
+
   const totalBefore = paymentNumber_(cycle.total);
   const totalAfter = Math.round((totalBefore + amount) * 100) / 100;
   if (totalAfter > fee + 0.005) {
@@ -4086,7 +4147,6 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
       message: 'รายการนี้เลยรอบถัดไปแล้ว จึงยังไม่เลื่อนวันจ่ายอัตโนมัติ กรุณาตรวจสอบรอบชำระก่อน'
     };
   }
-  const calendarStartCol = headers.note ? headers.note + 1 : Math.max(headers.dueDate + 1, 15);
   const paidCol = findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, paidAt);
   const oldDueCol = findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, oldDue);
   const nextDueCol = fullyPaid ? findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, nextDue) : 0;
