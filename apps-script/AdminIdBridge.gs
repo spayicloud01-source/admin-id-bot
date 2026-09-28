@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.28-121',
+  VERSION: '2026.09.28-122',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -108,6 +108,8 @@ function doPost(e) {
         result = setCustomerAutoReminderSheet_(body); break;
       case 'buildCustomerNotificationBatch':
         result = buildCustomerNotificationBatch_(body); break;
+      case 'resolveCustomerNotificationRecipient':
+        result = resolveCustomerNotificationRecipient_(body); break;
       case 'getCustomerContactRecipients':
         result = getCustomerContactRecipients_(body); break;
       case 'getStaffSlipRecipients':
@@ -197,7 +199,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.28-121', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.28-122', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -1068,6 +1070,86 @@ function buildCustomerNotificationMessage_(summary, field, customMessage) {
   }
   if (field === 'custom') return String(customMessage || '').trim();
   return '';
+}
+
+function resolveCustomerNotificationRecipient_(body) {
+  const access = ownerAccessForCustomerNotification_(body);
+  if (!access) {
+    return { ok: true, allowed: false, found: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const queueKey = normalizeGeneral_(body.queue || body.query || '');
+  if (!queueKey) {
+    return { ok: true, allowed: true, found: false, message: 'กรุณาระบุคิว' };
+  }
+
+  const sourceFilter = String(body.source || '').trim();
+  const sheetFilter = String(body.sheet || '').trim();
+  const lineSheet = customerLineSheet_();
+  if (lineSheet.getLastRow() < 2) {
+    return { ok: true, allowed: true, found: false, message: 'ยังไม่มีข้อมูลลูกค้าที่ผูก LINE' };
+  }
+
+  const rows = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
+  const matches = [];
+  const seen = {};
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
+    if (normalizeGeneral_(r[6]) !== queueKey) continue;
+
+    const source = String(r[4] || '').trim();
+    const sheet = String(r[5] || '').trim();
+    if (sourceFilter && source !== sourceFilter) continue;
+    if (sheetFilter && sheet !== sheetFilter) continue;
+
+    const lineUserId = String(r[1] || '').trim();
+    if (!lineUserId) continue;
+
+    const key = lineUserId + '|' + source + '|' + sheet + '|' + queueKey;
+    if (seen[key]) continue;
+    seen[key] = true;
+
+    matches.push({
+      rowNo: i + 2,
+      lineUserId: lineUserId,
+      name: String(r[2] || '').trim(),
+      source: source,
+      sheet: sheet,
+      queue: String(r[6] || '').trim(),
+      notifications: isTrue_(r[10])
+    });
+  }
+
+  if (!matches.length) {
+    return {
+      ok: true,
+      allowed: true,
+      found: false,
+      message: 'พบข้อมูลลูกค้า แต่ยังไม่พบ LINE ที่ผูกกับคิวนี้ในสถานะใช้งาน'
+    };
+  }
+
+  if (matches.length > 1) {
+    return {
+      ok: true,
+      allowed: true,
+      found: false,
+      needsSelection: true,
+      matches: matches.map(function(m) {
+        return { name: m.name, source: m.source, sheet: m.sheet, queue: m.queue };
+      }),
+      message: 'พบ LINE ที่ผูกกับคิวนี้มากกว่า 1 รายการ'
+    };
+  }
+
+  return {
+    ok: true,
+    allowed: true,
+    found: true,
+    recipient: matches[0]
+  };
 }
 
 function buildCustomerNotificationBatch_(body) {
