@@ -645,7 +645,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       .then(function(x){
         if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){} location.reload();return;}
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"ส่งไม่สำเร็จ");
-        box.textContent=x.j.message+(x.j.failed?" • ไม่สำเร็จ "+x.j.failed+" ราย":"");
+        box.innerHTML='<div style="display:flex;align-items:center;gap:9px;font-weight:800;font-size:14px"><span style="display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#16a34a;color:#fff;font-size:16px">✓</span><span>'+escapeHtml(x.j.message||"ส่งสำเร็จ")+'</span></div>'+(x.j.failed?'<div style="margin-top:6px">ไม่สำเร็จ '+escapeHtml(x.j.failed)+' ราย</div>':'');
         box.classList.remove("hidden");
       }).catch(function(e){box.textContent="ผิดพลาด: "+String((e&&e.message)||e);box.classList.remove("hidden");})
       .then(function(){btn.textContent=one?"ส่งข้อความนี้":"ตรวจและส่งทุกคน";syncButtons();});
