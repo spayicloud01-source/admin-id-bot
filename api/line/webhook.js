@@ -1125,72 +1125,86 @@ async function handleEvent(event) {
 
       if (text === "ติดต่อแอดมิน") {
         auditAction = "ติดต่อแอดมิน";
-        const result = await callSheetsBridge({
-          action: "getCustomerContactRecipients",
-          lineUserId,
-        });
-        if (!result?.bound) {
-          await logCustomerOutcome(lineUserId, text, result?.message || "ยังไม่ได้ผูกบัญชี", "ไม่มีสิทธิ์");
-          await replyMessage(event.replyToken, [{ type: "text", text: result?.message || "ยังไม่ได้ผูกบัญชี" }]);
-          return;
-        }
-        const c = result.customer || {};
-        let pauseResult = null;
         try {
-          pauseResult = await callSheetsBridge({
-            action: "setCustomerConversationPause",
-            lineUserId,
-            targetLineUserId: lineUserId,
-            paused: true,
-          });
+          await replyMessage(event.replyToken, [{
+            type: "text",
+            text: "กำลังติดต่อแอดมิน กรุณารอสักครู่"
+          }]);
         } catch (error) {
-          console.warn("Could not pause customer bot for human takeover", error);
+          console.warn("Immediate contact-admin reply failed", error?.message);
         }
-        const pausedForHuman = !!pauseResult?.changed && pauseResult?.paused === true;
-        const alertText = [
-          "ลูกค้าต้องการติดต่อแอดมิน",
-          "ชื่อ: " + (c.name || "-"),
-          "คิว: " + (c.queue || "-"),
-          "ชีต: " + [c.source, c.sheet].filter(Boolean).join(" / "),
-          "LINE User ID: " + (c.lineUserId || lineUserId),
-          "เวลา: " + new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }).format(new Date()),
-          pausedForHuman ? "สถานะ: พักบอตแล้ว / แอดมินรับช่วง" : "สถานะ: ยังพักบอตไม่สำเร็จ",
-        ].join("\n");
-        const adminAlertMessage = {
-          type: "text",
-          text: alertText,
-          ...(pausedForHuman ? {
-            quickReply: {
-              items: [{
-                type: "action",
-                action: {
-                  type: "message",
-                  label: "จบการคุย / เปิดบอต",
-                  text: "เปิดบอตลูกค้า " + lineUserId,
-                }
-              }]
-            }
-          } : {})
-        };
-        const outcomes = await Promise.allSettled(
-          (result.recipients || []).map((id) => pushMessage(id, [adminAlertMessage]))
-        );
-        const delivered = outcomes.filter((x) => x.status === "fulfilled").length;
-        await safeLogAction({
-          lineUserId, staffName: c.name || "", role: "ลูกค้า", command: "ติดต่อแอดมิน",
-          query: c.queue || "", source: [c.source, c.sheet].join("/"),
-          result: "ส่งสำเร็จ " + delivered + "/" + outcomes.length,
-          actionName: "customerContactDelivery", status: delivered ? "สำเร็จ" : "ไม่สำเร็จ", note: ""
-        });
-        await replyMessage(event.replyToken, [{
-          type: "text",
-          text: delivered
-            ? (pausedForHuman
-                ? "ส่งแจ้งแอดมินแล้วครับ\nแอดมินกำลังรับช่วงการสนทนา บอตจะหยุดตอบชั่วคราวจนกว่าแอดมินจะเปิดกลับ"
-                : "ส่งแจ้งแอดมินแล้วครับ กรุณารอสักครู่")
-            : "ยังส่งแจ้งแอดมินไม่สำเร็จ กรุณาลองอีกครั้ง"
-        }]);
-        await safeLinkCustomerMenu(lineUserId);
+
+        try {
+          const result = await callSheetsBridge({
+            action: "getCustomerContactRecipients",
+            lineUserId,
+          });
+          if (!result?.bound) {
+            await pushMessage(lineUserId, [{ type: "text", text: result?.message || "ยังไม่ได้ผูกบัญชี" }]).catch(() => {});
+            return;
+          }
+
+          const c = result.customer || {};
+          let pauseResult = null;
+          try {
+            pauseResult = await callSheetsBridge({
+              action: "setCustomerConversationPause",
+              lineUserId,
+              targetLineUserId: lineUserId,
+              paused: true,
+            });
+          } catch (error) {
+            console.warn("Could not pause customer bot for human takeover", error);
+          }
+
+          const pausedForHuman = !!pauseResult?.changed && pauseResult?.paused === true;
+          const alertText = [
+            "ลูกค้าต้องการติดต่อแอดมิน",
+            "ชื่อ: " + (c.name || "-"),
+            "คิว: " + (c.queue || "-"),
+            "ชีต: " + [c.source, c.sheet].filter(Boolean).join(" / "),
+            "LINE User ID: " + (c.lineUserId || lineUserId),
+            "เวลา: " + new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "short", timeStyle: "short" }).format(new Date()),
+            pausedForHuman ? "สถานะ: พักบอตแล้ว / แอดมินรับช่วง" : "สถานะ: ยังพักบอตไม่สำเร็จ",
+          ].join("\n");
+
+          const adminAlertMessage = {
+            type: "text",
+            text: alertText,
+            ...(pausedForHuman ? {
+              quickReply: {
+                items: [{
+                  type: "action",
+                  action: {
+                    type: "message",
+                    label: "จบการคุย / เปิดบอต",
+                    text: "เปิดบอตลูกค้า " + lineUserId,
+                  }
+                }]
+              }
+            } : {})
+          };
+
+          const outcomes = await Promise.allSettled(
+            (result.recipients || []).map((id) => pushMessage(id, [adminAlertMessage]))
+          );
+          const delivered = outcomes.filter((x) => x.status === "fulfilled").length;
+
+          await pushMessage(lineUserId, [{
+            type: "text",
+            text: delivered
+              ? (pausedForHuman
+                  ? "ส่งแจ้งแอดมินแล้วครับ\nแอดมินกำลังรับช่วงการสนทนา บอตจะหยุดตอบชั่วคราวจนกว่าแอดมินจะเปิดกลับ"
+                  : "ส่งแจ้งแอดมินแล้วครับ กรุณารอสักครู่")
+              : "ยังส่งแจ้งแอดมินไม่สำเร็จ กรุณาลองอีกครั้ง"
+          }]).catch(() => {});
+        } catch (error) {
+          console.warn("Contact admin failed", error?.message);
+          await pushMessage(lineUserId, [{
+            type: "text",
+            text: "ติดต่อแอดมินไม่สำเร็จชั่วคราว กรุณาลองอีกครั้ง"
+          }]).catch(() => {});
+        }
         return;
       }
 
