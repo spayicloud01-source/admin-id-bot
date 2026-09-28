@@ -2624,6 +2624,7 @@ function getCalculatedSummary_(body) {
   if (matches.length > 1) return { ok: true, needsSelection: true, matches: matches.slice(0, 10) };
 
   const c = matches[0];
+  const selfSummary = calculateCustomerSelfSummary_(c);
   const principal = parseMoney_(c.principal);
   const fee = parseMoney_(c.fee);
   const saleDate = parseDateFlexible_(c.saleDate);
@@ -2669,6 +2670,14 @@ function getCalculatedSummary_(body) {
       discountStartDate: discountStart ? formatThaiDate_(discountStart) : '',
       calculatedClose: calculatedClose,
       sourceCloseAmount: parseMoney_(c.closeAmount),
+      accumulatedFee: selfSummary.accumulatedFee,
+      paidForCycle: selfSummary.paidForCycle,
+      remainingFee: selfSummary.remainingFee,
+      paymentTotal: selfSummary.paymentTotal,
+      discountAmount: selfSummary.discountAmount,
+      source: selfSummary.source,
+      queue: selfSummary.queue,
+      name: selfSummary.name,
       calculatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
     }
   };
