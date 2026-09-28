@@ -40,3 +40,8 @@ assert.match(bridge, /Sheets bridge coalesced/);
 assert.doesNotMatch(bridge, /action === "checkAccess"\) return \d+/);
 assert.match(bridge, /action === "postDeploySelfTest"\)/);
 console.log("bridge read stabilization: passed");
+
+assert.match(bridge, /const auditLog = action === "logAction"/);
+assert.match(bridge, /const maxAttempts = auditLog \? 1/);
+assert.match(bridge, /const timeoutMs = auditLog \? 5000/);
+console.log("audit log latency cap: passed");
