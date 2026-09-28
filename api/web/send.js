@@ -1,6 +1,7 @@
 import { callSheetsBridge } from "../../lib/sheetsBridge.js";
 import { sessionFromRequest } from "../../lib/webAuth.js";
 import { paymentQrUrl } from "../../lib/paymentQr.js";
+import crypto from "node:crypto";
 
 const ALLOWED_ADMIN_ACTIONS = new Set([
   "searchCustomer", "getCustomerInfo", "getCalculatedSummary", "getHistory",
@@ -15,6 +16,75 @@ const ALLOWED_ADMIN_ACTIONS = new Set([
 
 function clean(value, max = 300) {
   return String(value == null ? "" : value).trim().slice(0, max);
+}
+
+function manualRecipientSecret() {
+  const value = process.env.SHEETS_BRIDGE_SECRET;
+  if (!value) throw new Error("SHEETS_BRIDGE_SECRET is not configured");
+  return value;
+}
+
+function signManualRecipient(payload) {
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const sig = crypto.createHmac("sha256", manualRecipientSecret()).update(body).digest("base64url");
+  return body + "." + sig;
+}
+
+function verifyManualRecipient(token) {
+  const [body, sig] = String(token || "").split(".");
+  if (!body || !sig) return null;
+  const expected = crypto.createHmac("sha256", manualRecipientSecret()).update(body).digest("base64url");
+  const a = Buffer.from(sig), b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(body, "base64url").toString("utf8"));
+    if (!payload?.lineUserId || !payload?.queue || Number(payload.exp || 0) < Date.now()) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
+async function resolveManualRecipient(session, queue) {
+  const targets = [
+    { source: "v6", sheet: "V6/10-69" },
+    { source: "v1/v3", sheet: "v3/10-69" },
+  ];
+  const probeFields = ["due", "close", "outstanding"];
+
+  for (const target of targets) {
+    for (const field of probeFields) {
+      const batch = await callSheetsBridge({
+        action: "buildCustomerNotificationBatch",
+        lineUserId: session.sub,
+        source: target.source,
+        sheet: target.sheet,
+        field,
+        queue,
+        queues: "",
+      });
+      const item = Array.isArray(batch?.items) ? batch.items[0] : null;
+      if (!item?.lineUserId) continue;
+
+      // This batch is only used to securely resolve the bound LINE recipient.
+      // Mark it failed immediately so the live v120 same-day duplicate guard
+      // does not block the owner's next manual send.
+      try {
+        await callSheetsBridge({ action: "markCustomerReminderSent", rowNo: item.rowNo, sent: false });
+      } catch (error) {
+        console.warn("Recipient probe cleanup failed", item.rowNo, error?.message);
+      }
+
+      return {
+        lineUserId: item.lineUserId,
+        queue: String(item.queue || queue),
+        name: String(item.name || ""),
+        source: target.source,
+        sheet: target.sheet,
+      };
+    }
+  }
+  return null;
 }
 
 async function pushMessages(to, messages) {
@@ -122,6 +192,29 @@ export default async function handler(req, res) {
           payment: paymentQrUrl(source, paymentTotal),
           close: paymentQrUrl(source, closeTotal),
         };
+
+        if (body.resolveRecipient === true) {
+          const queue = clean(body.query, 100);
+          const recipient = await resolveManualRecipient(session, queue);
+          if (recipient) {
+            const summaryForSend = {
+              ...(s.customer || {}),
+              ...s,
+              source: s.source || s.customer?.source || recipient.source,
+              sheet: s.customer?.sheet || recipient.sheet,
+              queue: s.queue || s.customer?.queue || recipient.queue,
+              name: s.name || s.customer?.name || recipient.name,
+            };
+            result.recipientToken = signManualRecipient({
+              lineUserId: recipient.lineUserId,
+              queue: recipient.queue,
+              source: recipient.source,
+              sheet: recipient.sheet,
+              summary: summaryForSend,
+              exp: Date.now() + 30 * 60 * 1000,
+            });
+          }
+        }
       }
       return res.status(200).json(result || { ok: true });
     }
@@ -145,6 +238,38 @@ export default async function handler(req, res) {
     const customMessage = clean(body.customMessage, 4000);
     const queue = String(body.queue || "").trim();
     const queues = Array.isArray(body.queues) ? body.queues.map(String).join(",") : String(body.queues || "").trim();
+
+    const manualRecipient = body.recipientToken ? verifyManualRecipient(body.recipientToken) : null;
+    if (manualRecipient && queue && String(manualRecipient.queue).trim() === queue) {
+      try {
+        const messages = field === "custom"
+          ? [{ type: "text", text: customMessage }]
+          : [paymentFlex(manualRecipient.summary || {
+              source: manualRecipient.source,
+              queue: manualRecipient.queue,
+              name: "",
+            }, field)];
+        await pushMessages(manualRecipient.lineUserId, messages);
+        console.info("Manual customer notification sent directly", {
+          queue,
+          field,
+          source: manualRecipient.source,
+          sheet: manualRecipient.sheet,
+        });
+        return res.status(200).json({
+          ok: true,
+          field,
+          targetCount: 1,
+          prepared: 1,
+          sent: 1,
+          failed: 0,
+          message: "ส่งสำเร็จ 1 / 1 ราย",
+        });
+      } catch (error) {
+        console.warn("Direct manual customer notification failed", queue, error?.message);
+        return res.status(502).json({ ok: false, error: "ส่ง LINE ไม่สำเร็จ: " + String(error?.message || error).slice(0, 120) });
+      }
+    }
 
     let targets = Array.isArray(body.targets) ? body.targets : [];
     if (!targets.length && body.source && body.sheet) {
