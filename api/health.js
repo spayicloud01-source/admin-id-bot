@@ -2,7 +2,7 @@
 const HEALTH_SCHEMA_VERSION = 3;
 import { callSheetsBridge } from "../lib/sheetsBridge.js";
 
-const EXPECTED_BRIDGE_VERSION = "2026.09.28-123";
+const EXPECTED_BRIDGE_VERSION = "2026.09.29-124";
 
 export default async function handler(req, res) {
   const deep = String(req.query?.deep || "") === "1";
@@ -23,7 +23,7 @@ export default async function handler(req, res) {
       ok: envReady,
       service: "Admin ID",
       healthSchemaVersion: HEALTH_SCHEMA_VERSION,
-      appVersion: "2026.09.28-123",
+      appVersion: "2026.09.29-124",
       expectedBridgeVersion: EXPECTED_BRIDGE_VERSION,
       environment,
       bridge: { checked: false },
@@ -73,7 +73,7 @@ export default async function handler(req, res) {
     ok: readyForFullTest,
     service: "Admin ID",
     healthSchemaVersion: HEALTH_SCHEMA_VERSION,
-    appVersion: "2026.09.28-123",
+    appVersion: "2026.09.29-124",
     expectedBridgeVersion: EXPECTED_BRIDGE_VERSION,
     environment,
     bridge,
