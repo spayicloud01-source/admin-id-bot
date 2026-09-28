@@ -166,15 +166,15 @@ export default async function handler(req, res) {
     const details = [];
 
     for (const target of targets) {
+      const bridgeField = field === "payment" ? "outstanding" : field === "custom" ? "due" : field;
       const batch = await callSheetsBridge({
         action: "buildCustomerNotificationBatch",
         lineUserId: session.sub,
         source: target.source,
         sheet: target.sheet,
-        field,
+        field: bridgeField,
         queue,
         queues,
-        customMessage,
       });
 
       if (batch?.allowed === false) {
@@ -189,9 +189,33 @@ export default async function handler(req, res) {
       for (const item of items) {
         let ok = false;
         try {
-          const messages = field === "custom"
-            ? [{ type: "text", text: item.message }]
-            : [paymentFlex(item.summary || {}, field)];
+          let messages;
+          if (field === "custom") {
+            messages = [{ type: "text", text: customMessage }];
+          } else {
+            let summary = item.summary || null;
+            if (!summary || !summary.queue) {
+              const calculated = await callSheetsBridge({
+                action: "getCalculatedSummary",
+                lineUserId: session.sub,
+                sourceType: "user",
+                groupId: "",
+                query: item.queue,
+              });
+              if (calculated?.summary) {
+                const s = calculated.summary;
+                summary = {
+                  ...(s.customer || {}),
+                  ...s,
+                  source: s.source || s.customer?.source || target.source,
+                  sheet: s.customer?.sheet || target.sheet,
+                  queue: s.queue || s.customer?.queue || item.queue,
+                  name: s.name || s.customer?.name || item.name || "",
+                };
+              }
+            }
+            messages = [paymentFlex(summary || { source: target.source, queue: item.queue, name: item.name }, field)];
+          }
           await pushMessages(item.lineUserId, messages);
           ok = true;
           sent++;
