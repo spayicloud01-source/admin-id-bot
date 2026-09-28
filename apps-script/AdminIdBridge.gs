@@ -21,7 +21,7 @@ const CONFIG = {
   HEADER_SCAN_ROWS: 20,
   HEADER_SCAN_COLS: 40,
   SEARCH_CACHE_SECONDS: 300,
-  CUSTOMER_CACHE_SECONDS: 20,
+  CUSTOMER_CACHE_SECONDS: 60,
   SETTINGS_CACHE_SECONDS: 30,
   REMINDER_ENDPOINT: 'https://admin-id-bot.vercel.app/api/reminders/run',
   EXCLUDED_TAB_PATTERNS: [
@@ -2393,10 +2393,37 @@ function requestCustomerBindingLocked_(body) {
   };
 }
 
+function customerBindingCacheKey_(lineUserId) {
+  const raw = String(lineUserId || '').trim();
+  if (!raw) return '';
+  return 'customer-bindings:' + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw)
+  ).slice(0, 48);
+}
+
+function customerSelfCacheKey_(lineUserId) {
+  const raw = String(lineUserId || '').trim();
+  if (!raw) return '';
+  return 'customer-self:' + Utilities.base64EncodeWebSafe(
+    Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw)
+  ).slice(0, 48);
+}
+
 function getActiveCustomerBindings_(lineUserId) {
   const id = String(lineUserId || '').trim();
+  if (!id) return [];
+
+  const cache = CacheService.getScriptCache();
+  const cacheKey = customerBindingCacheKey_(id);
+  if (cacheKey) {
+    const cached = cache.get(cacheKey);
+    if (cached) {
+      try { return JSON.parse(cached); } catch (err) {}
+    }
+  }
+
   const sh = customerLineSheet_();
-  if (!id || sh.getLastRow() < 2) return [];
+  if (sh.getLastRow() < 2) return [];
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, 13).getDisplayValues();
   const out = [];
   for (let i = 0; i < values.length; i++) {
@@ -2412,6 +2439,10 @@ function getActiveCustomerBindings_(lineUserId) {
       queue: String(r[6] || '').trim(),
       notifications: isTrue_(r[10])
     });
+  }
+
+  if (out.length && cacheKey) {
+    try { cache.put(cacheKey, JSON.stringify(out), 300); } catch (err) {}
   }
   return out;
 }
@@ -2490,6 +2521,22 @@ function getCustomerSelf_(body) {
   }
 
   const lineUserId = String(body.lineUserId || '').trim();
+  const field = String(body.field || 'menu').trim();
+  const cache = CacheService.getScriptCache();
+  const selfCacheKey = customerSelfCacheKey_(lineUserId);
+
+  if (selfCacheKey) {
+    const cached = cache.get(selfCacheKey);
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        parsed.field = field;
+        parsed.cached = true;
+        return parsed;
+      } catch (err) {}
+    }
+  }
+
   const bindings = getActiveCustomerBindings_(lineUserId);
   if (!bindings.length) {
     return {
@@ -2503,29 +2550,49 @@ function getCustomerSelf_(body) {
   const staleRows = [];
   for (let i = 0; i < bindings.length; i++) {
     const b = bindings[i];
-    let c = null;
+    let customer = null;
     try {
-      c = findCustomerIdentity_(b.source, b.sheet, b.queue);
+      customer = findCustomerIdentity_(b.source, b.sheet, b.queue);
     } catch (err) {}
-    if (!c || normalizeGeneral_(c.name) !== normalizeGeneral_(b.name)) {
+    if (!customer || normalizeGeneral_(customer.name) !== normalizeGeneral_(b.name)) {
       staleRows.push(b.rowNo);
       continue;
     }
-    items.push(calculateCustomerSelfSummary_(c));
+    items.push(calculateCustomerSelfSummary_(customer));
   }
 
-  const sh = customerLineSheet_();
-  bindings.forEach(function(b) {
-    try { sh.getRange(b.rowNo, 13).setValue(new Date()); } catch (err) {}
-  });
-
-  return {
+  const result = {
     ok: true,
     bound: true,
     items: items,
     staleCount: staleRows.length,
-    field: String(body.field || 'menu').trim()
+    field: field
   };
+
+  // A few seconds of result caching makes consecutive customer buttons fast
+  // without leaving payment totals stale for long.
+  if (selfCacheKey) {
+    try { cache.put(selfCacheKey, JSON.stringify(result), 20); } catch (err) {}
+  }
+
+  // Last-access is operational metadata, not part of payment correctness.
+  // Throttle this write so every customer button does not write to Sheets.
+  const touchKey = selfCacheKey ? selfCacheKey + ':touch' : '';
+  let shouldTouch = true;
+  if (touchKey) {
+    shouldTouch = !cache.get(touchKey);
+    if (shouldTouch) {
+      try { cache.put(touchKey, '1', 600); } catch (err) {}
+    }
+  }
+  if (shouldTouch) {
+    const sh = customerLineSheet_();
+    bindings.forEach(function(b) {
+      try { sh.getRange(b.rowNo, 13).setValue(new Date()); } catch (err) {}
+    });
+  }
+
+  return result;
 }
 
 function cancelCustomerBindings_(body) {
