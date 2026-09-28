@@ -113,6 +113,16 @@ export default async function handler(req, res) {
         activityToday: body.activityToday === true,
         amount: body.amount == null || body.amount === "" ? null : Number(body.amount),
       });
+      if (requestedAction === "getCalculatedSummary" && result?.summary) {
+        const s = result.summary;
+        const source = s.source || s.customer?.source || "";
+        const paymentTotal = Number(s.paymentTotal ?? ((Number(s.accumulatedFee || s.fee || 0) + Number(s.lateFee || 0)) - Number(s.paidForCycle || 0)));
+        const closeTotal = Number(s.calculatedClose || 0);
+        result.qr = {
+          payment: paymentQrUrl(source, paymentTotal),
+          close: paymentQrUrl(source, closeTotal),
+        };
+      }
       return res.status(200).json(result || { ok: true });
     }
 
