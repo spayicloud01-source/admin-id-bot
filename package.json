@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build": "npm test",
     "test": "node tests/run-all.mjs"
   },
   "dependencies": {
