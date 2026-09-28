@@ -1199,13 +1199,20 @@ async function handleEvent(event) {
         const field = customerField;
         const lookupStartedAt = Date.now();
         await startLoading(lineUserId, 60);
-        const progressPromise = showCustomerProgress(lineUserId);
         try {
-          const [result] = await Promise.all([callSheetsBridge({
+          await replyMessage(event.replyToken, [{
+            type: "text",
+            text: "กำลังตรวจสอบข้อมูล กรุณารอสักครู่"
+          }]);
+        } catch (error) {
+          console.warn("Immediate customer progress reply failed", error?.message);
+        }
+        try {
+          const result = await callSheetsBridge({
             action: "getCustomerSelf",
             lineUserId,
             field,
-          }), progressPromise]);
+          });
           const resultText = formatCustomerSelfResult(result, field);
           const message = result.bound
             ? (["payment", "close"].includes(field) ? customerPaymentMessage(result, field) : customerResultMessage(resultText, field === "info" ? "ข้อมูลลูกค้า" : "ข้อมูลล่าสุด"))
@@ -1221,20 +1228,8 @@ async function handleEvent(event) {
             hasItems,
           });
 
-          // Do not keep the webhook open for slow audit/menu maintenance after
-          // the customer has already received the important response.
-          if (!["payment", "close"].includes(field)) {
-            Promise.allSettled([
-              logCustomerOutcome(
-                lineUserId, text,
-                !result?.bound ? (result?.message || "ยังไม่ได้ผูกบัญชี") :
-                  hasItems ? "แสดงข้อมูลลูกค้า" : "ไม่พบข้อมูลต้นทาง",
-                !result?.bound ? "ไม่มีสิทธิ์" : hasItems ? "สำเร็จ" : "ข้อมูลไม่ตรง",
-                hasItems ? "" : (result?.bound ? "ข้อมูลต้นทางหายหรือชื่อไม่ตรง" : "")
-              ),
-              result.bound && !result.suspended ? safeLinkCustomerMenu(lineUserId) : Promise.resolve(),
-            ]).catch(() => {});
-          }
+          // Customer menu is linked during binding. Avoid extra bridge calls
+          // here so self-service buttons stay responsive even when Sheets is busy.
           return;
         } catch (error) {
           console.warn("Customer self-service failed", { field, error: String(error?.message || error) });
