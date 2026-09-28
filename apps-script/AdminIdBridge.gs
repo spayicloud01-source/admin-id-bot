@@ -1032,41 +1032,42 @@ function listCustomerNotificationSheets_(body) {
 }
 
 function notificationFieldLabel_(field) {
-  if (field === 'close') return 'ยอดปิด';
-  if (field === 'outstanding') return 'ยอดค้าง';
-  if (field === 'due') return 'กำหนดครบวันชำระ';
+  if (field === 'payment') return 'ชำระยอด';
+  if (field === 'close') return 'ปิดยอด';
+  if (field === 'custom') return 'ข้อความกำหนดเอง';
   return '';
 }
 
-function buildCustomerNotificationMessage_(summary, field) {
+function buildCustomerNotificationMessage_(summary, field, customMessage) {
   const head = 'แจ้งข้อมูลลูกค้า';
   const name = String(summary.name || '').trim();
   const queue = String(summary.queue || '').trim();
+  if (field === 'payment') {
+    return [
+      head,
+      'ชื่อ: ' + name,
+      'คิว: ' + queue,
+      'ค่าเช่าที่ต้องชำระ: ' + Number(summary.accumulatedFee || 0).toLocaleString('th-TH') + ' บาท',
+      Number(summary.paidForCycle || 0) > 0 ? 'รับชำระแล้ว: ' + Number(summary.paidForCycle || 0).toLocaleString('th-TH') + ' บาท' : '',
+      'ค่าปรับ: ' + Number(summary.lateFee || 0).toLocaleString('th-TH') + ' บาท',
+      'รวมยอดชำระวันนี้: ' + Number(summary.paymentTotal || 0).toLocaleString('th-TH') + ' บาท',
+      'วันครบกำหนด: ' + (summary.dueDate || '-')
+    ].filter(Boolean).join('\n');
+  }
   if (field === 'close') {
     return [
       head,
       'ชื่อ: ' + name,
       'คิว: ' + queue,
-      'ยอดปิดวันนี้: ' + Number(summary.calculatedClose || 0).toLocaleString('th-TH') + ' บาท',
-      summary.discountEligible ? 'สิทธิ์ส่วนลด: ลดค่าเช่า ' + summary.discountPercent + '%' : ''
+      'เงินต้น: ' + Number(summary.principal || 0).toLocaleString('th-TH') + ' บาท',
+      'ค่าเช่า: ' + Number(summary.accumulatedFee || 0).toLocaleString('th-TH') + ' บาท',
+      Number(summary.discountAmount || 0) > 0 ? 'ส่วนลด: -' + Number(summary.discountAmount || 0).toLocaleString('th-TH') + ' บาท' : '',
+      'ค่าปรับ: ' + Number(summary.lateFee || 0).toLocaleString('th-TH') + ' บาท',
+      'รวมยอดปิดวันนี้: ' + Number(summary.calculatedClose || 0).toLocaleString('th-TH') + ' บาท'
     ].filter(Boolean).join('\n');
   }
-  if (field === 'outstanding') {
-    const outstanding = Number(summary.paymentTotal || 0);
-    return [
-      head,
-      'ชื่อ: ' + name,
-      'คิว: ' + queue,
-      'ยอดค้าง: ' + outstanding.toLocaleString('th-TH') + ' บาท'
-    ].join('\n');
-  }
-  return [
-    head,
-    'ชื่อ: ' + name,
-    'คิว: ' + queue,
-    'กำหนดครบวันชำระ: ' + (summary.dueDate || '-'),
-    summary.overdueDays > 0 ? 'เกินกำหนด ' + summary.overdueDays + ' วัน' : ''
-  ].filter(Boolean).join('\n');
+  if (field === 'custom') return String(customMessage || '').trim();
+  return '';
 }
 
 function buildCustomerNotificationBatch_(body) {
@@ -1086,6 +1087,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
   const source = String(body.source || '').trim();
   const sheet = String(body.sheet || '').trim();
   const field = String(body.field || '').trim();
+  const customMessage = String(body.customMessage || '').trim();
   const queueFilter = normalizeGeneral_(body.queue || '');
   const queueFilters = String(body.queues || '').split(',').map(normalizeGeneral_).filter(Boolean);
   if (!source || !sheet) return { ok: true, allowed: true, items: [], message: 'กรุณาเลือกชีตก่อน' };
@@ -1093,8 +1095,11 @@ function buildCustomerNotificationBatchLocked_(body, access) {
     return { ok: true, allowed: true, items: [], message: 'ไม่พบแหล่งข้อมูลหรือชีตที่เลือก' };
   }
   if (queueFilter && queueFilters.length) return { ok: true, allowed: true, items: [], message: 'เลือกรายคนหรือหลายคนอย่างใดอย่างหนึ่ง' };
-  if (['close','outstanding','due'].indexOf(field) === -1) {
-    return { ok: true, allowed: true, items: [], message: 'เลือกได้เฉพาะ ยอดปิด / ยอดค้าง / กำหนดครบวันชำระ' };
+  if (['payment','close','custom'].indexOf(field) === -1) {
+    return { ok: true, allowed: true, items: [], message: 'เลือกได้เฉพาะ ชำระยอด / ปิดยอด / ข้อความกำหนดเอง' };
+  }
+  if (field === 'custom' && !customMessage) {
+    return { ok: true, allowed: true, items: [], message: 'กรุณาพิมพ์ข้อความที่ต้องการส่ง' };
   }
 
   const lineSheet = customerLineSheet_();
@@ -1135,7 +1140,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
     if (!c || normalizeGeneral_(c.name) !== normalizeGeneral_(r[2])) continue;
     if (isInactiveDueStatus_(c.status)) continue;
     const summary = calculateCustomerSelfSummary_(c);
-    const message = buildCustomerNotificationMessage_(summary, field);
+    const message = buildCustomerNotificationMessage_(summary, field, customMessage);
     notifySheet.appendRow([
       new Date(),
       type,
@@ -1143,7 +1148,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
       summary.name || '',
       lineUserId,
       summary.dueDate || '',
-      field === 'close' ? summary.calculatedClose : (field === 'outstanding' ? Number(summary.paymentTotal || 0) : ''),
+      field === 'close' ? summary.calculatedClose : (field === 'payment' ? Number(summary.paymentTotal || 0) : ''),
       message,
       'รอส่ง',
       '',
@@ -1155,7 +1160,8 @@ function buildCustomerNotificationBatchLocked_(body, access) {
       queue: queue,
       name: summary.name || '',
       field: field,
-      message: message
+      message: message,
+      summary: summary
     });
   }
 
