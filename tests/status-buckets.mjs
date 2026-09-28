@@ -35,7 +35,7 @@ function makeContext() {
     CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) },
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ({ getSheetByName: () => sourceSheet }),
-      openById: () => ({ getSheets: () => [tab] }),
+      openById: () => ({ getSheets: () => [tab], getSheetByName: (name) => name === 'V6/10-69' ? tab : null }),
     },
   });
   vm.runInContext(script, context);
