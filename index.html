@@ -374,6 +374,10 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){} location.reload();return;}
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"โหลดข้อมูลไม่ได้");
         var items=x.j.items||[];
+        var countIds={today:"todayCount",upcoming:"upcomingCount",overdue:"overdueCount",deleted:"deletedCount",pending_lock:"pendingLockCount",sold:"soldCount",fraud:"fraudCount",installment:"installmentCount"};
+        if(countIds[mode]&&byId(countIds[mode]))byId(countIds[mode]).textContent=items.length;
+        if(mode==="today"||mode==="upcoming")renderInlineDue(mode,items);
+        saveDashboardCache();
         if(!items.length){byId("dueList").innerHTML='<div class="empty"><b>ไม่มีรายการ</b><p>ยังไม่มีลูกค้าในหมวดนี้</p></div>';return;}
         var out="",i,item,deltaText;
         for(i=0;i<items.length;i++){
@@ -511,15 +515,11 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   }
 
   function loadSummary(){
+    // Keep the automatic dashboard light so LINE customer buttons are not
+    // competing with eight long Google Sheets scans.
     var modes=[
       {mode:"today",id:"todayCount"},
-      {mode:"upcoming",id:"upcomingCount"},
-      {mode:"overdue",id:"overdueCount"},
-      {mode:"deleted",id:"deletedCount"},
-      {mode:"pending_lock",id:"pendingLockCount"},
-      {mode:"sold",id:"soldCount"},
-      {mode:"fraud",id:"fraudCount"},
-      {mode:"installment",id:"installmentCount"}
+      {mode:"upcoming",id:"upcomingCount"}
     ];
     function next(i){
       if(i>=modes.length){saveDashboardCache();return;}
@@ -530,11 +530,11 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
           if(j&&j.ok){
             var items=Array.isArray(j.items)?j.items:[];
             byId(x.id).textContent=items.length;
-            if(x.mode==="today"||x.mode==="upcoming")renderInlineDue(x.mode,items);
+            renderInlineDue(x.mode,items);
             saveDashboardCache();
           }
         }).catch(function(){})
-        .then(function(){setTimeout(function(){next(i+1);},250);});
+        .then(function(){setTimeout(function(){next(i+1);},500);});
     }
     next(0);
   }
