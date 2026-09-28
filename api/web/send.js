@@ -83,6 +83,12 @@ export default async function handler(req, res) {
     if (!targets.length && body.source && body.sheet) {
       targets = [{ source: body.source, sheet: body.sheet }];
     }
+    if (!targets.length && queue) {
+      targets = [
+        { source: "v6", sheet: "V6/10-69" },
+        { source: "v1/v3", sheet: "v3/10-69" }
+      ];
+    }
     targets = targets
       .map((x) => ({ source: String(x?.source || "").trim(), sheet: String(x?.sheet || "").trim() }))
       .filter((x) => x.source && x.sheet);
