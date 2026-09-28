@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - speed-lookup-resolver-20260929
+  pull_request:
+    branches:
+      - main
 
 jobs:
   test:
