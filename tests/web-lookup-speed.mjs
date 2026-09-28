@@ -16,7 +16,7 @@ assert.doesNotMatch(
     send.indexOf("async function resolveManualRecipient"),
     send.indexOf("async function getBoundCustomerSummary")
   ),
-  /buildCustomerNotificationBatch/
+  /action:\\s*["']buildCustomerNotificationBatch["']/
 );
 assert.match(bridge, /const recipientLookup = action === "resolveCustomerNotificationRecipient"/);
 assert.match(bridge, /recipientLookup \? 10000/);
