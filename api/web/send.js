@@ -46,13 +46,43 @@ function verifyManualRecipient(token) {
 }
 
 async function resolveManualRecipient(session, queue) {
+  // v122: resolve the active LINE binding directly from the binding sheet.
+  // This is much faster than building a notification batch just to discover a recipient.
+  try {
+    const direct = await callSheetsBridge({
+      action: "resolveCustomerNotificationRecipient",
+      lineUserId: session.sub,
+      queue,
+    });
+    if (direct?.found && direct?.recipient?.lineUserId) {
+      return {
+        lineUserId: direct.recipient.lineUserId,
+        queue: String(direct.recipient.queue || queue),
+        name: String(direct.recipient.name || ""),
+        source: String(direct.recipient.source || ""),
+        sheet: String(direct.recipient.sheet || ""),
+        rowNo: null,
+      };
+    }
+    if (direct?.needsSelection) {
+      const error = new Error(direct.message || "พบ LINE ที่ผูกกับคิวนี้มากกว่า 1 รายการ");
+      error.code = "AMBIGUOUS_RECIPIENT";
+      throw error;
+    }
+    if (direct && direct.found === false) return null;
+  } catch (error) {
+    if (error?.code === "AMBIGUOUS_RECIPIENT") throw error;
+    // v121 does not know the direct resolver yet. Keep a temporary fallback
+    // until Apps Script v122 is deployed.
+    if (!/Unknown action/i.test(String(error?.message || error))) {
+      console.warn("Direct recipient lookup failed; falling back", error?.message);
+    }
+  }
+
   const targets = [
     { source: "v6", sheet: "V6/10-69" },
     { source: "v1/v3", sheet: "v3/10-69" },
   ];
-
-  // Production bridge v121 accepts payment / close / custom directly.
-  // Probe only once per approved sheet instead of cycling legacy field names.
   for (const target of targets) {
     const batch = await callSheetsBridge({
       action: "buildCustomerNotificationBatch",
@@ -65,7 +95,6 @@ async function resolveManualRecipient(session, queue) {
     });
     const item = Array.isArray(batch?.items) ? batch.items[0] : null;
     if (!item?.lineUserId) continue;
-
     return {
       lineUserId: item.lineUserId,
       queue: String(item.queue || queue),
