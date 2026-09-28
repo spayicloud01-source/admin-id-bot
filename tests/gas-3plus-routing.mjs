@@ -29,7 +29,13 @@ assert.match(auto, /rowsToAppend/);
 assert.match(auto, /\.setValues\(rowsToAppend\)/);
 assert.doesNotMatch(auto, /notifySheet\.appendRow/);
 
-const oldEnv = { ...process.env };
+const oldEnv = {
+  GOOGLE_APPS_SCRIPT_CUSTOMER_URL: process.env.GOOGLE_APPS_SCRIPT_CUSTOMER_URL,
+  GOOGLE_APPS_SCRIPT_PAYMENT_URL: process.env.GOOGLE_APPS_SCRIPT_PAYMENT_URL,
+  GOOGLE_APPS_SCRIPT_NOTIFY_URL: process.env.GOOGLE_APPS_SCRIPT_NOTIFY_URL,
+  GOOGLE_APPS_SCRIPT_URL: process.env.GOOGLE_APPS_SCRIPT_URL,
+  SHEETS_BRIDGE_SECRET: process.env.SHEETS_BRIDGE_SECRET,
+};
 delete process.env.GOOGLE_APPS_SCRIPT_CUSTOMER_URL;
 delete process.env.GOOGLE_APPS_SCRIPT_PAYMENT_URL;
 delete process.env.GOOGLE_APPS_SCRIPT_NOTIFY_URL;
@@ -48,5 +54,8 @@ assert.equal(status.customer, true);
 assert.equal(status.payment, true);
 assert.equal(status.notify, true);
 
-process.env = oldEnv;
+for (const [key, value] of Object.entries(oldEnv)) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
 console.log("gas 3+ routing: passed");
