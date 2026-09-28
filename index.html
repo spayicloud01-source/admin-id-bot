@@ -195,6 +195,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   var SELECTED = null;
   var SELECTED_TARGETS = [];
   var ONE_PREVIEW = null;
+  var ONE_PREVIEW_QR = null;
 
   function byId(id){ return document.getElementById(id); }
   function authHeaders(){ var h={}; if(TOKEN){ h.Authorization="Bearer "+TOKEN; } return h; }
@@ -586,18 +587,21 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     if(!ONE_PREVIEW){box.classList.add("hidden");box.innerHTML="";syncButtons();return;}
     var s=ONE_PREVIEW, customer=s.customer||{}, field=byId("fieldOne").value;
     var message=oneMessagePreview(s,field);
+    var qrUrl=field==="payment"?(ONE_PREVIEW_QR&&ONE_PREVIEW_QR.payment):field==="close"?(ONE_PREVIEW_QR&&ONE_PREVIEW_QR.close):"";
     box.innerHTML='<div class="previewcustomer">'
       +'<div><span>คิว</span><b>'+escapeHtml(customer.queue||"-")+'</b></div>'
       +'<div><span>ชื่อ</span><b>'+escapeHtml(customer.name||"-")+'</b></div>'
       +'<div><span>ชีต</span><b>'+escapeHtml((customer.source||"-")+" / "+(customer.sheet||"-"))+'</b></div>'
       +'<div><span>วันครบกำหนด</span><b>'+escapeHtml(s.dueDate||customer.dueDate||"-")+'</b></div>'
-      +'</div><div class="hint" style="margin-bottom:6px">ตัวอย่างข้อความที่จะส่ง</div><div class="previewmessage">'+escapeHtml(message)+'</div>';
+      +'</div>'
+      +(qrUrl?'<div style="margin:10px 0;text-align:center"><div class="hint" style="margin-bottom:6px">QR ระบุยอด</div><img src="'+escapeHtml(qrUrl)+'" alt="QR ชำระเงิน" style="width:min(280px,100%);border-radius:12px;background:#fff;border:1px solid #e5e7eb"></div>':'')
+      +'<div class="hint" style="margin-bottom:6px">ตัวอย่างข้อความที่จะส่ง</div><div class="previewmessage">'+escapeHtml(message)+'</div>';
     box.classList.remove("hidden");
     syncButtons();
   }
   function previewOneCustomer(){
     var q=byId("queue").value.trim(),btn=byId("previewOne"),box=byId("onePreview");
-    ONE_PREVIEW=null;syncButtons();
+    ONE_PREVIEW=null;ONE_PREVIEW_QR=null;syncButtons();
     if(!q){alert("กรุณาใส่เลขคิว");return;}
     if(byId("fieldOne").value==="custom"&&!byId("customOneText").value.trim()){alert("กรุณาพิมพ์ข้อความที่ต้องการส่ง");return;}
     btn.disabled=true;btn.textContent="กำลังค้นหา…";
@@ -611,9 +615,10 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         if(x.j.needsSelection)throw new Error("พบคิวซ้ำมากกว่า 1 รายการ กรุณาตรวจเลขคิว");
         if(!x.j.summary||!x.j.summary.customer)throw new Error("ไม่พบคิว "+q+" ใน V6/10-69 หรือ v3/10-69");
         ONE_PREVIEW=x.j.summary;
+        ONE_PREVIEW_QR=x.j.qr||null;
         renderOnePreview();
       }).catch(function(e){
-        ONE_PREVIEW=null;syncButtons();
+        ONE_PREVIEW=null;ONE_PREVIEW_QR=null;syncButtons();
         box.classList.remove("hidden");box.innerHTML='<div style="color:#b91c1c;font-size:12px">ไม่พบ/ค้นหาไม่ได้: '+escapeHtml(String((e&&e.message)||e))+'</div>';
       }).then(function(){btn.disabled=false;btn.textContent="ค้นหาและดูตัวอย่าง";});
   }
@@ -687,14 +692,14 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   byId("sendAll").onclick=function(){sendNotification(false);};
   byId("previewOne").onclick=previewOneCustomer;
   byId("sendOne").onclick=function(){sendNotification(true);};
-  byId("queue").addEventListener("input",function(){ONE_PREVIEW=null;renderOnePreview();});
+  byId("queue").addEventListener("input",function(){ONE_PREVIEW=null;ONE_PREVIEW_QR=null;renderOnePreview();});
   function syncCustomFields(){
     var oneCustom=byId("fieldOne").value==="custom";
     var allCustom=byId("fieldAll").value==="custom";
     byId("customOneWrap").classList.toggle("hidden",!oneCustom);
     byId("customAllWrap").classList.toggle("hidden",!allCustom);
   }
-  byId("fieldOne").addEventListener("change",function(){ONE_PREVIEW=null;syncCustomFields();renderOnePreview();});
+  byId("fieldOne").addEventListener("change",function(){ONE_PREVIEW=null;ONE_PREVIEW_QR=null;syncCustomFields();renderOnePreview();});
   byId("fieldAll").addEventListener("change",syncCustomFields);
   byId("customOneText").addEventListener("input",function(){ONE_PREVIEW=null;syncButtons();});
   syncCustomFields();
