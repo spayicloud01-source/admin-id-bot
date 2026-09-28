@@ -384,7 +384,7 @@ function customerPaymentMessage(result, field) {
   const isClose = field === "close";
   const total = isClose
     ? Number(item.calculatedClose || 0)
-    : Number(item.paymentTotal || (Number(item.accumulatedFee || 0) + Number(item.lateFee || 0)));
+    : Number(item.paymentTotal ?? (Number(item.accumulatedFee || 0) + Number(item.lateFee || 0)));
   const qrUrl = paymentQrUrl(item.source, total);
   const discountAmount = Number(item.discountAmount || 0);
   const rows = isClose
@@ -399,6 +399,7 @@ function customerPaymentMessage(result, field) {
     : [
         ["ชื่อ", item.name || "-"], ["คิว", item.queue || "-"],
         ["ค่าเช่าที่ต้องชำระ", formatMoney(item.accumulatedFee) + " บาท"],
+        ...(Number(item.paidForCycle || 0) > 0 ? [["รับชำระแล้ว", formatMoney(item.paidForCycle) + " บาท"]] : []),
         ["ค่าปรับ", formatMoney(item.lateFee) + " บาท"],
         ["รวมยอดชำระวันนี้", formatMoney(total) + " บาท"],
         ["วันครบกำหนด", item.dueDate || "-"],
@@ -575,7 +576,7 @@ function formatCustomerSelfResult(result, field) {
   const blocks = items.slice(0, 5).map((x) => {
     const head = (x.name || "ลูกค้า") + (x.queue ? " | คิว " + x.queue : "");
     if (field === "payment") {
-      return [head, "ค่าเช่า: " + formatMoney(x.accumulatedFee) + " บาท", "ค่าปรับ: " + formatMoney(x.lateFee) + " บาท", "รวมยอดชำระวันนี้: " + formatMoney(x.paymentTotal) + " บาท", "วันครบกำหนด: " + (x.dueDate || "-")].join("\n");
+      return [head, "ค่าเช่า: " + formatMoney(x.accumulatedFee) + " บาท", Number(x.paidForCycle || 0) > 0 ? "รับชำระแล้ว: " + formatMoney(x.paidForCycle) + " บาท" : null, "ค่าปรับ: " + formatMoney(x.lateFee) + " บาท", "รวมยอดชำระวันนี้: " + formatMoney(x.paymentTotal) + " บาท", "วันครบกำหนด: " + (x.dueDate || "-")].filter(Boolean).join("\n");
     }
     if (field === "close") {
       return [head, "ยอดปิดวันนี้: " + formatMoney(x.calculatedClose) + " บาท", x.discountEligible ? "มีสิทธิ์ลดค่าเช่า " + x.discountPercent + "%" : null, "คำนวณ ณ " + x.calculatedAt].filter(Boolean).join("\n");
@@ -587,7 +588,7 @@ function formatCustomerSelfResult(result, field) {
       return [head, "วันครบกำหนดชำระ: " + (x.dueDate || "-"), x.overdueDays > 0 ? "เกินกำหนด " + x.overdueDays + " วัน" : null].filter(Boolean).join("\n");
     }
     if (field === "outstanding") {
-      const outstanding = Number(x.outstanding || 0) > 0 ? Number(x.outstanding || 0) : Number(x.accumulatedFee || 0) + Number(x.lateFee || 0);
+      const outstanding = Number(x.paymentTotal ?? (Number(x.accumulatedFee || 0) + Number(x.lateFee || 0)));
       return [head, "ยอดค้าง: " + formatMoney(outstanding) + " บาท"].join("\n");
     }
     if (field === "status") {
@@ -1759,6 +1760,9 @@ async function handleEvent(event) {
           } else {
             result = await callSheetsBridge({
               ...payload,
+              requestId: (event.message?.id || event.webhookEventId)
+                ? "LINE:" + String(event.message?.id || event.webhookEventId).trim()
+                : "",
               query: String(exact.source).trim() + ":" + identity,
               exactCustomer: {
                 source: String(exact.source || "").trim(),
@@ -2168,7 +2172,9 @@ async function handleEvent(event) {
             ? (result.type === "ปิดยอด"
                 ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nรอรับรหัส***** สักครู่นะครับ ภายใน 24 ชม."
                 : result.sourceWritten
-                  ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nลงยอดในชีตต้นทางและเลื่อนวันจ่ายรอบถัดไปแล้ว"
+                  ? result.sourceWrite?.cycleComplete !== false
+                    ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nลงยอดครบในชีตต้นทางและเลื่อนวันจ่ายรอบถัดไปแล้ว"
+                    : "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nรับชำระบางส่วนแล้ว สะสม " + result.sourceWrite?.paidTotal + " บาท เหลือ " + result.sourceWrite?.remaining + " บาท วันจ่ายยังไม่เลื่อน"
                   : "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nบันทึกประวัติแล้ว")
             : "คิว #" + result.rowNo + " ไม่ผ่านการตรวจสอบ";
           await pushMessage(result.requesterLineUserId, [

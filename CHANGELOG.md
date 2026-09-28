@@ -1,3 +1,9 @@
+## 2026-09-28 — Daily overdue reminders and split payments
+- Bound customers in owner-enabled tabs receive one due or overdue reminder per Bangkok day until the current cycle is fully paid. Closed rows and completed cycles are skipped.
+- Each LINE payment message has its own request ID. Retried delivery cannot queue twice; separate messages with the same amount can both enter review.
+- Approved partial receipts add to that day's actual payment cell and the cycle total. The due date moves forward only when the fee is fully paid. Rollback refuses to overwrite later receipts.
+- Apps Script bridge target version: `2026.09.28-118`. Vercel deployment alone does not update the live Apps Script Web App or install its daily trigger.
+
 ## 2026-09-27 — Payment source write + rollback
 - Exact payment row handoff now revalidates source, tab, row, queue, and customer name in Apps Script before queueing a payment.
 - Added a safe bridge-version health check at `/api/line/webhook?bridge=version`; production currently reports the live Apps Script version independently from Vercel.

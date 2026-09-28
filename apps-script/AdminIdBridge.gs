@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.27-117',
+  VERSION: '2026.09.28-118',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -197,7 +197,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.27-117', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.28-118', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -427,7 +427,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.27-117', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.28-118', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -1052,9 +1052,7 @@ function buildCustomerNotificationMessage_(summary, field) {
     ].filter(Boolean).join('\n');
   }
   if (field === 'outstanding') {
-    const outstanding = Number(summary.outstanding || 0) > 0
-      ? Number(summary.outstanding || 0)
-      : Number(summary.accumulatedFee || 0) + Number(summary.lateFee || 0);
+    const outstanding = Number(summary.paymentTotal || 0);
     return [
       head,
       'ชื่อ: ' + name,
@@ -1144,7 +1142,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
       summary.name || '',
       lineUserId,
       summary.dueDate || '',
-      field === 'close' ? summary.calculatedClose : (field === 'outstanding' ? (Number(summary.outstanding || 0) || Number(summary.accumulatedFee || 0) + Number(summary.lateFee || 0)) : ''),
+      field === 'close' ? summary.calculatedClose : (field === 'outstanding' ? Number(summary.paymentTotal || 0) : ''),
       message,
       'รอส่ง',
       '',
@@ -1253,17 +1251,20 @@ function getCustomerReminderBatchLocked_(body) {
   const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
 
   const existing = notifySheet.getLastRow() >= 2
-    ? notifySheet.getRange(2, 1, notifySheet.getLastRow() - 1, 11).getDisplayValues()
+    ? notifySheet.getRange(2, 1, notifySheet.getLastRow() - 1, 11).getValues()
     : [];
 
   const existingMap = {};
   existing.forEach(function(r, i) {
-    if (String(r[1] || '').trim() !== 'ลูกค้า-ครบกำหนด') return;
+    if (['ลูกค้า-ครบกำหนด', 'ลูกค้า-ค้างชำระ'].indexOf(String(r[1] || '').trim()) === -1) return;
+    const createdDay = r[0] instanceof Date
+      ? Utilities.formatDate(r[0], 'Asia/Bangkok', 'yyyy-MM-dd')
+      : '';
+    if (createdDay !== todayText) return;
     const key = [
       String(r[10] || '').trim(),
       normalizeGeneral_(r[2]),
-      String(r[4] || '').trim(),
-      String(r[5] || '').trim()
+      String(r[4] || '').trim()
     ].join('|');
     const previous = existingMap[key];
     if (previous && ['ส่งแล้ว', 'รอส่ง'].indexOf(previous.status) !== -1) return;
@@ -1290,6 +1291,9 @@ function getCustomerReminderBatchLocked_(body) {
 
     const c = findCustomerIdentity_(source, sheet, queue);
     if (!c || normalizeGeneral_(c.name) !== normalizeGeneral_(r[2])) continue;
+    // An approved payment advances the source due date. Closed accounts and
+    // rows without a payable fee must never enter the daily reminder queue.
+    if (!String(c.name || '').trim() || /^ปิด/.test(String(c.status || '').trim()) || parseMoney_(c.fee) <= 0) continue;
     const due = parseDateFlexible_(c.dueDate);
     if (!due) continue;
 
@@ -1298,34 +1302,47 @@ function getCustomerReminderBatchLocked_(body) {
     const dueSerial = Math.floor(Date.UTC(dueParts[0], dueParts[1] - 1, dueParts[2]) / 86400000);
     const daysFromDue = todaySerial - dueSerial;
 
-    // The payment cycle is anchored to the source due date and repeats every 10 days.
-    if (daysFromDue < 0 || daysFromDue % 10 !== 0) continue;
+    if (daysFromDue < 0) continue;
+    let paidTotal = 0;
+    try {
+      const rawCycle = PropertiesService.getScriptProperties().getProperty(
+        paymentCycleKey_(source, sheet, c.queue, due)
+      );
+      if (rawCycle) paidTotal = paymentNumber_(JSON.parse(rawCycle).total);
+    } catch (err) {
+      // Do not claim that an unreadable payment ledger is unpaid.
+      continue;
+    }
+    const remaining = Math.round((parseMoney_(c.fee) - paidTotal) * 100) / 100;
+    if (remaining <= 0) continue;
 
-    const cycleDate = new Date(todayParts[0], todayParts[1] - 1, todayParts[2]);
-    const cycleDisplay = formatThaiDate_(cycleDate);
+    const overdue = daysFromDue > 0;
+    const dueDisplay = formatThaiDate_(due);
     const sourceKey = source + '/' + sheet;
-    const key = [sourceKey, normalizeGeneral_(c.queue), lineUserId, cycleDisplay].join('|');
+    const key = [sourceKey, normalizeGeneral_(c.queue), lineUserId].join('|');
     const found = existingMap[key];
     if (found && ['ส่งแล้ว', 'รอส่ง'].indexOf(found.status) !== -1) continue;
 
     const message = [
-      'แจ้งเตือนวันครบกำหนดชำระ',
+      overdue ? 'แจ้งเตือนยอดที่เลยกำหนดชำระ' : 'แจ้งเตือนวันครบกำหนดชำระ',
       'ชื่อ: ' + String(c.name || '').trim(),
       'คิว: ' + String(c.queue || '').trim(),
-      'วันครบกำหนดชำระ: ' + cycleDisplay,
+      'วันครบกำหนดชำระ: ' + dueDisplay,
+      overdue ? 'เลยกำหนด ' + daysFromDue + ' วัน' : '',
+      paidTotal > 0 ? 'รับชำระแล้ว ' + paidTotal + ' บาท คงเหลือ ' + remaining + ' บาท' : '',
       '',
       'กดปุ่มด้านล่างเพื่อตรวจสอบยอดและรายละเอียด'
-    ].join('\n');
+    ].filter(Boolean).join('\n');
 
     let rowNo = found ? found.rowNo : 0;
     if (!rowNo) {
       notifySheet.appendRow([
         new Date(),
-        'ลูกค้า-ครบกำหนด',
+        overdue ? 'ลูกค้า-ค้างชำระ' : 'ลูกค้า-ครบกำหนด',
         String(c.queue || '').trim(),
         String(c.name || '').trim(),
         lineUserId,
-        cycleDisplay,
+        dueDisplay,
         parseMoney_(c.fee),
         message,
         'รอส่ง',
@@ -1344,7 +1361,7 @@ function getCustomerReminderBatchLocked_(body) {
       lineUserId: lineUserId,
       queue: String(c.queue || '').trim(),
       name: String(c.name || '').trim(),
-      dueDate: cycleDisplay,
+      dueDate: dueDisplay,
       fee: parseMoney_(c.fee),
       source: source,
       sheet: sheet,
@@ -2406,6 +2423,15 @@ function calculateCustomerSelfSummary_(c) {
   const fee = parseMoney_(c.fee);
   const saleDate = parseDateFlexible_(c.saleDate);
   const dueDate = parseDateFlexible_(c.dueDate);
+  let paidForCycle = 0;
+  if (dueDate && c.source && c.sheet && c.queue) {
+    try {
+      const raw = PropertiesService.getScriptProperties().getProperty(
+        paymentCycleKey_(c.source, c.sheet, c.queue, dueDate)
+      );
+      if (raw) paidForCycle = paymentNumber_(JSON.parse(raw).total);
+    } catch (err) {}
+  }
   const now = new Date();
   const asOf = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -2443,16 +2469,18 @@ function calculateCustomerSelfSummary_(c) {
     feePresent: String(c.fee || '').trim() !== '',
     saleDate: saleDate ? formatThaiDate_(saleDate) : String(c.saleDate || '').trim(),
     accumulatedFee: accumulatedFee,
+    paidForCycle: paidForCycle,
+    remainingFee: Math.max(0, Math.round((accumulatedFee - paidForCycle) * 100) / 100),
     dueDate: dueDate ? formatThaiDate_(dueDate) : String(c.dueDate || ''),
     outstanding: parseMoney_(c.outstanding),
     overdueDays: overdueDays,
     lateFee: lateFee,
-    paymentTotal: accumulatedFee + lateFee,
+    paymentTotal: Math.max(0, Math.round((accumulatedFee + lateFee - paidForCycle) * 100) / 100),
     discountEligible: discountEligible,
     discountPercent: discountEligible ? discountPercent : 0,
     discountAmount: discountAmount,
     feeApplied: feeApplied,
-    calculatedClose: principal + feeApplied + lateFee,
+    calculatedClose: Math.max(0, Math.round((principal + feeApplied + lateFee - paidForCycle) * 100) / 100),
     calculatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
   };
 }
@@ -3517,7 +3545,7 @@ function planSourceWrite_(body) {
   };
 }
 
-function hasDuplicatePendingReview_(sh, type, customer, amount) {
+function hasDuplicatePendingReview_(sh, type, customer, amount, requestId) {
   if (!sh || sh.getLastRow() < 2) return null;
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, 12).getDisplayValues();
   const sourceKey = (String(customer.source || '').trim() + ' / ' + String(customer.sheet || '').trim()).trim();
@@ -3525,10 +3553,14 @@ function hasDuplicatePendingReview_(sh, type, customer, amount) {
 
   for (let i = values.length - 1; i >= 0; i--) {
     const row = values[i];
-    if (String(row[8] || '').trim() !== 'รอตรวจ') continue;
     if (String(row[1] || '').trim() !== String(type || '').trim()) continue;
     if (String(row[2] || '').trim() !== String(customer.queue || '').trim()) continue;
     if (String(row[4] || '').trim() !== sourceKey) continue;
+    if (requestId) {
+      if (String(row[7] || '').trim() === requestId) return i + 2;
+      continue;
+    }
+    if (String(row[8] || '').trim() !== 'รอตรวจ') continue;
     if (String(row[6] || '').replace(/,/g, '').trim() !== amountKey) continue;
     return i + 2;
   }
@@ -3642,6 +3674,12 @@ function listReviewQueue_(body) {
 
 function paymentSourceWriteKey_(reviewRowNo) {
   return 'payment-source-write:' + String(reviewRowNo);
+}
+
+function paymentCycleKey_(source, sheet, queue, due) {
+  const raw = [source, sheet, normalizeGeneral_(queue), dateKey_(due)].join('|');
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw);
+  return 'payment-cycle:' + Utilities.base64EncodeWebSafe(digest).slice(0, 60);
 }
 
 function paymentNumber_(value) {
@@ -3828,15 +3866,24 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   }
   if (!(amount > 0)) return { ok: false, message: 'ยอดชำระไม่ถูกต้อง' };
   if (!(fee > 0)) return { ok: false, message: 'ค่าเช่าในต้นทางไม่ถูกต้อง' };
-  if (Math.abs(amount - fee) > 0.005) {
+  const props = PropertiesService.getScriptProperties();
+  const cycleKey = paymentCycleKey_(sourceName, sourceSheet, customer.queue, oldDue);
+  const previousCycleRaw = props.getProperty(cycleKey) || '';
+  let cycle;
+  try { cycle = previousCycleRaw ? JSON.parse(previousCycleRaw) : { total: 0, byDay: {} }; }
+  catch (err) { return { ok: false, message: 'อ่านยอดรับชำระสะสมไม่ได้ กรุณาตรวจคิวก่อน' }; }
+  const totalBefore = paymentNumber_(cycle.total);
+  const totalAfter = Math.round((totalBefore + amount) * 100) / 100;
+  if (totalAfter > fee + 0.005) {
     return {
       ok: false,
-      message: 'ยอดชำระ ' + amount + ' ไม่เท่าค่าเช่า ' + fee + ' จึงยังไม่เลื่อนรอบอัตโนมัติ'
+      message: 'ยอดรวม ' + totalAfter + ' เกินค่าเช่า ' + fee + ' กรุณาตรวจสอบก่อนกดผ่าน'
     };
   }
+  const fullyPaid = totalAfter >= fee - 0.005;
 
   const nextDue = addDays_(oldDue, 10);
-  if (paidAt.getTime() >= nextDue.getTime()) {
+  if (fullyPaid && paidAt.getTime() >= nextDue.getTime()) {
     return {
       ok: false,
       message: 'รายการนี้เลยรอบถัดไปแล้ว จึงยังไม่เลื่อนวันจ่ายอัตโนมัติ กรุณาตรวจสอบรอบชำระก่อน'
@@ -3845,28 +3892,34 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   const calendarStartCol = headers.note ? headers.note + 1 : Math.max(headers.dueDate + 1, 15);
   const paidCol = findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, paidAt);
   const oldDueCol = findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, oldDue);
-  const nextDueCol = findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, nextDue);
+  const nextDueCol = fullyPaid ? findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, nextDue) : 0;
 
   if (!paidCol) return { ok: false, message: 'ไม่พบช่องวันที่รับชำระในปฏิทิน' };
   if (!oldDueCol) return { ok: false, message: 'ไม่พบช่องวันจ่ายเดิมในปฏิทิน' };
-  if (!nextDueCol) return { ok: false, message: 'ไม่พบช่องวันจ่ายรอบถัดไปในปฏิทิน' };
+  if (fullyPaid && !nextDueCol) return { ok: false, message: 'ไม่พบช่องวันจ่ายรอบถัดไปในปฏิทิน' };
 
   const paidRange = sheet.getRange(sourceRow, paidCol);
   const oldDueRange = sheet.getRange(sourceRow, oldDueCol);
-  const nextDueRange = sheet.getRange(sourceRow, nextDueCol);
+  const nextDueRange = fullyPaid ? sheet.getRange(sourceRow, nextDueCol) : null;
 
   const paidExisting = paidRange.getValue();
-  if (paidCol !== oldDueCol && String(paidExisting || '').trim() && paymentNumber_(paidExisting) !== amount) {
+  const paidDay = dateKey_(paidAt);
+  const recordedToday = paymentNumber_((cycle.byDay || {})[paidDay]);
+  if (recordedToday > 0 && Math.abs(paymentNumber_(paidExisting) - recordedToday) > 0.005) {
+    return { ok: false, message: 'ช่องรับชำระวันนี้ไม่ตรงยอดที่บันทึกไว้ กรุณาตรวจชีตก่อน' };
+  }
+  if (recordedToday === 0 && String(paidExisting || '').trim() &&
+      !(paidCol === oldDueCol && Math.abs(paymentNumber_(paidExisting) - fee) < 0.005)) {
     return { ok: false, message: 'ช่องวันที่รับชำระมีข้อมูลเดิมอยู่ จึงไม่เขียนทับ' };
   }
 
-  const nextExisting = nextDueRange.getValue();
-  if (nextDueCol !== oldDueCol && nextDueCol !== paidCol && String(nextExisting || '').trim() && paymentNumber_(nextExisting) !== fee) {
+  const nextExisting = nextDueRange ? nextDueRange.getValue() : '';
+  if (fullyPaid && nextDueCol !== oldDueCol && nextDueCol !== paidCol && String(nextExisting || '').trim() && paymentNumber_(nextExisting) !== fee) {
     return { ok: false, message: 'ช่องรอบถัดไปมีข้อมูลเดิมอยู่ จึงไม่เขียนทับ' };
   }
 
   const unique = {};
-  [dueRange, paidRange, oldDueRange, nextDueRange].forEach(function(range) {
+  [dueRange, paidRange, oldDueRange, nextDueRange].filter(Boolean).forEach(function(range) {
     unique[range.getA1Notation()] = range;
   });
   const before = Object.keys(unique).map(function(key) { return snapshotCell_(unique[key]); });
@@ -3886,26 +3939,36 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
     oldDue: oldDue.toISOString(),
     paidAt: paidAt.toISOString(),
     nextDue: nextDue.toISOString(),
+    cycleKey: cycleKey,
+    cycleBefore: previousCycleRaw,
+    cycleAfter: '',
     before: before,
     createdAt: new Date().toISOString()
   };
-  PropertiesService.getScriptProperties().setProperty(paymentSourceWriteKey_(reviewRowNo), JSON.stringify(backup));
+  props.setProperty(paymentSourceWriteKey_(reviewRowNo), JSON.stringify(backup));
   persistPaymentBackupLog_(backup, 'paymentSourceBackup', 'สำเร็จ', JSON.stringify(backup));
 
-  dueRange.setValue(nextDue);
-  paidRange.setValue(amount);
+  if (fullyPaid) dueRange.setValue(nextDue);
+  paidRange.setValue(Math.round((recordedToday + amount) * 100) / 100);
   paidRange.setBackground('#CCFF00');
-  if (oldDueCol !== paidCol && oldDueCol !== nextDueCol) oldDueRange.clearContent();
-  nextDueRange.setValue(fee);
+  if (fullyPaid && oldDueCol !== paidCol && oldDueCol !== nextDueCol &&
+      !paymentNumber_((cycle.byDay || {})[dateKey_(oldDue)])) oldDueRange.clearContent();
+  if (fullyPaid) nextDueRange.setValue(fee);
   try {
     paidRange.setNumberFormat(feeRange.getNumberFormat());
-    nextDueRange.setNumberFormat(feeRange.getNumberFormat());
+    if (fullyPaid) nextDueRange.setNumberFormat(feeRange.getNumberFormat());
   } catch (err) {}
   SpreadsheetApp.flush();
 
+  cycle.total = totalAfter;
+  cycle.byDay = cycle.byDay || {};
+  cycle.byDay[paidDay] = Math.round((recordedToday + amount) * 100) / 100;
+  cycle.reviewRows = (cycle.reviewRows || []).concat(reviewRowNo);
+  backup.cycleAfter = JSON.stringify(cycle);
+  props.setProperty(cycleKey, backup.cycleAfter);
   backup.after = Object.keys(unique).map(function(key) { return snapshotCell_(unique[key]); });
   backup.writtenAt = new Date().toISOString();
-  PropertiesService.getScriptProperties().setProperty(paymentSourceWriteKey_(reviewRowNo), JSON.stringify(backup));
+  props.setProperty(paymentSourceWriteKey_(reviewRowNo), JSON.stringify(backup));
   persistPaymentBackupLog_(backup, 'paymentSourceBackupAfter', 'สำเร็จ', JSON.stringify(backup));
 
   return {
@@ -3917,11 +3980,21 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
     paidDate: dateKey_(paidAt),
     nextDueDate: dateKey_(nextDue),
     amount: amount,
-    fee: fee
+    fee: fee,
+    paidTotal: totalAfter,
+    remaining: Math.max(0, Math.round((fee - totalAfter) * 100) / 100),
+    cycleComplete: fullyPaid
   };
 }
 
 function rollbackReviewQueue_(body) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { return rollbackReviewQueueLocked_(body); }
+  finally { lock.releaseLock(); }
+}
+
+function rollbackReviewQueueLocked_(body) {
   const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
   if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
     return { ok: true, rolledBack: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
@@ -3961,6 +4034,12 @@ function rollbackReviewQueue_(body) {
     return { ok: true, rolledBack: false, message: 'คิวนี้ถูกยกเลิกรายการไปแล้ว' };
   }
 
+  if (backup.cycleKey &&
+      PropertiesService.getScriptProperties().getProperty(backup.cycleKey) !== backup.cycleAfter) {
+    return { ok: true, rolledBack: false, stale: true,
+      message: 'มีการรับชำระรายการใหม่ในรอบนี้แล้ว กรุณายกเลิกรายการล่าสุดก่อน' };
+  }
+
   const sourceSs = SpreadsheetApp.openById(String(backup.spreadsheetId || ''));
   const sourceSheet = sourceSs.getSheetByName(String(backup.sheet || ''));
   if (!sourceSheet) return { ok: true, rolledBack: false, message: 'ไม่พบชีตต้นทางสำหรับยกเลิกรายการ' };
@@ -3980,6 +4059,11 @@ function rollbackReviewQueue_(body) {
   const before = Array.isArray(backup.before) ? backup.before : [];
   before.forEach(function(snap) { restoreCellSnapshot_(sourceSheet, snap); });
   SpreadsheetApp.flush();
+
+  if (backup.cycleKey) {
+    if (backup.cycleBefore) props.setProperty(backup.cycleKey, backup.cycleBefore);
+    else props.deleteProperty(backup.cycleKey);
+  }
 
   backup.reversedAt = new Date().toISOString();
   backup.reversedBy = access.staffName || 'เจ้าของ';
@@ -4025,6 +4109,13 @@ function rollbackReviewQueue_(body) {
 }
 
 function resolveReviewQueue_(body) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { return resolveReviewQueueLocked_(body); }
+  finally { lock.releaseLock(); }
+}
+
+function resolveReviewQueueLocked_(body) {
   const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
   if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
     return { ok: true, resolved: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
@@ -4129,7 +4220,11 @@ function resolveReviewQueue_(body) {
     sourceWritten: !!(sourceWrite && sourceWrite.written),
     sourceWrite: sourceWrite,
     message: decision === 'ผ่าน'
-      ? ('คิว #' + rowNo + ' ผ่านการตรวจสอบแล้ว' + (sourceWrite && sourceWrite.written ? ' และลงชีตต้นทางแล้ว' : ''))
+      ? ('คิว #' + rowNo + ' ผ่านการตรวจสอบแล้ว' + (sourceWrite && sourceWrite.written
+          ? sourceWrite.cycleComplete
+            ? ' ลงยอดครบและเลื่อนวันจ่ายรอบถัดไปแล้ว'
+            : ' ลงยอดรับแล้ว สะสม ' + sourceWrite.paidTotal + ' บาท เหลือ ' + sourceWrite.remaining + ' บาท วันจ่ายยังไม่เลื่อน'
+          : ''))
       : 'คิว #' + rowNo + ' ไม่ผ่านการตรวจสอบ'
   };
 }
@@ -4472,6 +4567,13 @@ function clearRecentSlipMessage_(lineUserId) {
 }
 
 function queueFinancialReview_(body, type) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try { return queueFinancialReviewLocked_(body, type); }
+  finally { lock.releaseLock(); }
+}
+
+function queueFinancialReviewLocked_(body, type) {
   const permissionMap = {
     'บันทึกชำระ': 'บันทึกชำระ',
     'ตรวจสลิป': 'ยืนยันสลิป',
@@ -4534,14 +4636,17 @@ function queueFinancialReview_(body, type) {
   if (!sh) return { ok: false, error: 'ไม่พบชีตคิวตรวจสอบ' };
 
   const amount = body.amount == null ? '' : Number(body.amount);
-  const duplicateRowNo = hasDuplicatePendingReview_(sh, type, customer, amount);
+  const requestId = type === 'บันทึกชำระ' ? String(body.requestId || '').trim() : '';
+  const duplicateRowNo = hasDuplicatePendingReview_(sh, type, customer, amount, requestId);
   if (duplicateRowNo) {
     return {
       ok: true,
       queued: false,
       duplicate: true,
       duplicateRowNo: duplicateRowNo,
-      message: 'มีคิวซ้ำที่ยังรอตรวจ #' + duplicateRowNo
+      message: requestId
+        ? 'ข้อความรับชำระนี้เข้าคิวแล้ว #' + duplicateRowNo
+        : 'มีคิวซ้ำที่ยังรอตรวจ #' + duplicateRowNo
     };
   }
 
@@ -4559,7 +4664,7 @@ function queueFinancialReview_(body, type) {
     (customer.source || '') + (customer.sheet ? ' / ' + customer.sheet : ''),
     detail,
     amount,
-    recentSlip && recentSlip.messageId ? recentSlip.messageId : '',
+    requestId || (recentSlip && recentSlip.messageId ? recentSlip.messageId : ''),
     'รอตรวจ',
     access.staffName || '',
     '',
