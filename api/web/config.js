@@ -1,6 +1,10 @@
 import { callSheetsBridge } from "../../lib/sheetsBridge.js";
 import { sessionFromRequest } from "../../lib/webAuth.js";
 
+let cachedSheets = null;
+let cachedAt = 0;
+const CONFIG_CACHE_MS = 5 * 60 * 1000;
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -10,19 +14,30 @@ export default async function handler(req, res) {
     const session = sessionFromRequest(req);
     if (!session) return res.status(401).json({ ok: false, error: "กรุณาเข้าเว็บผ่าน LINE OA ใหม่" });
 
-    const sheets = await callSheetsBridge({
-      action: "listCustomerNotificationSheets",
-      lineUserId: session.sub,
-    });
+    let items = cachedSheets;
+    const fresh = Array.isArray(items) && Date.now() - cachedAt < CONFIG_CACHE_MS;
 
-    if (sheets?.allowed === false) {
-      return res.status(403).json({ ok: false, error: sheets.message || "ไม่มีสิทธิ์" });
+    if (!fresh) {
+      const sheets = await callSheetsBridge({
+        action: "listCustomerNotificationSheets",
+        lineUserId: session.sub,
+      });
+
+      if (sheets?.allowed === false) {
+        return res.status(403).json({ ok: false, error: sheets.message || "ไม่มีสิทธิ์" });
+      }
+
+      items = Array.isArray(sheets?.items) ? sheets.items : [];
+      cachedSheets = items;
+      cachedAt = Date.now();
     }
 
+    res.setHeader("Cache-Control", "private, max-age=60");
     return res.status(200).json({
       ok: true,
       owner: { name: session.name || "เจ้าของ" },
-      sheets: Array.isArray(sheets?.items) ? sheets.items : [],
+      sheets: items,
+      cached: fresh,
     });
   } catch (error) {
     return res.status(500).json({ ok: false, error: String(error?.message || error).slice(0, 180) });
