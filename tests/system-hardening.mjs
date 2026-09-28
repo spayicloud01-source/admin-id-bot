@@ -5,8 +5,8 @@ const bridge = readFileSync("lib/sheetsBridge.js", "utf8");
 const apps = readFileSync("apps-script/AdminIdBridge.gs", "utf8");
 const health = readFileSync("api/health.js", "utf8");
 
-assert.match(apps, /VERSION: '2026\.09\.29-125'/);
-assert.match(health, /EXPECTED_BRIDGE_VERSION = "2026\.09\.28-123"/);
+assert.match(apps, /VERSION: '2026\\.09\\.29-126'/);
+assert.match(health, /EXPECTED_BRIDGE_VERSION = "2026\\.09\\.29-126"/);
 assert.match(bridge, /"markCustomerReminderSent", "markReminderSent", "buildCustomerNotificationBatch"/);
 assert.doesNotMatch(bridge, /customerNotificationBatch \? 2/);
 
