@@ -218,7 +218,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.28-123', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.29-124', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -238,7 +238,7 @@ function postDeploySelfTest_() {
       return String(r[1] || '').trim() && isTrue_(r[2]);
     }).length;
   }
-  add('แหล่งข้อมูลเปิดใช้', enabledSources >= 8, enabledSources + ' แหล่ง', true);
+  add('แหล่งข้อมูลเปิดใช้', enabledSources === 2, enabledSources + ' แหล่ง', true);
 
   const staff = ss.getSheetByName(CONFIG.STAFF_SHEET);
   let ownerCount = 0;
