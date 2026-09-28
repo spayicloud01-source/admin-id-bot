@@ -1,5 +1,6 @@
 import { callSheetsBridge } from "../../lib/sheetsBridge.js";
 import { sessionFromRequest } from "../../lib/webAuth.js";
+import { paymentQrUrl } from "../../lib/paymentQr.js";
 
 const ALLOWED_ADMIN_ACTIONS = new Set([
   "searchCustomer", "getCustomerInfo", "getCalculatedSummary", "getHistory",
@@ -16,15 +17,70 @@ function clean(value, max = 300) {
   return String(value == null ? "" : value).trim().slice(0, max);
 }
 
-async function pushText(to, text) {
+async function pushMessages(to, messages) {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) throw new Error("LINE_CHANNEL_ACCESS_TOKEN is not configured");
   const response = await fetch("https://api.line.me/v2/bot/message/push", {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: "Bearer " + token },
-    body: JSON.stringify({ to, messages: [{ type: "text", text }] }),
+    body: JSON.stringify({ to, messages }),
   });
   if (!response.ok) throw new Error("LINE push failed: " + response.status);
+}
+
+function money(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) ? n.toLocaleString("th-TH", { maximumFractionDigits: 2 }) : "0";
+}
+
+function paymentFlex(summary = {}, field = "payment") {
+  const isClose = field === "close";
+  const total = isClose ? Number(summary.calculatedClose || 0) : Number(summary.paymentTotal || 0);
+  const qrUrl = paymentQrUrl(summary.source, total);
+  const discountAmount = Number(summary.discountAmount || 0);
+  const rows = isClose
+    ? [
+        ["ชื่อ", summary.name || "-"], ["คิว", summary.queue || "-"],
+        ["เงินต้น", money(summary.principal) + " บาท"],
+        ["ค่าเช่า", money(summary.accumulatedFee) + " บาท"],
+        ...(discountAmount > 0 ? [["ส่วนลด", "−" + money(discountAmount) + " บาท"]] : []),
+        ["ค่าปรับ", money(summary.lateFee) + " บาท"],
+        ["รวมยอดปิดวันนี้", money(total) + " บาท"],
+      ]
+    : [
+        ["ชื่อ", summary.name || "-"], ["คิว", summary.queue || "-"],
+        ["ค่าเช่าที่ต้องชำระ", money(summary.accumulatedFee) + " บาท"],
+        ...(Number(summary.paidForCycle || 0) > 0 ? [["รับชำระแล้ว", money(summary.paidForCycle) + " บาท"]] : []),
+        ["ค่าปรับ", money(summary.lateFee) + " บาท"],
+        ["รวมยอดชำระวันนี้", money(total) + " บาท"],
+        ["วันครบกำหนด", summary.dueDate || "-"],
+      ];
+  return {
+    type: "flex",
+    altText: (isClose ? "ยอดปิด" : "ชำระยอด") + " คิว " + (summary.queue || "-") + " รวม " + money(total) + " บาท",
+    contents: {
+      type: "bubble", size: "mega",
+      header: { type: "box", layout: "vertical", paddingAll: "18px", backgroundColor: isClose ? "#7B3F00" : "#0D5D65", contents: [
+        { type: "text", text: isClose ? "สรุปยอดปิดวันนี้" : "สรุปยอดชำระวันนี้", color: "#FFFFFF", size: "lg", weight: "bold" },
+        { type: "text", text: "กรุณาตรวจสอบยอดก่อนชำระ", color: "#F3FAFA", size: "xs", margin: "sm" }
+      ]},
+      ...(qrUrl ? { hero: { type: "image", url: qrUrl, size: "full", aspectRatio: "1:1", aspectMode: "fit", backgroundColor: "#FFFFFF" } } : {}),
+      body: { type: "box", layout: "vertical", paddingAll: "18px", contents: [
+        ...rows.map(([label, value], index) => ({
+          type: "box", layout: "horizontal", spacing: "md", margin: index ? "sm" : "none",
+          contents: [
+            { type: "text", text: label, size: "sm", color: "#60717B", flex: 5, wrap: true },
+            { type: "text", text: String(value), size: "sm", color: index === rows.length - 1 ? "#C2413B" : "#173B46", weight: "bold", align: "end", flex: 5, wrap: true }
+          ]
+        })),
+        { type: "separator", margin: "lg", color: "#DDE9EA" },
+        { type: "text", text: qrUrl ? "QR นี้กำหนดยอด " + money(total) + " บาทแล้ว" : "ยังไม่ได้ตั้งค่า QR สำหรับแหล่งข้อมูลนี้ กรุณาติดต่อแอดมิน", size: "xs", color: qrUrl ? "#0D5D65" : "#C2413B", wrap: true, margin: "lg", align: "center" }
+      ]},
+      ...(qrUrl ? { footer: { type: "box", layout: "vertical", paddingAll: "14px", contents: [
+        { type: "button", style: "primary", color: "#0D5D65", height: "sm", action: { type: "uri", label: "เปิด/บันทึก QR", uri: qrUrl } }
+      ]}} : {})
+    }
+  };
 }
 
 export default async function handler(req, res) {
@@ -76,6 +132,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, queued: true, rowNo: result?.rowNo || null, customer: result?.customer || null, amount, message: result?.message || "ส่งเข้าคิวตรวจสอบแล้ว" });
     }
     const field = String(body.field || "").trim();
+    const customMessage = clean(body.customMessage, 4000);
     const queue = String(body.queue || "").trim();
     const queues = Array.isArray(body.queues) ? body.queues.map(String).join(",") : String(body.queues || "").trim();
 
@@ -101,7 +158,7 @@ export default async function handler(req, res) {
       return true;
     });
 
-    if (!targets.length || !["close","outstanding","due"].includes(field)) {
+    if (!targets.length || !["payment","close","custom"].includes(field) || (field === "custom" && !customMessage)) {
       return res.status(400).json({ ok: false, error: "ข้อมูลส่งแจ้งเตือนไม่ครบ" });
     }
 
@@ -117,6 +174,7 @@ export default async function handler(req, res) {
         field,
         queue,
         queues,
+        customMessage,
       });
 
       if (batch?.allowed === false) {
@@ -131,7 +189,10 @@ export default async function handler(req, res) {
       for (const item of items) {
         let ok = false;
         try {
-          await pushText(item.lineUserId, item.message);
+          const messages = field === "custom"
+            ? [{ type: "text", text: item.message }]
+            : [paymentFlex(item.summary || {}, field)];
+          await pushMessages(item.lineUserId, messages);
           ok = true;
           sent++;
           targetSent++;
