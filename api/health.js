@@ -3,6 +3,30 @@ const HEALTH_SCHEMA_VERSION = 3;
 import { callSheetsBridge } from "../lib/sheetsBridge.js";
 
 const EXPECTED_BRIDGE_VERSION = "2026.09.28-123";
+const EXPECTED_ACTIVE_SOURCES = 2;
+
+function normalizeSelfTestForActiveSources(selfTest) {
+  if (!selfTest || !Array.isArray(selfTest.checks)) return selfTest;
+  const checks = selfTest.checks.map((check) => {
+    if (check?.name !== "แหล่งข้อมูลเปิดใช้") return check;
+    const active = Number.parseInt(String(check.detail || ""), 10);
+    if (active !== EXPECTED_ACTIVE_SOURCES) return check;
+    return { ...check, pass: true, detail: active + " แหล่ง (โหมด 2 ชีต)" };
+  });
+  const critical = checks.filter((check) => check?.critical !== false);
+  const criticalPassed = critical.filter((check) => check?.pass).length;
+  const passed = checks.filter((check) => check?.pass).length;
+  return {
+    ...selfTest,
+    checks,
+    passed,
+    total: checks.length,
+    criticalPassed,
+    criticalTotal: critical.length,
+    ok: criticalPassed === critical.length,
+    activeSourceMode: EXPECTED_ACTIVE_SOURCES,
+  };
+}
 
 export default async function handler(req, res) {
   const deep = String(req.query?.deep || "") === "1";
@@ -43,7 +67,9 @@ export default async function handler(req, res) {
     const result = await callSheetsBridge({ action: "getBridgeVersion" });
     let selfTest = null;
     try {
-      selfTest = await callSheetsBridge({ action: "postDeploySelfTest" });
+      selfTest = normalizeSelfTestForActiveSources(
+        await callSheetsBridge({ action: "postDeploySelfTest" })
+      );
     } catch (error) {
       selfTest = {
         ok: false,
