@@ -2679,6 +2679,11 @@ function listDueCustomers_(body) {
 
   const mode = String(body.dueMode || 'today').trim();
   const statusMode = ['deleted','pending_lock','sold','fraud','installment'].indexOf(mode) !== -1;
+  const upcomingPilotOnly = mode === 'upcoming';
+  const upcomingPilotTargets = {
+    'v6|V6/10-69': true,
+    'v1/v3|v3/10-69': true
+  };
   const remindDays = Number(getSettingValue_('REMIND_BEFORE_DAYS', 1)) || 1;
   const cache = CacheService.getScriptCache();
   const cacheKey = 'due-list:' + mode + ':' + remindDays;
@@ -2712,6 +2717,7 @@ function listDueCustomers_(body) {
 
       for (let t = 0; t < tabs.length && items.length < 50; t++) {
         const sh = tabs[t];
+        if (upcomingPilotOnly && !upcomingPilotTargets[sourceName + '|' + sh.getName()]) continue;
         const h = detectHeaders_(sh);
         if (!h || (!statusMode && !h.dueDate) || (statusMode && !h.status)) continue;
         const lastRow = sh.getLastRow();
