@@ -137,7 +137,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 <div class="grid2">
 <div class="action"><b>ส่งทุกคนในชีต</b><p>ระบบจะส่งเฉพาะลูกค้าที่ผูก LINE และสถานะใช้งาน พร้อมบันทึกผลใน “คิวแจ้งเตือน” และ “Log ระบบ”</p>
 <div class="field"><label>ข้อมูลที่ต้องการแจ้ง</label><select id="fieldAll"><option value="due">กำหนดครบวันชำระ</option><option value="outstanding">ยอดค้าง</option><option value="close">ยอดปิด</option></select></div><br><button id="sendAll" class="btn green" disabled>ตรวจและส่งทุกคน</button></div>
-<div class="action"><b>ส่งลูกค้ารายคน</b><p>ระบุเลขคิวลูกค้า ระบบจะตรวจว่าคิวอยู่ในชีตที่เลือกและผูก LINE แล้วก่อนส่ง</p>
+<div class="action"><b>ส่งลูกค้ารายคน</b><p>ระบุเลขคิวลูกค้า ระบบจะค้นหาอัตโนมัติใน V6/10-69 และ v3/10-69 แล้วตรวจการผูก LINE ก่อนส่ง ไม่ต้องเลือกชีตก่อน</p>
 <div class="row"><div class="field"><label>เลขคิว</label><input id="queue" placeholder="เช่น 6101"></div><div class="field"><label>ข้อมูลที่ต้องการแจ้ง</label><select id="fieldOne"><option value="due">กำหนดครบวันชำระ</option><option value="outstanding">ยอดค้าง</option><option value="close">ยอดปิด</option></select></div></div><br><button id="sendOne" class="btn soft" disabled>ตรวจและส่งรายคน</button></div>
 <div class="action"><b>รับชำระ</b><p>สำหรับลูกค้าที่ชำระเงินจริงแล้ว ให้ใส่คิวและยอดที่รับ ระบบจะส่งเข้าคิวตรวจสอบก่อน ไม่แก้ชีตต้นทางทันที</p>
 <div class="row"><div class="field"><label>เลขคิว</label><input id="payQueue" placeholder="เช่น 6101"></div><div class="field"><label>ยอดที่ชำระจริง</label><input id="payAmount" type="number" min="0" step="0.01" placeholder="เช่น 500"></div></div><br><button id="recordPayment" class="btn primary">รับชำระ / ส่งเข้าคิวตรวจสอบ</button></div>
@@ -269,7 +269,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   function syncButtons(){
     var ok=SELECTED_TARGETS.length>0;
     byId("sendAll").disabled=!ok;
-    byId("sendOne").disabled=!ok;
+    byId("sendOne").disabled=false;
   }
   function targetKey(x){return String(x.source||"")+"|"+String(x.sheet||"");}
   function renderSelectedTargets(){
@@ -553,17 +553,17 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   }
 
   function sendNotification(one){
-    if(!SELECTED_TARGETS.length)return;
+    if(!one&&!SELECTED_TARGETS.length)return;
     var q=one?byId("queue").value.trim():"";
     if(one&&!q){ alert("กรุณาใส่เลขคิว"); return; }
     var field=byId(one?"fieldOne":"fieldAll").value;
     var labels={due:"กำหนดครบวันชำระ",outstanding:"ยอดค้าง",close:"ยอดปิด"};
-    var target=one?("คิว "+q+" ใน "+SELECTED_TARGETS.length+" ชีต"):("ลูกค้าทุกคนใน "+SELECTED_TARGETS.length+" ชีตที่เลือก");
+    var target=one?("คิว "+q+" (ค้นหาใน V6/10-69 และ v3/10-69)"):("ลูกค้าทุกคนใน "+SELECTED_TARGETS.length+" ชีตที่เลือก");
     if(!confirm("ยืนยันส่ง “"+labels[field]+"” ไปหา "+target+" ?"))return;
     var btn=byId(one?"sendOne":"sendAll"), box=byId("sendResult");
     btn.disabled=true; btn.textContent="กำลังส่ง…"; box.classList.add("hidden");
     var headers=authHeaders(); headers["Content-Type"]="application/json";
-    fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({targets:SELECTED_TARGETS.map(function(x){return {source:x.source,sheet:x.sheet};}),field:field,queue:q})})
+    fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({targets:one?[]:SELECTED_TARGETS.map(function(x){return {source:x.source,sheet:x.sheet};}),field:field,queue:q})})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
         if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){} location.reload();return;}
