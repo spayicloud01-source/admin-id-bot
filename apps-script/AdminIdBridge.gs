@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.29-125',
+  VERSION: '2026.09.29-126',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -54,11 +54,49 @@ function activeCustomerTab_(workbook, sourceName) {
 
 let SETTINGS_MEMORY_CACHE_ = null;
 
+
+function bridgeRole_() {
+  const raw = String(
+    PropertiesService.getScriptProperties().getProperty('BRIDGE_ROLE') || 'all'
+  ).trim().toLowerCase();
+  return ['customer', 'payment', 'notify', 'all'].indexOf(raw) >= 0 ? raw : 'all';
+}
+
+function bridgeActionRole_(action) {
+  const name = String(action || '').trim();
+  const paymentActions = [
+    'queuePayment', 'queueSlipReview', 'queueClose',
+    'listReviewQueue', 'getReviewQueueItem', 'cancelReviewQueue',
+    'planSourceWrite', 'resolveReviewQueue', 'rollbackReviewQueue',
+    'rememberSlipMessage', 'rememberRecentImage', 'getRecentIdentityImages'
+  ];
+  const notifyActions = [
+    'installReminderTrigger', 'getReminderTriggerStatus',
+    'getReminderBatch', 'markReminderSent',
+    'getCustomerReminderBatch', 'markCustomerReminderSent',
+    'listCustomerNotificationSheets', 'setCustomerAutoReminderSheet',
+    'buildCustomerNotificationBatch', 'resolveCustomerNotificationRecipient',
+    'getCustomerContactRecipients', 'getStaffSlipRecipients'
+  ];
+  if (paymentActions.indexOf(name) >= 0) return 'payment';
+  if (notifyActions.indexOf(name) >= 0) return 'notify';
+  return 'customer';
+}
+
+function bridgeRoleAllowsAction_(role, action) {
+  if (role === 'all') return true;
+  if (['getBridgeVersion', 'postDeploySelfTest', 'readinessCheck'].indexOf(String(action || '').trim()) >= 0) {
+    return true;
+  }
+  return bridgeActionRole_(action) === role;
+}
+
 function doGet() {
   return json_({
     ok: true,
     service: 'Admin ID Google Sheets Bridge',
-    version: CONFIG.VERSION
+    version: CONFIG.VERSION,
+    role: bridgeRole_()
   });
 }
 
@@ -71,10 +109,20 @@ function doPost(e) {
       return json_({ ok: false, error: 'Unauthorized' });
     }
 
+    const bridgeRole = bridgeRole_();
+    if (!bridgeRoleAllowsAction_(bridgeRole, body.action)) {
+      return json_({
+        ok: false,
+        error: 'Action not allowed for this bridge role',
+        role: bridgeRole,
+        action: String(body.action || '')
+      });
+    }
+
     let result;
     switch (body.action) {
       case 'getBridgeVersion':
-        result = { ok: true, version: CONFIG.VERSION }; break;
+        result = { ok: true, version: CONFIG.VERSION, role: bridgeRole }; break;
       case 'postDeploySelfTest':
         result = postDeploySelfTest_(); break;
       case 'readinessCheck':
@@ -218,7 +266,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.29-125', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.29-126', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
