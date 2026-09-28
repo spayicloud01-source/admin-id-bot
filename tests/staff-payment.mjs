@@ -40,7 +40,9 @@ globalThis.fetch=async(url, options={})=>{
       }
     }
 
-    if(body.action==='queuePayment') data={ok:true,...paymentResult};
+    if(body.action==='queuePayment') data=allowed
+      ? {ok:true,...paymentResult}
+      : {ok:true,queued:false,message:'บัญชีนี้ไม่มีสิทธิ์ บันทึกชำระ'};
 
     if(body.action==='rollbackReviewQueue') {
       data={
@@ -73,7 +75,7 @@ async function send(text, type='user') {
 }
 
 const oldBase=[
-  'ช่วยเหลือ','ครบกำหนดวันนี้','ใกล้ครบกำหนด','ค้างชำระทั้งหมด',
+  'ค้นลูกค้า','ครบกำหนดวันนี้','ใกล้ครบกำหนด','ค้างชำระทั้งหมด',
   'คิวตรวจสอบ','อ่านบัตรล่าสุด','กรอกชื่อเอง','รายงานวันนี้'
 ];
 
@@ -82,7 +84,7 @@ for(role of ['เจ้าของ','แอดมิน','พนักงาน
   assert.equal(menu[0].template.actions[0].label,'รับชำระ');
 
   const expected=role==='เจ้าของ'
-    ? oldBase.concat(['ส่งแจ้งเตือนทันที','เจ้าหน้าที่','ลูกค้ารออนุมัติ','กิจกรรมวันนี้','สถานะระบบ'])
+    ? oldBase.concat(['ส่งแจ้งเตือนทันที','จัดการระบบ','ลูกค้ารออนุมัติ','กิจกรรมวันนี้','สถานะระบบ'])
     : oldBase;
   assert.deepEqual(menu.at(-1).quickReply.items.map(x=>x.action.text),expected);
 
@@ -117,8 +119,9 @@ for(const text of ['รับชำระ 101 0','รับชำระ 101 -10'
 
 allowed=false;
 assert.equal((await send('เมนู')).length,1);
-await send('รับชำระ 101 500');
-assert.ok(!calls.some(x=>x.action==='queuePayment'));
+const deniedPayment=await send('รับชำระ 101 500');
+assert.equal(calls.filter(x=>x.action==='queuePayment').length,1);
+assert.match(deniedPayment[0].text,/ไม่มีสิทธิ์/);
 allowed=true;
 
 assert.equal((await send('เมนู','group')).length,1);

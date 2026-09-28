@@ -113,7 +113,7 @@ vm.runInContext(`
   logAction_ = function() {};
 `, Object.assign(context, { customerGrid: grid(customerRows) }));
 const send = (selection) => context.buildCustomerNotificationBatch_(Object.assign({
-  source: 'v6', sheet: 'V6/10-69', field: 'due', lineUserId: 'U-owner'
+  source: 'v6', sheet: 'V6/10-69', field: 'payment', lineUserId: 'U-owner'
 }, selection));
 assert.equal(send({}).items.length, 2);
 assert.equal(send({ queues: '6121,6122' }).items.length, 0);
