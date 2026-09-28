@@ -46,8 +46,9 @@ function verifyManualRecipient(token) {
 }
 
 async function resolveManualRecipient(session, queue) {
+  let bridgeUpgradeRequired = false;
+
   // v122: resolve the active LINE binding directly from the binding sheet.
-  // This is much faster than building a notification batch just to discover a recipient.
   try {
     const direct = await callSheetsBridge({
       action: "resolveCustomerNotificationRecipient",
@@ -72,37 +73,47 @@ async function resolveManualRecipient(session, queue) {
     if (direct && direct.found === false) return null;
   } catch (error) {
     if (error?.code === "AMBIGUOUS_RECIPIENT") throw error;
-    // v121 does not know the direct resolver yet. Keep a temporary fallback
-    // until Apps Script v122 is deployed.
-    if (!/Unknown action/i.test(String(error?.message || error))) {
+    bridgeUpgradeRequired = /Unknown action/i.test(String(error?.message || error));
+    if (!bridgeUpgradeRequired) {
       console.warn("Direct recipient lookup failed; falling back", error?.message);
     }
   }
 
+  // Temporary v121 fallback.
   const targets = [
     { source: "v6", sheet: "V6/10-69" },
     { source: "v1/v3", sheet: "v3/10-69" },
   ];
   for (const target of targets) {
-    const batch = await callSheetsBridge({
-      action: "buildCustomerNotificationBatch",
-      lineUserId: session.sub,
-      source: target.source,
-      sheet: target.sheet,
-      field: "payment",
-      queue,
-      queues: "",
-    });
-    const item = Array.isArray(batch?.items) ? batch.items[0] : null;
-    if (!item?.lineUserId) continue;
-    return {
-      lineUserId: item.lineUserId,
-      queue: String(item.queue || queue),
-      name: String(item.name || ""),
-      source: target.source,
-      sheet: target.sheet,
-      rowNo: item.rowNo || null,
-    };
+    try {
+      const batch = await callSheetsBridge({
+        action: "buildCustomerNotificationBatch",
+        lineUserId: session.sub,
+        source: target.source,
+        sheet: target.sheet,
+        field: "payment",
+        queue,
+        queues: "",
+      });
+      const item = Array.isArray(batch?.items) ? batch.items[0] : null;
+      if (!item?.lineUserId) continue;
+      return {
+        lineUserId: item.lineUserId,
+        queue: String(item.queue || queue),
+        name: String(item.name || ""),
+        source: target.source,
+        sheet: target.sheet,
+        rowNo: item.rowNo || null,
+      };
+    } catch (error) {
+      console.warn("Legacy recipient lookup failed", target.source, target.sheet, error?.message);
+    }
+  }
+
+  if (bridgeUpgradeRequired) {
+    const error = new Error("Apps Script ยังเป็น v121 ต้อง Deploy v122 ก่อน จึงจะค้นหา LINE ที่ผูกกับคิวได้แบบตรง");
+    error.code = "BRIDGE_UPGRADE_REQUIRED";
+    throw error;
   }
   return null;
 }
