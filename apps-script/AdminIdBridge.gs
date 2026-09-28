@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.28-120',
+  VERSION: '2026.09.28-121',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -197,7 +197,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.28-120', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.28-121', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -427,7 +427,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.28-120', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.28-121', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -2604,7 +2604,16 @@ function getCalculatedSummary_(body) {
   const query = String(body.query || '').trim();
   if (!query) return { ok: false, error: 'กรุณาระบุคำค้น' };
 
-  const matches = searchCustomer_(query, true);
+  // A queue is the safest lookup key for payment work. Resolve it directly in
+  // the two approved payment tabs before falling back to the broad search.
+  // This avoids opening every source workbook for a simple exact-queue lookup.
+  let matches = [];
+  if (/^[0-9]+(?:-[0-9]+)?$/.test(query)) {
+    matches = CONFIG.CUSTOMER_BINDING_TARGETS.map(function(target) {
+      return findCustomerIdentity_(target.source, target.sheet, query);
+    }).filter(Boolean);
+  }
+  if (!matches.length) matches = searchCustomer_(query, true);
   if (!matches.length) return { ok: true, matches: [], summary: null };
   if (matches.length > 1) return { ok: true, needsSelection: true, matches: matches.slice(0, 10) };
 
