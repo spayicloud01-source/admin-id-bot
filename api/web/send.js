@@ -45,7 +45,7 @@ function verifyManualRecipient(token) {
   }
 }
 
-async function resolveManualRecipient(session, queue) {
+async function resolveManualRecipient(session, queue, preferred = {}) {
   let bridgeUpgradeRequired = false;
 
   // v122: resolve the active LINE binding directly from the binding sheet.
@@ -79,11 +79,16 @@ async function resolveManualRecipient(session, queue) {
     }
   }
 
-  // Temporary v121 fallback.
-  const targets = [
-    { source: "v6", sheet: "V6/10-69" },
-    { source: "v1/v3", sheet: "v3/10-69" },
-  ];
+  // Temporary v121 fallback. If the calculated summary already tells us
+  // the exact source/sheet, probe only that binding target.
+  const preferredSource = String(preferred.source || preferred.customer?.source || "").trim();
+  const preferredSheet = String(preferred.sheet || preferred.customer?.sheet || "").trim();
+  const targets = preferredSource && preferredSheet
+    ? [{ source: preferredSource, sheet: preferredSheet }]
+    : [
+        { source: "v6", sheet: "V6/10-69" },
+        { source: "v1/v3", sheet: "v3/10-69" },
+      ];
   for (const target of targets) {
     try {
       const batch = await callSheetsBridge({
@@ -226,7 +231,7 @@ export default async function handler(req, res) {
 
         if (body.resolveRecipient === true) {
           const queue = clean(body.query, 100);
-          const recipient = await resolveManualRecipient(session, queue);
+          const recipient = await resolveManualRecipient(session, queue, s);
           if (recipient) {
             const summaryForSend = {
               ...(s.customer || {}),
