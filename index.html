@@ -196,6 +196,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   var SELECTED_TARGETS = [];
   var ONE_PREVIEW = null;
   var ONE_PREVIEW_QR = null;
+  var ONE_RECIPIENT_TOKEN = "";
 
   function byId(id){ return document.getElementById(id); }
   function authHeaders(){ var h={}; if(TOKEN){ h.Authorization="Bearer "+TOKEN; } return h; }
@@ -601,13 +602,13 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   }
   function previewOneCustomer(){
     var q=byId("queue").value.trim(),btn=byId("previewOne"),box=byId("onePreview");
-    ONE_PREVIEW=null;ONE_PREVIEW_QR=null;syncButtons();
+    ONE_PREVIEW=null;ONE_PREVIEW_QR=null;ONE_RECIPIENT_TOKEN="";syncButtons();
     if(!q){alert("กรุณาใส่เลขคิว");return;}
     if(byId("fieldOne").value==="custom"&&!byId("customOneText").value.trim()){alert("กรุณาพิมพ์ข้อความที่ต้องการส่ง");return;}
     btn.disabled=true;btn.textContent="กำลังค้นหา…";
     box.classList.remove("hidden");box.innerHTML='<div class="hint">กำลังค้นหาคิว '+escapeHtml(q)+'…</div>';
     var headers=authHeaders();headers["Content-Type"]="application/json";
-    fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({action:"getCalculatedSummary",query:q})})
+    fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({action:"getCalculatedSummary",query:q,resolveRecipient:true})})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
         if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}location.reload();return;}
@@ -616,9 +617,11 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         if(!x.j.summary||!x.j.summary.customer)throw new Error("ไม่พบคิว "+q+" ใน V6/10-69 หรือ v3/10-69");
         ONE_PREVIEW=x.j.summary;
         ONE_PREVIEW_QR=x.j.qr||null;
+        ONE_RECIPIENT_TOKEN=x.j.recipientToken||"";
+        if(!ONE_RECIPIENT_TOKEN)throw new Error("พบข้อมูลลูกค้า แต่ยังหา LINE ที่ผูกกับคิวนี้ไม่เจอ");
         renderOnePreview();
       }).catch(function(e){
-        ONE_PREVIEW=null;ONE_PREVIEW_QR=null;syncButtons();
+        ONE_PREVIEW=null;ONE_PREVIEW_QR=null;ONE_RECIPIENT_TOKEN="";syncButtons();
         box.classList.remove("hidden");box.innerHTML='<div style="color:#b91c1c;font-size:12px">ไม่พบ/ค้นหาไม่ได้: '+escapeHtml(String((e&&e.message)||e))+'</div>';
       }).then(function(){btn.disabled=false;btn.textContent="ค้นหาและดูตัวอย่าง";});
   }
@@ -637,7 +640,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     var customMessage=field==="custom"?byId(one?"customOneText":"customAllText").value.trim():"";
     if(field==="custom"&&!customMessage){alert("กรุณาพิมพ์ข้อความที่ต้องการส่ง");return;}
     var headers=authHeaders(); headers["Content-Type"]="application/json";
-    fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({targets:one?[]:SELECTED_TARGETS.map(function(x){return {source:x.source,sheet:x.sheet};}),field:field,queue:q,customMessage:customMessage})})
+    fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({targets:one?[]:SELECTED_TARGETS.map(function(x){return {source:x.source,sheet:x.sheet};}),field:field,queue:q,customMessage:customMessage,recipientToken:one?ONE_RECIPIENT_TOKEN:""})})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
         if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){} location.reload();return;}
@@ -692,14 +695,14 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   byId("sendAll").onclick=function(){sendNotification(false);};
   byId("previewOne").onclick=previewOneCustomer;
   byId("sendOne").onclick=function(){sendNotification(true);};
-  byId("queue").addEventListener("input",function(){ONE_PREVIEW=null;ONE_PREVIEW_QR=null;renderOnePreview();});
+  byId("queue").addEventListener("input",function(){ONE_PREVIEW=null;ONE_PREVIEW_QR=null;ONE_RECIPIENT_TOKEN="";renderOnePreview();});
   function syncCustomFields(){
     var oneCustom=byId("fieldOne").value==="custom";
     var allCustom=byId("fieldAll").value==="custom";
     byId("customOneWrap").classList.toggle("hidden",!oneCustom);
     byId("customAllWrap").classList.toggle("hidden",!allCustom);
   }
-  byId("fieldOne").addEventListener("change",function(){ONE_PREVIEW=null;ONE_PREVIEW_QR=null;syncCustomFields();renderOnePreview();});
+  byId("fieldOne").addEventListener("change",function(){ONE_PREVIEW=null;ONE_PREVIEW_QR=null;ONE_RECIPIENT_TOKEN="";syncCustomFields();renderOnePreview();});
   byId("fieldAll").addEventListener("change",syncCustomFields);
   byId("customOneText").addEventListener("input",function(){ONE_PREVIEW=null;syncButtons();});
   syncCustomFields();
