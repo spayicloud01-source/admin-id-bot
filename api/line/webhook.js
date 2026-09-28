@@ -1200,32 +1200,50 @@ async function handleEvent(event) {
         const lookupStartedAt = Date.now();
         await startLoading(lineUserId, 60);
         const progressPromise = showCustomerProgress(lineUserId);
-        const [result] = await Promise.all([callSheetsBridge({
-          action: "getCustomerSelf",
-          lineUserId,
-          field,
-        }), progressPromise]);
-        const resultText = formatCustomerSelfResult(result, field);
-        const message = result.bound
-          ? (["payment", "close"].includes(field) ? customerPaymentMessage(result, field) : customerResultMessage(resultText, field === "info" ? "ข้อมูลลูกค้า" : "ข้อมูลล่าสุด"))
-          : { type: "text", text: resultText };
-        const hasItems = Array.isArray(result?.items) && result.items.length > 0;
-        await replyMessage(event.replyToken, [message]);
-        console.info("Customer self response timing", {
-          field,
-          bridgeMs: Date.now() - lookupStartedAt,
-        });
-        await Promise.allSettled([
-          logCustomerOutcome(
-            lineUserId, text,
-            !result?.bound ? (result?.message || "ยังไม่ได้ผูกบัญชี") :
-              hasItems ? "แสดงข้อมูลลูกค้า" : "ไม่พบข้อมูลต้นทาง",
-            !result?.bound ? "ไม่มีสิทธิ์" : hasItems ? "สำเร็จ" : "ข้อมูลไม่ตรง",
-            hasItems ? "" : (result?.bound ? "ข้อมูลต้นทางหายหรือชื่อไม่ตรง" : "")
-          ),
-          result.bound && !result.suspended ? safeLinkCustomerMenu(lineUserId) : Promise.resolve(),
-        ]);
-        return;
+        try {
+          const [result] = await Promise.all([callSheetsBridge({
+            action: "getCustomerSelf",
+            lineUserId,
+            field,
+          }), progressPromise]);
+          const resultText = formatCustomerSelfResult(result, field);
+          const message = result.bound
+            ? (["payment", "close"].includes(field) ? customerPaymentMessage(result, field) : customerResultMessage(resultText, field === "info" ? "ข้อมูลลูกค้า" : "ข้อมูลล่าสุด"))
+            : { type: "text", text: resultText };
+          const hasItems = Array.isArray(result?.items) && result.items.length > 0;
+
+          // Customer sheet lookups can take tens of seconds. Push the final
+          // result directly instead of relying on a reply token that may be stale.
+          await pushMessage(lineUserId, [message]);
+          console.info("Customer self push delivered", {
+            field,
+            bridgeMs: Date.now() - lookupStartedAt,
+            hasItems,
+          });
+
+          // Do not keep the webhook open for slow audit/menu maintenance after
+          // the customer has already received the important response.
+          if (!["payment", "close"].includes(field)) {
+            Promise.allSettled([
+              logCustomerOutcome(
+                lineUserId, text,
+                !result?.bound ? (result?.message || "ยังไม่ได้ผูกบัญชี") :
+                  hasItems ? "แสดงข้อมูลลูกค้า" : "ไม่พบข้อมูลต้นทาง",
+                !result?.bound ? "ไม่มีสิทธิ์" : hasItems ? "สำเร็จ" : "ข้อมูลไม่ตรง",
+                hasItems ? "" : (result?.bound ? "ข้อมูลต้นทางหายหรือชื่อไม่ตรง" : "")
+              ),
+              result.bound && !result.suspended ? safeLinkCustomerMenu(lineUserId) : Promise.resolve(),
+            ]).catch(() => {});
+          }
+          return;
+        } catch (error) {
+          console.warn("Customer self-service failed", { field, error: String(error?.message || error) });
+          await pushMessage(lineUserId, [{
+            type: "text",
+            text: "ระบบเชื่อมต่อชีตขัดข้องชั่วคราว กรุณากด " + (field === "close" ? "ยอดปิด" : field === "payment" ? "ชำระยอด" : "เมนูนี้") + " อีกครั้ง"
+          }]).catch(() => {});
+          return;
+        }
       }
     }
 
