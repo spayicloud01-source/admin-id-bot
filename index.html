@@ -324,7 +324,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     };}
     byId("dueModal").classList.remove("hidden");
   }
-  function dueLabel(mode){return mode==="today"?"ครบกำหนดวันนี้":mode==="upcoming"?"ใกล้ครบกำหนด":mode==="deleted"?"สถานะลบ":mode==="pending_lock"?"รอล็อค":"ค้างชำระ";}
+  function dueLabel(mode){return mode==="today"?"ครบกำหนดวันนี้":mode==="upcoming"?"ใกล้ครบกำหนด":mode==="deleted"?"สถานะลบ":mode==="pending_lock"?"รอล็อค":mode==="sold"?"ขาย":mode==="fraud"?"โกง":mode==="installment"?"ผ่อน":"ค้างชำระ";}
   function openDue(mode){
     byId("dueTitle").textContent=dueLabel(mode);
     byId("dueList").innerHTML='<div class="empty"><b>กำลังโหลด…</b><p>กำลังอ่านข้อมูลจากชีต</p></div>';
@@ -339,7 +339,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         var out="",i,item,deltaText;
         for(i=0;i<items.length;i++){
           item=items[i];
-          deltaText=mode==="overdue"?("เกิน "+Math.abs(Number(item.daysDelta||0))+" วัน"):mode==="upcoming"?("อีก "+Number(item.daysDelta||0)+" วัน"):mode==="deleted"?"แยกออกจากยอดค้าง":mode==="pending_lock"?"รอดำเนินการล็อค":"วันนี้";
+          deltaText=mode==="overdue"?("เกิน "+Math.abs(Number(item.daysDelta||0))+" วัน"):mode==="upcoming"?("อีก "+Number(item.daysDelta||0)+" วัน"):mode==="deleted"?"แยกออกจากยอดค้าง":mode==="pending_lock"?"รอดำเนินการล็อค":mode==="sold"?"แยกสถานะขาย":mode==="fraud"?"แยกสถานะโกง":mode==="installment"?"แยกสถานะผ่อน":"วันนี้";
           out+='<div class="item"><div class="itemtop"><div><div class="itemname">'+escapeHtml(item.name||"-")+'</div><div class="itemmeta">คิว '+escapeHtml(item.queue||"-")+' • '+escapeHtml(item.source||"-")+' / '+escapeHtml(item.sheet||"-")+'<br>วันครบกำหนด '+escapeHtml(item.dueDate||"-")+' • '+escapeHtml(deltaText)+(item.fee?'<br>ค่าเช่า '+escapeHtml(item.fee):'')+(item.status?'<br>สถานะ '+escapeHtml(item.status):'')+'</div></div></div>';
           if(item.queue&&item.source&&item.sheet){
             out+='<button class="btn soft itembtn" data-source="'+escapeHtml(item.source)+'" data-sheet="'+escapeHtml(item.sheet)+'" data-queue="'+escapeHtml(item.queue)+'">ไปส่งแจ้งเตือนรายนี้</button><button class="btn green itembtn paybtn" data-payqueue="'+escapeHtml(item.queue)+'">รับชำระ</button>';
@@ -441,7 +441,10 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       {mode:"upcoming",id:"upcomingCount"},
       {mode:"overdue",id:"overdueCount"},
       {mode:"deleted",id:"deletedCount"},
-      {mode:"pending_lock",id:"pendingLockCount"}
+      {mode:"pending_lock",id:"pendingLockCount"},
+      {mode:"sold",id:"soldCount"},
+      {mode:"fraud",id:"fraudCount"},
+      {mode:"installment",id:"installmentCount"}
     ];
     function next(i){
       if(i>=modes.length){saveDashboardCache();return;}
