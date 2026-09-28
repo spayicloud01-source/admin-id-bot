@@ -243,6 +243,7 @@ export default async function handler(req, res) {
     // Reuse that exact binding to calculate one customer's totals instead of scanning
     // both approved payment sources first. This is read-only and falls back to the
     // existing broad lookup when the bound-customer path is unavailable.
+    // This fast path is read-only; payment writes and approvals are unchanged.
     if (requestedAction === "getCalculatedSummary" && body.resolveRecipient === true) {
       const queue = clean(body.query, 100);
       if (queue) {
