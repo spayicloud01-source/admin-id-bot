@@ -1,6 +1,21 @@
 import { callSheetsBridge } from "../../lib/sheetsBridge.js";
 import { sessionFromRequest } from "../../lib/webAuth.js";
 
+const ALLOWED_ADMIN_ACTIONS = new Set([
+  "searchCustomer", "getCustomerInfo", "getCalculatedSummary", "getHistory",
+  "addNote", "queueClose", "listReviewQueue", "getReviewQueueItem",
+  "resolveReviewQueue", "cancelReviewQueue", "rollbackReviewQueue",
+  "listStaff", "listPendingStaff", "getStaffPermissions", "setStaffEnabled",
+  "setStaffPermission", "approveStaff", "rejectStaff", "dailyOwnerReport",
+  "systemStatus", "getReminderTriggerStatus", "installReminderTrigger",
+  "auditSourceSchemas", "auditSourceWriteCapabilities", "getStaffActivity",
+  "listPendingCustomerBindings", "resolveCustomerBinding", "cancelCustomerBindings"
+]);
+
+function clean(value, max = 300) {
+  return String(value == null ? "" : value).trim().slice(0, max);
+}
+
 async function pushText(to, text) {
   const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
   if (!token) throw new Error("LINE_CHANNEL_ACCESS_TOKEN is not configured");
@@ -23,7 +38,29 @@ export default async function handler(req, res) {
 
     const body = typeof req.body === "object" && req.body ? req.body : {};
 
-    if (String(body.action || "").trim() === "record_payment") {
+    const requestedAction = clean(body.action, 60);
+    if (ALLOWED_ADMIN_ACTIONS.has(requestedAction)) {
+      const result = await callSheetsBridge({
+        action: requestedAction,
+        lineUserId: session.sub,
+        sourceType: "user",
+        groupId: "",
+        staffName: session.name || "เจ้าของ",
+        role: "เจ้าของ",
+        query: clean(body.query),
+        note: clean(body.note, 1000),
+        decision: clean(body.decision, 30),
+        targetPermission: clean(body.targetPermission, 100),
+        eventType: clean(body.eventType, 100),
+        enabled: body.enabled === true,
+        permissionEnabled: body.permissionEnabled === true,
+        activityToday: body.activityToday === true,
+        amount: body.amount == null || body.amount === "" ? null : Number(body.amount),
+      });
+      return res.status(200).json(result || { ok: true });
+    }
+
+    if (requestedAction === "record_payment") {
       const customerQuery = String(body.queue || "").trim();
       const amount = Number(body.amount);
       if (!customerQuery || !Number.isFinite(amount) || amount <= 0) {

@@ -341,7 +341,7 @@
     if(button){button.disabled=true;button.textContent="กำลังทำ…";}
     if(byId(boxId))byId(boxId).innerHTML='<div class="empty"><b>กำลังโหลด…</b></div>';
     var headers=authHeaders();headers["Content-Type"]="application/json";
-    return fetch("/api/web/action",{method:"POST",headers:headers,body:JSON.stringify(payload)})
+    return fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify(payload)})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
         if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}location.reload();return;}
