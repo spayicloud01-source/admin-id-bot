@@ -121,7 +121,18 @@ async function sendCustomerReminders() {
 }
 
 async function sendInternalDigest() {
-  const batch = await callSheetsBridge({ action: "getReminderBatch" });
+  let batch;
+  try {
+    batch = await callSheetsBridge({ action: "getReminderBatch" });
+  } catch (error) {
+    console.warn("Internal reminder digest unavailable", error);
+    return {
+      sent: 0,
+      failed: 1,
+      skipped: true,
+      error: String(error?.message || error).slice(0, 160),
+    };
+  }
   if (batch.alreadySent) {
     return {
       sent: 0,
