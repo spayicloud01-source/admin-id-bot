@@ -71,6 +71,16 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   #sendAll,#sendOne,#recordPayment,#addNoteBtn{width:100%}
   .toolresult{max-height:none}
 }
+.dueoverview{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 18px}
+.dueoverviewbox{background:#fff;border-radius:18px;padding:16px;box-shadow:0 5px 18px rgba(15,23,42,.055)}
+.dueoverviewhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+.dueoverviewhead h3{margin:0;font-size:15px}
+.duetable{display:grid;gap:8px}
+.duerow{display:grid;grid-template-columns:90px minmax(0,1fr) 110px 120px;gap:8px;align-items:center;padding:10px 11px;border:1px solid #edf1f5;border-radius:12px;background:#fbfcfe}
+.duerow span{font-size:10px;color:#94a3b8;display:block;margin-bottom:2px}
+.duerow b{font-size:12px;color:#0f172a;display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.duemore{font-size:11px;color:#64748b;text-align:center;padding-top:2px}
+@media(max-width:760px){.dueoverview{grid-template-columns:1fr}.dueoverviewbox{padding:13px;border-radius:16px}.duerow{grid-template-columns:1fr 1fr;padding:9px}.duerow b{font-size:12px}}
 @media(max-width:390px){.card .metric{font-size:25px}.card{padding:12px 10px}.actionbuttons{grid-template-columns:1fr}}
 
 </style>
@@ -97,6 +107,17 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 <div class="card clickable" id="cardSold"><div class="label">ขาย</div><div id="soldCount" class="metric">0</div><div class="sub">แยกจากค้างชำระ</div></div>
 <div class="card clickable" id="cardFraud"><div class="label">โกง</div><div id="fraudCount" class="metric">0</div><div class="sub">แยกจากค้างชำระ</div></div>
 <div class="card clickable" id="cardInstallment"><div class="label">ผ่อน</div><div id="installmentCount" class="metric">0</div><div class="sub">แยกจากค้างชำระ</div></div>
+</section>
+
+<section class="dueoverview">
+  <div class="dueoverviewbox">
+    <div class="dueoverviewhead"><h3>ครบกำหนดวันนี้</h3><span id="todayInlineCount" class="pill">0 ราย</span></div>
+    <div id="todayInlineList" class="duetable"><div class="empty"><b>กำลังโหลด…</b></div></div>
+  </div>
+  <div class="dueoverviewbox">
+    <div class="dueoverviewhead"><h3>ใกล้ครบกำหนด</h3><span id="upcomingInlineCount" class="pill">0 ราย</span></div>
+    <div id="upcomingInlineList" class="duetable"><div class="empty"><b>กำลังโหลด…</b></div></div>
+  </div>
 </section>
 
 <section class="panel">
@@ -451,6 +472,32 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       });
     });
   }
+  function renderInlineDue(mode,items){
+    var listId=mode==="today"?"todayInlineList":"upcomingInlineList";
+    var countId=mode==="today"?"todayInlineCount":"upcomingInlineCount";
+    var box=byId(listId),badge=byId(countId);
+    if(!box||!badge)return;
+    items=Array.isArray(items)?items:[];
+    badge.textContent=items.length+" ราย";
+    if(!items.length){
+      box.innerHTML='<div class="empty"><b>ไม่มีรายการ</b><p>'+(mode==="today"?"วันนี้ยังไม่มีรายการครบกำหนด":"ยังไม่มีรายการใกล้ครบกำหนด")+'</p></div>';
+      return;
+    }
+    var out="",i,item,amountText,limit=Math.min(items.length,8);
+    for(i=0;i<limit;i++){
+      item=items[i]||{};
+      amountText=item.fee||item.principal||"-";
+      out+='<div class="duerow">'
+        +'<div><span>คิว</span><b>'+escapeHtml(item.queue||"-")+'</b></div>'
+        +'<div><span>ชื่อ</span><b>'+escapeHtml(item.name||"-")+'</b></div>'
+        +'<div><span>ยอด</span><b>'+escapeHtml(amountText)+'</b></div>'
+        +'<div><span>วันครบกำหนด</span><b>'+escapeHtml(item.dueDate||"-")+'</b></div>'
+        +'</div>';
+    }
+    if(items.length>limit)out+='<div class="duemore">และอีก '+(items.length-limit)+' ราย</div>';
+    box.innerHTML=out;
+  }
+
   function loadSummary(){
     var modes=[
       {mode:"today",id:"todayCount"},
@@ -471,6 +518,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
           if(j&&j.ok){
             var items=Array.isArray(j.items)?j.items:[];
             byId(x.id).textContent=items.length;
+            if(x.mode==="today"||x.mode==="upcoming")renderInlineDue(x.mode,items);
             saveDashboardCache();
           }
         }).catch(function(){})
