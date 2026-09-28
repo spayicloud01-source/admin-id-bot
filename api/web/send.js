@@ -14,6 +14,44 @@ const ALLOWED_ADMIN_ACTIONS = new Set([
   "listPendingCustomerBindings", "resolveCustomerBinding", "cancelCustomerBindings"
 ]);
 
+const RECIPIENT_CACHE_MS = 2 * 60 * 1000;
+const recipientCache = new Map();
+
+function isExactQueue(value) {
+  return /^[0-9]+(?:-[0-9]+)?$/.test(String(value || "").trim());
+}
+
+function recipientCacheKey(session, queue, source = "", sheet = "") {
+  return [
+    String(session?.sub || "").trim(),
+    String(queue || "").trim().toLowerCase(),
+    String(source || "").trim().toLowerCase(),
+    String(sheet || "").trim().toLowerCase(),
+  ].join("|");
+}
+
+function getCachedRecipient(key) {
+  const hit = recipientCache.get(key);
+  if (!hit) return null;
+  if (Date.now() - hit.at > RECIPIENT_CACHE_MS) {
+    recipientCache.delete(key);
+    return null;
+  }
+  return hit.value;
+}
+
+function storeCachedRecipient(session, queue, source, sheet, value) {
+  const genericKey = recipientCacheKey(session, queue);
+  const specificKey = recipientCacheKey(session, queue, source, sheet);
+  const entry = { at: Date.now(), value };
+  recipientCache.set(genericKey, entry);
+  recipientCache.set(specificKey, entry);
+  if (recipientCache.size > 100) {
+    const first = recipientCache.keys().next().value;
+    if (first) recipientCache.delete(first);
+  }
+}
+
 function clean(value, max = 300) {
   return String(value == null ? "" : value).trim().slice(0, max);
 }
@@ -47,23 +85,33 @@ function verifyManualRecipient(token) {
 
 async function resolveManualRecipient(session, queue, preferred = {}) {
   let bridgeUpgradeRequired = false;
+  const preferredSource = String(preferred.source || preferred.customer?.source || "").trim();
+  const preferredSheet = String(preferred.sheet || preferred.customer?.sheet || "").trim();
+  const cacheKey = recipientCacheKey(session, queue, preferredSource, preferredSheet);
+  const cached = getCachedRecipient(cacheKey);
+  if (cached) return cached;
 
-  // v122: resolve the active LINE binding directly from the binding sheet.
+  // v123: resolve the active LINE binding directly from the local binding sheet.
+  // Source/sheet filters are included when already known to keep the lookup narrow.
   try {
     const direct = await callSheetsBridge({
       action: "resolveCustomerNotificationRecipient",
       lineUserId: session.sub,
       queue,
+      source: preferredSource,
+      sheet: preferredSheet,
     });
     if (direct?.found && direct?.recipient?.lineUserId) {
-      return {
+      const recipient = {
         lineUserId: direct.recipient.lineUserId,
         queue: String(direct.recipient.queue || queue),
         name: String(direct.recipient.name || ""),
-        source: String(direct.recipient.source || ""),
-        sheet: String(direct.recipient.sheet || ""),
-        rowNo: null,
+        source: String(direct.recipient.source || preferredSource || ""),
+        sheet: String(direct.recipient.sheet || preferredSheet || ""),
+        rowNo: direct.recipient.rowNo || null,
       };
+      storeCachedRecipient(session, queue, recipient.source, recipient.sheet, recipient);
+      return recipient;
     }
     if (direct?.needsSelection) {
       const error = new Error(direct.message || "พบ LINE ที่ผูกกับคิวนี้มากกว่า 1 รายการ");
@@ -75,48 +123,16 @@ async function resolveManualRecipient(session, queue, preferred = {}) {
     if (error?.code === "AMBIGUOUS_RECIPIENT") throw error;
     bridgeUpgradeRequired = /Unknown action/i.test(String(error?.message || error));
     if (!bridgeUpgradeRequired) {
-      console.warn("Direct recipient lookup failed; falling back", error?.message);
+      // Do not fall back to buildCustomerNotificationBatch here: that action writes
+      // notification queue rows and a read-only preview must never create them.
+      console.warn("Direct recipient lookup failed", error?.message);
+      return null;
     }
   }
 
-  // Temporary v121 fallback. If the calculated summary already tells us
-  // the exact source/sheet, probe only that binding target.
-  const preferredSource = String(preferred.source || preferred.customer?.source || "").trim();
-  const preferredSheet = String(preferred.sheet || preferred.customer?.sheet || "").trim();
-  const targets = preferredSource && preferredSheet
-    ? [{ source: preferredSource, sheet: preferredSheet }]
-    : [
-        { source: "v6", sheet: "V6/10-69" },
-        { source: "v1/v3", sheet: "v3/10-69" },
-      ];
-  for (const target of targets) {
-    try {
-      const batch = await callSheetsBridge({
-        action: "buildCustomerNotificationBatch",
-        lineUserId: session.sub,
-        source: target.source,
-        sheet: target.sheet,
-        field: "payment",
-        queue,
-        queues: "",
-      });
-      const item = Array.isArray(batch?.items) ? batch.items[0] : null;
-      if (!item?.lineUserId) continue;
-      return {
-        lineUserId: item.lineUserId,
-        queue: String(item.queue || queue),
-        name: String(item.name || ""),
-        source: target.source,
-        sheet: target.sheet,
-        rowNo: item.rowNo || null,
-      };
-    } catch (error) {
-      console.warn("Legacy recipient lookup failed", target.source, target.sheet, error?.message);
-    }
-  }
-
+  // Legacy bridge fallback only. Current v123 never reaches this path.
   if (bridgeUpgradeRequired) {
-    const error = new Error("Apps Script ยังเป็น v121 ต้อง Deploy v122 ก่อน จึงจะค้นหา LINE ที่ผูกกับคิวได้แบบตรง");
+    const error = new Error("Apps Script ยังเป็นเวอร์ชันเก่า ต้อง Deploy bridge รุ่นปัจจุบันก่อนจึงจะค้นหา LINE ได้");
     error.code = "BRIDGE_UPGRADE_REQUIRED";
     throw error;
   }
@@ -238,6 +254,40 @@ export default async function handler(req, res) {
     const body = typeof req.body === "object" && req.body ? req.body : {};
 
     const requestedAction = clean(body.action, 60);
+    let recipientLookupAttempted = false;
+
+    // Exact queue lookups can reuse the optimized calculated-summary path.
+    // If the queue is outside the approved payment tabs, fall through to the
+    // existing broad customer search so older sources remain discoverable.
+    if (requestedAction === "getCustomerInfo") {
+      const query = clean(body.query, 100);
+      if (isExactQueue(query)) {
+        const fast = await callSheetsBridge({
+          action: "getCalculatedSummary",
+          lineUserId: session.sub,
+          sourceType: "user",
+          groupId: "",
+          query,
+        });
+        if (fast?.needsSelection) {
+          return res.status(200).json({
+            ok: true,
+            needsSelection: true,
+            matches: Array.isArray(fast.matches) ? fast.matches : [],
+            info: null,
+            fastPath: true,
+          });
+        }
+        if (fast?.summary?.customer) {
+          return res.status(200).json({
+            ok: true,
+            matches: [fast.summary.customer],
+            info: fast.summary.customer,
+            fastPath: true,
+          });
+        }
+      }
+    }
 
     // Manual notification preview already knows the customer's active LINE binding.
     // Reuse that exact binding to calculate one customer's totals instead of scanning
@@ -247,6 +297,7 @@ export default async function handler(req, res) {
     if (requestedAction === "getCalculatedSummary" && body.resolveRecipient === true) {
       const queue = clean(body.query, 100);
       if (queue) {
+        recipientLookupAttempted = true;
         const recipient = await resolveManualRecipient(session, queue);
         if (recipient) {
           try {
@@ -307,7 +358,7 @@ export default async function handler(req, res) {
           close: paymentQrUrl(source, closeTotal),
         };
 
-        if (body.resolveRecipient === true) {
+        if (body.resolveRecipient === true && !recipientLookupAttempted) {
           const queue = clean(body.query, 100);
           const recipient = await resolveManualRecipient(session, queue, s);
           if (recipient) {
