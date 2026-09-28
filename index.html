@@ -197,6 +197,8 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   var ONE_PREVIEW = null;
   var ONE_PREVIEW_QR = null;
   var ONE_RECIPIENT_TOKEN = "";
+  var DASHBOARD_CACHE_SAVED_AT = 0;
+  var DASHBOARD_CACHE_OWNER = "";
 
   function byId(id){ return document.getElementById(id); }
   function authHeaders(){ var h={}; if(TOKEN){ h.Authorization="Bearer "+TOKEN; } return h; }
@@ -218,6 +220,8 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       var cache=JSON.parse(raw);
       if(!cache||!Array.isArray(cache.items)||!cache.items.length)return false;
       ITEMS=cache.items;
+      DASHBOARD_CACHE_SAVED_AT=Number(cache.savedAt||0);
+      DASHBOARD_CACHE_OWNER=cache.owner||"";
       fillSources();
       var sels=cache.selectedTargets||[],i,j;
       SELECTED_TARGETS=[];
@@ -466,6 +470,18 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   function loadConfig(){
     checkHealth().then(function(){
       if(!TOKEN){ showLogin(); return; }
+
+      // Re-opening the dashboard should not rescan every source workbook.
+      // A recent client cache is enough for sheet selectors; due counts refresh separately.
+      if(ITEMS.length && DASHBOARD_CACHE_SAVED_AT && Date.now()-DASHBOARD_CACHE_SAVED_AT < 5*60*1000){
+        showApp();
+        byId("dot").className="dot ok";
+        byId("sys").textContent="ระบบออนไลน์";
+        if(DASHBOARD_CACHE_OWNER)byId("authText").textContent="ยืนยันแล้ว • "+DASHBOARD_CACHE_OWNER;
+        loadSummary();
+        return;
+      }
+
       fetch("/api/web/config",{headers:authHeaders(),cache:"no-store"}).then(function(r){
         return r.json().then(function(j){ return {r:r,j:j}; });
       }).then(function(x){
@@ -476,10 +492,12 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"โหลดข้อมูลไม่ได้");
         ITEMS=x.j.sheets||[];
         fillSources(); updateCustomerCount(); showApp();
-        saveDashboardCache((x.j.owner&&x.j.owner.name)||"เจ้าของ");
+        DASHBOARD_CACHE_SAVED_AT=Date.now();
+        DASHBOARD_CACHE_OWNER=(x.j.owner&&x.j.owner.name)||"เจ้าของ";
+        saveDashboardCache(DASHBOARD_CACHE_OWNER);
         byId("dot").className="dot ok";
         byId("sys").textContent="ระบบออนไลน์";
-        byId("authText").textContent="ยืนยันแล้ว • "+((x.j.owner&&x.j.owner.name)||"เจ้าของ");
+        byId("authText").textContent="ยืนยันแล้ว • "+DASHBOARD_CACHE_OWNER;
         loadSummary();
       }).catch(function(e){
         showApp();
