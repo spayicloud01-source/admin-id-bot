@@ -69,10 +69,24 @@ test('overdue customer gets one reminder per day, then stops when due date advan
   assert.equal(f.run().items.length, 0);
 });
 
-test('closed accounts and reminders already queued today are not sent again', () => {
+test('closed and deleted accounts never enter the customer reminder queue', () => {
+  for (const status of ['ปิด', 'ปิดยอด', 'สถานะปิด', 'ลบ', 'สถานะลบ', 'ลบ/ปิด']) {
+    const f = fixture('28 ก.ย. 26');
+    f.customer.status = status;
+    assert.equal(f.run().items.length, 0, status);
+  }
+});
+
+test('pending-lock accounts remain payable and reminders already queued today are not sent again', () => {
   const f = fixture('28 ก.ย. 26');
-  f.customer.status = 'ปิด';
+  f.customer.status = 'รอล็อค';
+  assert.equal(f.run().items.length, 1);
+  assert.equal(f.records[0][1], 'ลูกค้า-ครบกำหนด');
   assert.equal(f.run().items.length, 0);
+});
+
+test('active accounts still receive due reminders', () => {
+  const f = fixture('28 ก.ย. 26');
   f.customer.status = '';
   assert.equal(f.run().items.length, 1);
   assert.equal(f.records[0][1], 'ลูกค้า-ครบกำหนด');

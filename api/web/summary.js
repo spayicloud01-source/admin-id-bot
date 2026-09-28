@@ -11,7 +11,7 @@ export default async function handler(req, res) {
     if (!session) return res.status(401).json({ ok: false, error: "กรุณาเข้าเว็บผ่าน LINE OA ใหม่" });
 
     const mode = String(req.query?.mode || "").trim();
-    if (["today","upcoming","overdue"].includes(mode)) {
+    if (["today","upcoming","overdue","deleted","pending_lock"].includes(mode)) {
       const result = await callSheetsBridge({
         action: "listDueCustomers",
         lineUserId: session.sub,

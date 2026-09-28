@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.28-118',
+  VERSION: '2026.09.28-119',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -1133,6 +1133,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
 
     const c = findCustomerIdentity_(source, sheet, queue);
     if (!c || normalizeGeneral_(c.name) !== normalizeGeneral_(r[2])) continue;
+    if (isInactiveDueStatus_(c.status)) continue;
     const summary = calculateCustomerSelfSummary_(c);
     const message = buildCustomerNotificationMessage_(summary, field);
     notifySheet.appendRow([
@@ -1293,7 +1294,7 @@ function getCustomerReminderBatchLocked_(body) {
     if (!c || normalizeGeneral_(c.name) !== normalizeGeneral_(r[2])) continue;
     // An approved payment advances the source due date. Closed accounts and
     // rows without a payable fee must never enter the daily reminder queue.
-    if (!String(c.name || '').trim() || /^ปิด/.test(String(c.status || '').trim()) || parseMoney_(c.fee) <= 0) continue;
+    if (!String(c.name || '').trim() || isInactiveDueStatus_(c.status) || parseMoney_(c.fee) <= 0) continue;
     const due = parseDateFlexible_(c.dueDate);
     if (!due) continue;
 
@@ -2440,7 +2441,7 @@ function calculateCustomerSelfSummary_(c) {
   const discountPercent = Number(getSettingValue_('CLOSE_FEE_DISCOUNT_PERCENT', 50)) || 50;
   const cycleDays = 10;
 
-  const overdueDays = dueDate ? Math.max(0, daysBetween_(asOf, dueDate)) : 0;
+  const overdueDays = dueDate && !isInactiveDueStatus_(c.status) ? Math.max(0, daysBetween_(asOf, dueDate)) : 0;
   const cyclesCrossed = overdueDays > 0 ? Math.floor(overdueDays / cycleDays) : 0;
   const crossCycle = cyclesCrossed >= 1;
   const accumulatedFee = fee * (1 + cyclesCrossed);
@@ -2618,7 +2619,7 @@ function getCalculatedSummary_(body) {
   const discountPercent = Number(getSettingValue_('CLOSE_FEE_DISCOUNT_PERCENT', 50)) || 50;
   const cycleDays = 10;
 
-  const overdueDays = dueDate ? Math.max(0, daysBetween_(asOf, dueDate)) : 0;
+  const overdueDays = dueDate && !isInactiveDueStatus_(c.status) ? Math.max(0, daysBetween_(asOf, dueDate)) : 0;
   const cyclesCrossed = overdueDays > 0 ? Math.floor(overdueDays / cycleDays) : 0;
   const crossCycle = cyclesCrossed >= 1;
   const accumulatedFee = fee * (1 + cyclesCrossed);
@@ -2666,6 +2667,7 @@ function listDueCustomers_(body) {
   if (!access.allowed) return { ok: true, items: [], message: access.message || 'ไม่มีสิทธิ์ดูรายงาน' };
 
   const mode = String(body.dueMode || 'today').trim();
+  const statusMode = mode === 'deleted' || mode === 'pending_lock';
   const remindDays = Number(getSettingValue_('REMIND_BEFORE_DAYS', 1)) || 1;
   const cache = CacheService.getScriptCache();
   const cacheKey = 'due-list:' + mode + ':' + remindDays;
@@ -2700,7 +2702,7 @@ function listDueCustomers_(body) {
       for (let t = 0; t < tabs.length && items.length < 50; t++) {
         const sh = tabs[t];
         const h = detectHeaders_(sh);
-        if (!h || !h.dueDate) continue;
+        if (!h || (!statusMode && !h.dueDate) || (statusMode && !h.status)) continue;
         const lastRow = sh.getLastRow();
         const startRow = h.headerRow + 1;
         if (startRow > lastRow) continue;
@@ -2710,11 +2712,17 @@ function listDueCustomers_(body) {
 
         for (let r = 0; r < values.length && items.length < 50; r++) {
           const row = values[r];
+          const status = getCell_(row, h.status);
+          const statusClass = customerStatusClass_(status);
+          if (mode === 'deleted' && statusClass !== 'deleted') continue;
+          if (mode === 'pending_lock' && statusClass !== 'pending_lock') continue;
+          if (!statusMode && isInactiveDueStatus_(status)) continue;
+
           const dueText = getCell_(row, h.dueDate);
           const due = parseDateFlexible_(dueText);
-          if (!due) continue;
-          const delta = daysBetween_(due, today);
-          let include = false;
+          if (!statusMode && !due) continue;
+          const delta = due ? daysBetween_(due, today) : 0;
+          let include = statusMode;
           if (mode === 'today') include = delta === 0;
           else if (mode === 'upcoming') include = delta > 0 && delta <= remindDays;
           else if (mode === 'overdue') include = delta < 0;
@@ -2731,7 +2739,7 @@ function listDueCustomers_(body) {
             daysDelta: delta,
             principal: getCell_(row, h.principal),
             fee: getCell_(row, h.fee),
-            status: getCell_(row, h.status)
+            status: status
           });
         }
       }
@@ -4729,6 +4737,20 @@ function findHeader_(headers, aliases) {
 }
 function normalizeHeader_(v) { return String(v || '').toLowerCase().replace(/\s+/g,'').replace(/[._\-\/]/g,'').trim(); }
 function normalizeGeneral_(v) { return String(v || '').toLowerCase().replace(/\s+/g,'').trim(); }
+
+function customerStatusClass_(status) {
+  const value = normalizeGeneral_(status).replace(/[()\[\]{}]/g, '');
+  const parts = value.split(/[\/,|]+/).filter(Boolean);
+  if (parts.some(function(x){ return ['ลบ', 'ลบแล้ว', 'สถานะลบ'].indexOf(x) !== -1; })) return 'deleted';
+  if (parts.some(function(x){ return ['ปิด', 'ปิดแล้ว', 'ปิดยอด', 'ปิดบัญชี', 'สถานะปิด'].indexOf(x) !== -1; })) return 'closed';
+  if (parts.some(function(x){ return ['รอล็อค', 'รอล็อก', 'รอlock'].indexOf(x) !== -1; })) return 'pending_lock';
+  return 'active';
+}
+
+function isInactiveDueStatus_(status) {
+  const statusClass = customerStatusClass_(status);
+  return statusClass === 'deleted' || statusClass === 'closed';
+}
 function normalizePhone_(v) { return String(v || '').replace(/\D/g,''); }
 function normalizeApple_(v) { return String(v || '').toLowerCase().replace(/\s+/g,'').trim(); }
 function matchesQueue_(v,q) { return !!v && !!q && normalizeGeneral_(v) === q; }
