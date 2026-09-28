@@ -1026,6 +1026,10 @@ function setCustomerAutoReminderSheet_(body) {
 
   PropertiesService.getScriptProperties().setProperty('CUSTOMER_AUTO_REMINDER_SHEETS', keys.join(','));
 
+  if (rowsToAppend.length) {
+    notifySheet.getRange(firstNewRowNo, 1, rowsToAppend.length, 11).setValues(rowsToAppend);
+  }
+
   logAction_({
     lineUserId: body.lineUserId || '',
     staffName: access.staffName || '',
@@ -1271,6 +1275,8 @@ function buildCustomerNotificationBatchLocked_(body, access) {
 
   const items = [];
   const seen = {};
+  const rowsToAppend = [];
+  const firstNewRowNo = notifySheet.getLastRow() + 1;
   for (let i = 0; i < bindings.length; i++) {
     const r = bindings[i];
     if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
@@ -1292,7 +1298,8 @@ function buildCustomerNotificationBatchLocked_(body, access) {
     if (isInactiveDueStatus_(c.status)) continue;
     const summary = calculateCustomerSelfSummary_(c);
     const message = buildCustomerNotificationMessage_(summary, field, customMessage);
-    notifySheet.appendRow([
+    const rowNo = firstNewRowNo + rowsToAppend.length;
+    rowsToAppend.push([
       new Date(),
       type,
       queue,
@@ -1307,7 +1314,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
     ]);
     existingKeys[notificationKey] = true;
     items.push({
-      rowNo: notifySheet.getLastRow(),
+      rowNo: rowNo,
       lineUserId: lineUserId,
       queue: queue,
       name: summary.name || '',
@@ -1434,6 +1441,8 @@ function getCustomerReminderBatchLocked_(body) {
   });
 
   const items = [];
+  const rowsToAppend = [];
+  const firstNewRowNo = notifySheet.getLastRow() + 1;
   for (let i = 0; i < bindings.length; i++) {
     const r = bindings[i];
     if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
@@ -1497,7 +1506,8 @@ function getCustomerReminderBatchLocked_(body) {
 
     let rowNo = found ? found.rowNo : 0;
     if (!rowNo) {
-      notifySheet.appendRow([
+      rowNo = firstNewRowNo + rowsToAppend.length;
+      rowsToAppend.push([
         new Date(),
         overdue ? 'ลูกค้า-ค้างชำระ' : 'ลูกค้า-ครบกำหนด',
         String(c.queue || '').trim(),
@@ -1510,7 +1520,6 @@ function getCustomerReminderBatchLocked_(body) {
         '',
         sourceKey
       ]);
-      rowNo = notifySheet.getLastRow();
       existingMap[key] = { rowNo: rowNo, status: 'รอส่ง' };
     } else {
       notifySheet.getRange(rowNo, 8).setValue(message);
@@ -1528,6 +1537,10 @@ function getCustomerReminderBatchLocked_(body) {
       sheet: sheet,
       message: message
     });
+  }
+
+  if (rowsToAppend.length) {
+    notifySheet.getRange(firstNewRowNo, 1, rowsToAppend.length, 11).setValues(rowsToAppend);
   }
 
   if (items.length) {
