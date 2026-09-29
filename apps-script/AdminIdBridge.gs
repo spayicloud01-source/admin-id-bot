@@ -1335,6 +1335,10 @@ function buildCustomerNotificationBatchLocked_(body, access) {
     });
   }
 
+  if (rowsToAppend.length) {
+    notifySheet.getRange(firstNewRowNo, 1, rowsToAppend.length, 11).setValues(rowsToAppend);
+  }
+
   logAction_({
     lineUserId: body.lineUserId || '',
     staffName: access.staffName || '',
