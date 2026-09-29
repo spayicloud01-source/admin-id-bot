@@ -72,6 +72,7 @@ const logSheet = {
   getRange: (r,c,n=1,w=1) => rangeFor([[]].concat(logRows),r,c,n,w)
 };
 const spreadsheet = {
+  getId: () => "1uUmRtl7YD0IryKz8MFwhw2r3l6aW3uxTMic7KpN5sKc",
   getSheetByName(name) {
     if (name === "สถานะชำระ") return stateSheet;
     if (name === "Log ระบบ") return logSheet;
@@ -119,5 +120,16 @@ assert.equal(stateRows[1][5], 300);
 assert.equal(stateRows[2][0], "payment-cycle:key-b");
 assert.equal(stateRows[2][1], "v1/v3");
 assert.equal(stateRows[2][5], 700);
+
+// A missing backup must abort before any shared rows are written.
+const before = JSON.stringify(stateRows);
+delete backups[1].oldDue;
+const invalidLog = JSON.stringify(backups[1]);
+logRows[1][10] = invalidLog;
+const failure = context.migrateLegacyPaymentStateToSharedSheet();
+assert.equal(failure.ok, false);
+assert.equal(failure.migrated, 0);
+assert.deepEqual(Array.from(failure.unmapped), ["payment-cycle:key-b"]);
+assert.equal(JSON.stringify(stateRows), before);
 
 console.log("legacy payment state migration helper: passed");
