@@ -18,6 +18,13 @@ Do **not** merge to `main` until all three Apps Script deployments below are liv
 
 ## Before creating the three projects: migrate shared payment state
 
+Backend spreadsheet already confirmed:
+
+- Title: `หลังบ้านขาย/ฝาก`
+- Spreadsheet ID: `1uUmRtl7YD0IryKz8MFwhw2r3l6aW3uxTMic7KpN5sKc`
+- The shared backend tab `สถานะชำระ` has already been created with the required 9-column header. Do not create a duplicate tab.
+
+
 The old bound Apps Script currently stores partial-payment cycle state in Script Properties. Script Properties are isolated per Apps Script project, so this state must be copied to the shared backend spreadsheet before switching to three projects.
 
 1. Open the current Apps Script editor.
@@ -42,7 +49,7 @@ Initially copy the same full file into all three projects. Do not manually delet
 Script Properties:
 
 - `SHEETS_BRIDGE_SECRET` = same secret used by the current bridge
-- `BACKEND_SPREADSHEET_ID` = ID of the current Admin ID backend spreadsheet
+- `BACKEND_SPREADSHEET_ID` = `1uUmRtl7YD0IryKz8MFwhw2r3l6aW3uxTMic7KpN5sKc`
 - `BRIDGE_ROLE` = `customer`
 
 Deploy as Web App and save the `/exec` URL.
@@ -52,7 +59,7 @@ Deploy as Web App and save the `/exec` URL.
 Script Properties:
 
 - `SHEETS_BRIDGE_SECRET` = same secret used by the current bridge
-- `BACKEND_SPREADSHEET_ID` = same backend spreadsheet ID
+- `BACKEND_SPREADSHEET_ID` = `1uUmRtl7YD0IryKz8MFwhw2r3l6aW3uxTMic7KpN5sKc`
 - `BRIDGE_ROLE` = `payment`
 
 Deploy as Web App and save the `/exec` URL.
@@ -62,7 +69,7 @@ Deploy as Web App and save the `/exec` URL.
 Script Properties:
 
 - `SHEETS_BRIDGE_SECRET` = same secret used by the current bridge
-- `BACKEND_SPREADSHEET_ID` = same backend spreadsheet ID
+- `BACKEND_SPREADSHEET_ID` = `1uUmRtl7YD0IryKz8MFwhw2r3l6aW3uxTMic7KpN5sKc`
 - `BRIDGE_ROLE` = `notify`
 
 Deploy as Web App and save the `/exec` URL.
