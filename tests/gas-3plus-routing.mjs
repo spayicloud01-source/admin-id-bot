@@ -15,6 +15,19 @@ assert.match(gas, /function bridgeRoleAllowsAction_\(role, action\)/);
 assert.match(gas, /Action not allowed for this bridge role/);
 assert.match(gas, /role: bridgeRole/);
 
+assert.match(gas, /function backendSpreadsheet_\(\)/);
+assert.match(gas, /BACKEND_SPREADSHEET_ID/);
+assert.match(gas, /PAYMENT_STATE_SHEET: 'สถานะชำระ'/);
+assert.match(gas, /function paymentCycleRecord_\(/);
+assert.match(gas, /function writePaymentCycleShared_\(/);
+assert.match(gas, /function migratePaymentStateToSharedSheet\(/);
+assert.doesNotMatch(gas, /getProperty\(\s*paymentCycleKey_/);
+assert.doesNotMatch(gas, /setProperty\(\s*cycleKey/);
+assert.doesNotMatch(gas, /deleteProperty\(\s*cycleKey/);
+
+const activeSpreadsheetCalls = (gas.match(/SpreadsheetApp\.getActiveSpreadsheet\(\)/g) || []).length;
+assert.equal(activeSpreadsheetCalls, 1, "only backendSpreadsheet_ fallback may use getActiveSpreadsheet");
+
 const manualStart = gas.indexOf("function buildCustomerNotificationBatchLocked_");
 const manualEnd = gas.indexOf("function notificationFieldLabel_", manualStart);
 const manual = gas.slice(manualStart, manualEnd);
