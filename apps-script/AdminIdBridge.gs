@@ -14,6 +14,7 @@ const CONFIG = {
   REVIEW_QUEUE_SHEET: 'คิวตรวจสอบ',
   GROUP_SHEET: 'กลุ่ม LINE',
   NOTIFICATION_QUEUE_SHEET: 'คิวแจ้งเตือน',
+  PAYMENT_STATE_SHEET: 'สถานะชำระ',
   CUSTOMER_LINE_SHEET: 'ลูกค้า LINE',
   CUSTOMER_IDENTITY_SHEET: 'ยืนยันตัวตนลูกค้า',
   MAX_RESULTS: 20,
@@ -53,6 +54,20 @@ function activeCustomerTab_(workbook, sourceName) {
 }
 
 let SETTINGS_MEMORY_CACHE_ = null;
+
+function backendSpreadsheet_() {
+  const configuredId = String(
+    PropertiesService.getScriptProperties().getProperty('BACKEND_SPREADSHEET_ID') || ''
+  ).trim();
+  if (configuredId) return SpreadsheetApp.openById(configuredId);
+
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (!active) {
+    throw new Error('BACKEND_SPREADSHEET_ID is required for standalone Apps Script projects');
+  }
+  return active;
+}
+
 
 
 function bridgeRole_() {
@@ -253,7 +268,7 @@ function doPost(e) {
 }
 
 function postDeploySelfTest_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const checks = [];
   const warnings = [];
 
@@ -342,7 +357,7 @@ function postDeploySelfTest_() {
 }
 
 function setSettingValue_(key, value) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
   if (!sh) return false;
   const lastRow = sh.getLastRow();
@@ -490,7 +505,7 @@ function readinessCheck_(body) {
     return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const checks = [];
   function add(name, pass, detail) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
@@ -556,7 +571,7 @@ function checkAccess_(body) {
   const lineUserId = String(body.lineUserId || '').trim();
   if (!lineUserId) return { ok: true, allowed: false, message: 'ไม่พบ LINE User ID' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sheet = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sheet) return { ok: true, allowed: false, message: 'ไม่พบชีตเจ้าหน้าที่' };
 
@@ -644,7 +659,7 @@ function registerStaff_(body) {
     return { ok: true, registered: false, message: 'กรุณาพิมพ์ชื่อเจ้าหน้าที่ให้ตรงกับที่ลงทะเบียนไว้' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh) return { ok: false, error: 'ไม่พบชีตเจ้าหน้าที่' };
 
@@ -718,7 +733,7 @@ function registerStaff_(body) {
 function getGroupConfig_(groupId) {
   const id = String(groupId || '').trim();
   if (!id) return null;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.GROUP_SHEET);
   if (!sh || sh.getLastRow() < 2) return null;
 
@@ -754,7 +769,7 @@ function setGroupEnabled_(body) {
   }
 
   const enabled = body.enabled === true;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.GROUP_SHEET);
   if (!sh) return { ok: false, error: 'ไม่พบชีตกลุ่ม LINE' };
 
@@ -833,7 +848,7 @@ function setGroupNotification_(body) {
   const group = getGroupConfig_(body.groupId);
   if (!group) return { ok: true, changed: false, message: 'ต้องเปิดกลุ่มก่อนด้วยคำสั่ง เปิดกลุ่ม' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.GROUP_SHEET);
   const enabled = body.enabled === true;
   sh.getRange(group.rowNo, 5).setValue(enabled);
@@ -846,7 +861,7 @@ function setGroupNotification_(body) {
 }
 
 function getReminderOwnerLineIds_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) return [];
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
@@ -860,7 +875,7 @@ function getReminderOwnerLineIds_() {
 }
 
 function getReminderGroupIds_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.GROUP_SHEET);
   if (!sh || sh.getLastRow() < 2) return [];
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, 9).getValues();
@@ -940,7 +955,7 @@ function getReminderBatch_(body) {
 
 
 function getAllActiveStaffLineIds_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) return [];
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
@@ -1026,10 +1041,6 @@ function setCustomerAutoReminderSheet_(body) {
 
   PropertiesService.getScriptProperties().setProperty('CUSTOMER_AUTO_REMINDER_SHEETS', keys.join(','));
 
-  if (rowsToAppend.length) {
-    notifySheet.getRange(firstNewRowNo, 1, rowsToAppend.length, 11).setValues(rowsToAppend);
-  }
-
   logAction_({
     lineUserId: body.lineUserId || '',
     staffName: access.staffName || '',
@@ -1056,7 +1067,7 @@ function setCustomerAutoReminderSheet_(body) {
 
 function isConfiguredCustomerNotificationSheet_(source, sheet) {
   if (!isActiveCustomerTarget_(source, sheet)) return false;
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const links = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!links || links.getLastRow() < 2) return false;
   const rows = links.getRange(2, 1, links.getLastRow() - 1, 3).getDisplayValues();
@@ -1256,7 +1267,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
   const lineSheet = customerLineSheet_();
   if (lineSheet.getLastRow() < 2) return { ok: true, allowed: true, items: [] };
   const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
-  const notifySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
+  const notifySheet = backendSpreadsheet_().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
   const type = 'เจ้าของ-' + notificationFieldLabel_(field);
   const todayKey = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
@@ -1404,7 +1415,7 @@ function getCustomerReminderBatchLocked_(body) {
   const lineSheet = customerLineSheet_();
   if (lineSheet.getLastRow() < 2) return { ok: true, items: [] };
 
-  const notifySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
+  const notifySheet = backendSpreadsheet_().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
 
   const enabledKeys = getCustomerAutoReminderSheetKeys_();
@@ -1571,7 +1582,7 @@ function markCustomerReminderSent_(body) {
   if (!Number.isInteger(rowNo) || rowNo < 2) {
     return { ok: false, error: 'rowNo ไม่ถูกต้อง' };
   }
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
+  const sh = backendSpreadsheet_().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!sh || rowNo > sh.getLastRow()) return { ok: false, error: 'ไม่พบรายการแจ้งเตือน' };
   const row = sh.getRange(rowNo, 1, 1, 11).getDisplayValues()[0];
   const currentStatus = String(row[8] || '').trim();
@@ -1697,7 +1708,7 @@ function staffPermissionMap_() {
 
 function findStaffByName_(staffName) {
   const name = String(staffName || '').trim();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) return { sheet: sh, matches: [] };
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
@@ -1788,7 +1799,7 @@ function listStaff_(body) {
     return { ok: true, allowed: false, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
 
@@ -1820,7 +1831,7 @@ function setStaffEnabled_(body) {
   const enabled = body.enabled === true;
   if (!staffName) return { ok: true, changed: false, message: 'กรุณาระบุชื่อเจ้าหน้าที่' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) {
     return { ok: true, changed: false, message: 'ไม่พบเจ้าหน้าที่' };
@@ -1868,7 +1879,7 @@ function listPendingStaff_(body) {
     return { ok: true, allowed: false, message: requester.message || 'ไม่มีสิทธิ์จัดการเจ้าหน้าที่' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
 
@@ -1897,7 +1908,7 @@ function rejectStaff_(body) {
   const staffName = String(body.query || '').trim();
   if (!staffName) return { ok: true, rejected: false, message: 'รูปแบบ: ไม่อนุมัติ <ชื่อเจ้าหน้าที่>' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) {
     return { ok: true, rejected: false, message: 'ไม่พบเจ้าหน้าที่รออนุมัติ' };
@@ -1952,7 +1963,7 @@ function approveStaff_(body) {
   const staffName = String(body.query || '').trim();
   if (!staffName) return { ok: true, approved: false, message: 'รูปแบบ: อนุมัติ <ชื่อเจ้าหน้าที่>' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh) return { ok: false, error: 'ไม่พบชีตเจ้าหน้าที่' };
 
@@ -2013,7 +2024,7 @@ function getSettingValue_(key, fallback) {
 
     if (!SETTINGS_MEMORY_CACHE_) {
       const map = {};
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const ss = backendSpreadsheet_();
       const sh = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
       if (sh && sh.getLastRow() >= 2) {
         const values = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues();
@@ -2040,7 +2051,7 @@ function getSettingValue_(key, fallback) {
   }
   return fallback;
   /* legacy direct-sheet lookup retained below for rollback reference
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
   if (!sh || sh.getLastRow() < 2) return fallback;
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues();
@@ -2113,7 +2124,7 @@ function formatThaiDate_(d) {
 }
 
 function latestDiscountStart_(customer, fallbackDate) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!sh || sh.getLastRow() < 2) return fallbackDate;
   const allowed = { 'ชำระค่าเช่า': true, 'ค่าปรับ': true, 'ต่อรอบ': true };
@@ -2180,7 +2191,7 @@ function verifyCustomerIdentity_(body) {
   }
 
   const m = matches[0];
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.CUSTOMER_IDENTITY_SHEET);
   if (!sh) throw new Error('ไม่พบชีต ' + CONFIG.CUSTOMER_IDENTITY_SHEET);
 
@@ -2241,7 +2252,7 @@ function verifyCustomerIdentity_(body) {
 }
 
 function findVerifiedIdentity_(queue, fullName) {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.CUSTOMER_IDENTITY_SHEET);
+  const sh = backendSpreadsheet_().getSheetByName(CONFIG.CUSTOMER_IDENTITY_SHEET);
   if (!sh || sh.getLastRow() < 2) return [];
   const q = normalizeGeneral_(queue);
   const n = normalizeGeneral_(fullName);
@@ -2263,7 +2274,7 @@ function findVerifiedIdentity_(queue, fullName) {
 }
 
 function customerLineSheet_() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.CUSTOMER_LINE_SHEET);
+  const sh = backendSpreadsheet_().getSheetByName(CONFIG.CUSTOMER_LINE_SHEET);
   if (!sh) throw new Error('ไม่พบชีต ' + CONFIG.CUSTOMER_LINE_SHEET);
   return sh;
 }
@@ -2935,7 +2946,7 @@ function listDueCustomers_(body) {
     try { return JSON.parse(cached); } catch (err) {}
   }
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const sourceSheet = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!sourceSheet || sourceSheet.getLastRow() < 2) return { ok: true, items: [] };
 
@@ -3026,7 +3037,7 @@ function getStaffActivity_(body) {
 
   const targetName = String(body.query || '').trim();
   const todayOnly = body.activityToday === true;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.LOG_SHEET);
   if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
 
@@ -3071,7 +3082,7 @@ function dailyOwnerReport_(body) {
     return { ok: true, allowed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const tz = 'Asia/Bangkok';
   const todayKey = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
 
@@ -3120,7 +3131,7 @@ function systemStatus_(body) {
     return { ok: true, allowed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const src = ss.getSheetByName(CONFIG.SOURCE_SHEET);
   let enabledSources = 0;
   if (src && src.getLastRow() >= 2) {
@@ -3184,7 +3195,7 @@ function searchCustomer_(query, includeDetails) {
     } catch (err) {}
   }
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const sourceSheet = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!sourceSheet) throw new Error('ไม่พบชีต "' + CONFIG.SOURCE_SHEET + '"');
 
@@ -3238,7 +3249,7 @@ function searchCustomerInConfiguredTab_(sourceName, sheetName, query) {
     try { return JSON.parse(cached); } catch (err) {}
   }
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const sourceSheet = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!sourceSheet || sourceSheet.getLastRow() < 2) return [];
   const rows = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1, 3).getValues();
@@ -3360,7 +3371,7 @@ function getHistory_(body) {
   const query = String(body.query || '').trim();
   if (!query) return { ok: false, error: 'กรุณาระบุคำค้น' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
 
@@ -3401,7 +3412,7 @@ function addNote_(body) {
   if (matches.length > 1) return { ok: true, added: false, needsSelection: true, matches: matches.slice(0, 10) };
 
   const m = matches[0];
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!sh) throw new Error('ไม่พบชีตประวัติลูกค้า');
 
@@ -3419,7 +3430,7 @@ function auditSourceWriteCapabilities_(body) {
     return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น', items: [] };
   }
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!src || src.getLastRow() < 2) {
     return { ok: true, items: [], summary: { tabs: 0, safeRead: 0, paymentReady: 0, closeReady: 0 } };
@@ -3524,7 +3535,7 @@ function findCustomerIdentity_(sourceName, sheetName, queueValue) {
     if (cached) return JSON.parse(cached);
   } catch (err) {}
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!src || src.getLastRow() < 2) return null;
 
@@ -3617,7 +3628,7 @@ function auditSourceSchemas_(body) {
     return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น', items: [] };
   }
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!src || src.getLastRow() < 2) return { ok: true, items: [], summary: { sources: 0, tabs: 0, ready: 0, issues: 0 } };
 
@@ -3683,7 +3694,7 @@ function cancelReviewQueue_(body) {
     return { ok: true, cancelled: false, message: 'รูปแบบ: ยกเลิกคิว <เลขคิว>' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh || rowNo > sh.getLastRow()) {
     return { ok: true, cancelled: false, message: 'ไม่พบคิวนี้' };
@@ -3719,7 +3730,7 @@ function planSourceWrite_(body) {
     return { ok: true, plan: null, message: 'รูปแบบ: จำลองบันทึก <เลขคิว>' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh || rowNo > sh.getLastRow()) {
     return { ok: true, plan: null, message: 'ไม่พบคิวนี้' };
@@ -3742,7 +3753,7 @@ function planSourceWrite_(body) {
   const writesEnabled = isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false));
   const detectedFields = [];
   try {
-    const backend = SpreadsheetApp.getActiveSpreadsheet();
+    const backend = backendSpreadsheet_();
     const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
     const srcRows = src && src.getLastRow() >= 2
       ? src.getRange(2, 1, src.getLastRow() - 1, 7).getValues()
@@ -3836,7 +3847,7 @@ function getReviewQueueItem_(body) {
     return { ok: true, item: null, message: 'รูปแบบ: ดูคิว <เลขคิว>' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh || rowNo > sh.getLastRow()) return { ok: true, item: null, message: 'ไม่พบคิวนี้' };
 
@@ -3875,7 +3886,7 @@ function appendHistoryFromApprovedReview_(reviewRow, reviewRowNo, approver, sour
   const type = String(reviewRow[1] || '').trim();
   if (type !== 'บันทึกชำระ' && type !== 'ปิดยอด') return false;
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!sh) return false;
 
@@ -3912,7 +3923,7 @@ function listReviewQueue_(body) {
     return { ok: true, allowed: false, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
 
@@ -3958,7 +3969,7 @@ function addDays_(value, days) {
 }
 
 function sourceSpreadsheetFor_(sourceName) {
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!src || src.getLastRow() < 2) return null;
   const rows = src.getRange(2, 1, src.getLastRow() - 1, 7).getValues();
@@ -4040,7 +4051,7 @@ function snapshotMatchesCurrent_(sheet, snap) {
 
 function persistPaymentBackupLog_(backup, actionName, status, note) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = backendSpreadsheet_();
     const sh = ss.getSheetByName(CONFIG.LOG_SHEET);
     if (!sh) return false;
     sh.appendRow([
@@ -4064,7 +4075,7 @@ function persistPaymentBackupLog_(backup, actionName, status, note) {
 
 function loadPaymentBackupFromLog_(reviewRowNo) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = backendSpreadsheet_();
     const sh = ss.getSheetByName(CONFIG.LOG_SHEET);
     if (!sh || sh.getLastRow() < 2) return null;
     const values = sh.getRange(2, 1, sh.getLastRow() - 1, 11).getDisplayValues();
@@ -4323,7 +4334,7 @@ function rollbackReviewQueueLocked_(body) {
     return { ok: true, rolledBack: false, message: 'รูปแบบ: ยกเลิกรายการ <เลขคิว>' };
   }
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const reviewSheet = backend.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!reviewSheet || rowNo > reviewSheet.getLastRow()) {
     return { ok: true, rolledBack: false, message: 'ไม่พบคิวนี้' };
@@ -4448,7 +4459,7 @@ function resolveReviewQueueLocked_(body) {
     return { ok: true, resolved: false, message: 'ผลตรวจไม่ถูกต้อง' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh || rowNo > sh.getLastRow()) {
     return { ok: true, resolved: false, message: 'ไม่พบคิวนี้' };
@@ -4949,7 +4960,7 @@ function queueFinancialReviewLocked_(body, type) {
     }
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh) return { ok: false, error: 'ไม่พบชีตคิวตรวจสอบ' };
 
@@ -5019,7 +5030,7 @@ function queueFinancialReviewLocked_(body, type) {
 }
 
 function logAction_(body) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.LOG_SHEET);
   if (!sh) return { ok: true, logged: false };
   sh.appendRow([
