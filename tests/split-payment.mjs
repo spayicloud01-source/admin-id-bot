@@ -47,6 +47,25 @@ function fixture() {
     sourceSpreadsheetFor_: () => ({ getSheetByName: () => source, getId: () => 'source-id' }),
     detectHeaders_: () => ({ headerRow: 2, queue: 1, dueDate: 13, fee: 11, note: 14 }),
     paymentCycleKey_: () => 'cycle:310-2:2026-09-27',
+    paymentCycleRecord_: () => {
+      const raw = props.get('cycle:310-2:2026-09-27') || '';
+      let cycle = { total: 0, byDay: {}, reviewRows: [] };
+      if (raw) cycle = JSON.parse(raw);
+      return { key: 'cycle:310-2:2026-09-27', raw, cycle };
+    },
+    writePaymentCycleShared_: (_source, _sheet, _queue, _due, cycle) => {
+      const normalized = {
+        total: Number(cycle?.total || 0),
+        byDay: cycle?.byDay || {},
+        reviewRows: Array.isArray(cycle?.reviewRows) ? cycle.reviewRows : []
+      };
+      const raw = normalized.total > 0 || Object.keys(normalized.byDay).length || normalized.reviewRows.length
+        ? JSON.stringify(normalized)
+        : '';
+      if (raw) props.set('cycle:310-2:2026-09-27', raw);
+      else props.delete('cycle:310-2:2026-09-27');
+      return { key: 'cycle:310-2:2026-09-27', raw, cycle: normalized };
+    },
     dateKey_: date => date instanceof Date
       ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
       : '',
@@ -101,7 +120,7 @@ test('a partial payment on the due date remains visible when the balance is paid
   assert.equal(f.cells.get('6:42'), 700);
 });
 
-test('stale PropertiesService payment total is ignored when no matching payment exists in the source sheet', () => {
+test('stale shared payment total is ignored when no matching payment exists in the source sheet', () => {
   const f = fixture();
   f.props.set('cycle:310-2:2026-09-27', JSON.stringify({
     total: 500,
