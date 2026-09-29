@@ -11,8 +11,9 @@ Branch: `refactor/gas-3plus`
 - Creation of `Admin ID - Notify` was initiated, but its project ID and completion were **not** observed. Find it by name before creating another project to avoid a duplicate.
 - The bridge secret has **not** been copied to any new project. No new Web App has been deployed, no dedicated URL has been configured in Vercel, and PR #10 has **not** been merged. Production remains on the legacy bridge.
 - Work paused when the browser tool's automatic approval review returned a usage-limit error. Do not infer that the pending Notify creation finished.
+- After those two projects were prepared, branch commit `2fc7518` fixed two stale `readinessCheck_` expectations (release 127 and exactly two active sources). **Refresh `AdminIdBridge.gs` in Customer and Payment from the current branch before deploying**; both currently contain the earlier release-127 source without this fix. Use that same current file for Notify.
 
-Next: confirm the Notify project state; finish its code and role/backend properties; add the existing bridge secret to all three projects; deploy and verify all three `/exec` endpoints; configure dedicated Preview URLs while keeping the legacy fallback; run the full preview and live LINE tests below. Do not merge until all required tests pass.
+Next: confirm the Notify project state; refresh Customer and Payment source, then finish Notify code and role/backend properties; add the existing bridge secret to all three projects; deploy and verify all three `/exec` endpoints; configure dedicated Preview URLs while keeping the legacy fallback; run the full preview and live LINE tests below. Inspect legacy per-project customer pause and reminder properties before cutover, because those properties do not automatically transfer to new projects. Do not merge until all required tests pass.
 
 Do **not** merge to `main` until all three Apps Script deployments below are live and the preview checks pass.
 
