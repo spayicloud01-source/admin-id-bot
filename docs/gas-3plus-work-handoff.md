@@ -2,6 +2,18 @@
 
 Branch: `refactor/gas-3plus`
 
+## Live progress, 2026-09-29 (Asia/Bangkok)
+
+- The legacy bound project `Scriptตามยอด` was opened from backend spreadsheet `1uUmRtl7YD0IryKz8MFwhw2r3l6aW3uxTMic7KpN5sKc`. A **new** `MigratePaymentState.gs` file was added; the existing `รหัส.gs` was not replaced or deployed.
+- `migrateLegacyPaymentStateToSharedSheet()` ran successfully. A second idempotent run using a temporary logging wrapper showed `{"ok":true,"paymentKeys":0,"migrated":0,"unmapped":[],"sheet":"สถานะชำระ"}`. There were no legacy `payment-cycle:*` properties to migrate at that time.
+- `Admin ID - Customer`: script ID `1GMdEIm2RFVpEPoza72Z39VQEyRm-9zLTcM3wu-oz6Z-qGAGu-WK3qXiU`. Full `AdminIdBridge.gs` release `2026.09.29-127` was pasted and saved. `BACKEND_SPREADSHEET_ID` and `BRIDGE_ROLE=customer` were saved.
+- `Admin ID - Payment`: script ID `13lz3B4O0Es8dHPFN8wPFJ1v0AttdaZG_FnBxhIQeKwixGg3LhJB8RdWv`. Full `AdminIdBridge.gs` release `2026.09.29-127` was pasted and saved. `BACKEND_SPREADSHEET_ID` and `BRIDGE_ROLE=payment` were saved.
+- Creation of `Admin ID - Notify` was initiated, but its project ID and completion were **not** observed. Find it by name before creating another project to avoid a duplicate.
+- The bridge secret has **not** been copied to any new project. No new Web App has been deployed, no dedicated URL has been configured in Vercel, and PR #10 has **not** been merged. Production remains on the legacy bridge.
+- Work paused when the browser tool's automatic approval review returned a usage-limit error. Do not infer that the pending Notify creation finished.
+
+Next: confirm the Notify project state; finish its code and role/backend properties; add the existing bridge secret to all three projects; deploy and verify all three `/exec` endpoints; configure dedicated Preview URLs while keeping the legacy fallback; run the full preview and live LINE tests below. Do not merge until all required tests pass.
+
 Do **not** merge to `main` until all three Apps Script deployments below are live and the preview checks pass.
 
 ## What is already implemented
