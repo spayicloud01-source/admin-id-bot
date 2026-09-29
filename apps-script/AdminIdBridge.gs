@@ -512,7 +512,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.28-123', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.29-127', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -522,7 +522,7 @@ function readinessCheck_(body) {
     const vals = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1, 3).getValues();
     enabledSources = vals.filter(function(r){ return String(r[1] || '').trim() && isTrue_(r[2]); }).length;
   }
-  add('แหล่งข้อมูล', enabledSources >= 8, enabledSources + ' แหล่ง');
+  add('แหล่งข้อมูล', enabledSources === 2, enabledSources + ' แหล่ง');
 
   const staffSheet = ss.getSheetByName(CONFIG.STAFF_SHEET);
   let ownerCount = 0, activeStaff = 0;
