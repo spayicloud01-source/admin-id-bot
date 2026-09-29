@@ -27,14 +27,15 @@ Backend spreadsheet already confirmed:
 
 The old bound Apps Script currently stores partial-payment cycle state in Script Properties. Script Properties are isolated per Apps Script project, so this state must be copied to the shared backend spreadsheet before switching to three projects.
 
-1. Open the current Apps Script editor.
-2. Paste/use the current `apps-script/AdminIdBridge.gs` from this branch **without deploying it to production**.
-3. Run `migratePaymentStateToSharedSheet()` manually from the editor.
-4. The function creates/updates the shared sheet `สถานะชำระ`.
+1. Open the **current/legacy bound Apps Script** editor.
+2. Add a new temporary script file and paste only `apps-script/MigratePaymentState.gs` from this branch. **Do not replace or edit the existing AdminIdBridge.gs.**
+3. Run `migrateLegacyPaymentStateToSharedSheet()` manually once.
+4. The helper writes the legacy `payment-cycle:*` Script Properties into the already-created shared sheet `สถานะชำระ`.
 5. The result must show `ok: true` and `unmapped: []`.
 6. If `unmapped` is not empty, stop rollout and investigate those payment-cycle keys before switching traffic.
+7. After a successful migration, the temporary migration file may be deleted from the legacy editor.
 
-The current production Web App deployment remains on its existing deployed version while this manual migration is run.
+This avoids replacing the legacy source code. The current production Web App deployment and existing trigger logic remain unchanged during migration.
 
 ## Create three Google Apps Script projects
 
