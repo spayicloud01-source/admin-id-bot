@@ -108,13 +108,17 @@ function migrateLegacyPaymentStateToSharedSheet() {
 
   // Validate the entire set before writing any rows. An unmapped cycle must
   // never leave a partially migrated shared state behind.
-  if (unmapped.length) return {
-    ok: false,
-    paymentKeys: paymentKeys.length,
-    migrated: 0,
-    unmapped: unmapped,
-    sheet: STATE_SHEET
-  };
+  if (unmapped.length) {
+    var failed = {
+      ok: false,
+      paymentKeys: paymentKeys.length,
+      migrated: 0,
+      unmapped: unmapped,
+      sheet: STATE_SHEET
+    };
+    console.log(JSON.stringify(failed));
+    return failed;
+  }
 
   mapped.forEach(function(item) {
     var key = item.key;
@@ -130,11 +134,13 @@ function migrateLegacyPaymentStateToSharedSheet() {
 
   SpreadsheetApp.flush();
 
-  return {
+  var result = {
     ok: unmapped.length === 0,
     paymentKeys: paymentKeys.length,
     migrated: mapped.length,
     unmapped: unmapped,
     sheet: STATE_SHEET
   };
+  console.log(JSON.stringify(result));
+  return result;
 }
