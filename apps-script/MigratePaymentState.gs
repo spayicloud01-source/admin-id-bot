@@ -9,6 +9,7 @@
  * - This does not deploy or change the active Web App version.
  */
 function migrateLegacyPaymentStateToSharedSheet() {
+  var BACKEND_ID = '1uUmRtl7YD0IryKz8MFwhw2r3l6aW3uxTMic7KpN5sKc';
   var STATE_SHEET = 'สถานะชำระ';
   var LOG_SHEET = 'Log ระบบ';
   var props = PropertiesService.getScriptProperties();
@@ -19,16 +20,20 @@ function migrateLegacyPaymentStateToSharedSheet() {
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   if (!ss) throw new Error('ต้องรันจาก Apps Script เดิมที่ผูกกับชีตหลังบ้าน');
+  if (ss.getId() !== BACKEND_ID) {
+    throw new Error('Apps Script นี้ไม่ได้ผูกกับชีตหลังบ้านที่กำหนด');
+  }
 
   var state = ss.getSheetByName(STATE_SHEET);
-  if (!state) {
-    state = ss.insertSheet(STATE_SHEET);
-    state.getRange(1, 1, 1, 9).setValues([[
-      'key', 'source', 'sheet', 'queue', 'dueDate',
-      'total', 'byDayJson', 'reviewRowsJson', 'updatedAt'
-    ]]);
-    state.setFrozenRows(1);
-  }
+  if (!state) throw new Error('ไม่พบชีตสถานะชำระที่เตรียมไว้ หยุดก่อนย้ายข้อมูล');
+  var expectedHeader = [
+    'key', 'source', 'sheet', 'queue', 'dueDate',
+    'total', 'byDayJson', 'reviewRowsJson', 'updatedAt'
+  ];
+  var actualHeader = state.getRange(1, 1, 1, 9).getDisplayValues()[0];
+  if (expectedHeader.some(function(name, i) {
+    return String(actualHeader[i] || '').trim() !== name;
+  })) throw new Error('หัวตารางสถานะชำระไม่ตรงกับรูปแบบที่ต้องการ');
 
   var metadata = {};
   var log = ss.getSheetByName(LOG_SHEET);
@@ -56,7 +61,7 @@ function migrateLegacyPaymentStateToSharedSheet() {
     });
   }
 
-  var migrated = 0;
+  var mapped = [];
   var unmapped = [];
   var now = new Date();
 
@@ -88,7 +93,7 @@ function migrateLegacyPaymentStateToSharedSheet() {
     var reviewRows = cycle && Array.isArray(cycle.reviewRows)
       ? cycle.reviewRows : [];
 
-    var values = [[
+    mapped.push({ key: key, values: [[
       key,
       String(backup.source || '').trim(),
       String(backup.sheet || '').trim(),
@@ -98,17 +103,29 @@ function migrateLegacyPaymentStateToSharedSheet() {
       JSON.stringify(byDay),
       JSON.stringify(reviewRows),
       now
-    ]];
+    ]] });
+  });
 
+  // Validate the entire set before writing any rows. An unmapped cycle must
+  // never leave a partially migrated shared state behind.
+  if (unmapped.length) return {
+    ok: false,
+    paymentKeys: paymentKeys.length,
+    migrated: 0,
+    unmapped: unmapped,
+    sheet: STATE_SHEET
+  };
+
+  mapped.forEach(function(item) {
+    var key = item.key;
     var rowNo = existingRows[key] || 0;
     if (rowNo) {
-      state.getRange(rowNo, 1, 1, 9).setValues(values);
+      state.getRange(rowNo, 1, 1, 9).setValues(item.values);
     } else {
       rowNo = Math.max(2, state.getLastRow() + 1);
-      state.getRange(rowNo, 1, 1, 9).setValues(values);
+      state.getRange(rowNo, 1, 1, 9).setValues(item.values);
       existingRows[key] = rowNo;
     }
-    migrated++;
   });
 
   SpreadsheetApp.flush();
@@ -116,7 +133,7 @@ function migrateLegacyPaymentStateToSharedSheet() {
   return {
     ok: unmapped.length === 0,
     paymentKeys: paymentKeys.length,
-    migrated: migrated,
+    migrated: mapped.length,
     unmapped: unmapped,
     sheet: STATE_SHEET
   };
