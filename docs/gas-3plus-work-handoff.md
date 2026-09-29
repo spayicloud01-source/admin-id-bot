@@ -9,12 +9,25 @@ Do **not** merge to `main` until all three Apps Script deployments below are liv
 - Vercel bridge routes actions by role: `customer`, `payment`, `notify`.
 - If a dedicated role URL is not configured, Vercel continues using the existing `GOOGLE_APPS_SCRIPT_URL`.
 - GAS supports `BRIDGE_ROLE` and rejects actions assigned to another role.
-- Current GAS version on this branch: `2026.09.29-126`.
+- Current GAS version on this branch: `2026.09.29-127`.
 - Manual notification queue inserts are batched with `setValues()`.
 - Automatic reminder new-row inserts are batched with `setValues()`.
 - Existing CacheService behavior is retained for customer/search/settings reads.
 - Existing reminder trigger logic is retained.
 - Production is untouched; changes are on a feature branch only.
+
+## Before creating the three projects: migrate shared payment state
+
+The old bound Apps Script currently stores partial-payment cycle state in Script Properties. Script Properties are isolated per Apps Script project, so this state must be copied to the shared backend spreadsheet before switching to three projects.
+
+1. Open the current Apps Script editor.
+2. Paste/use the current `apps-script/AdminIdBridge.gs` from this branch **without deploying it to production**.
+3. Run `migratePaymentStateToSharedSheet()` manually from the editor.
+4. The function creates/updates the shared sheet `สถานะชำระ`.
+5. The result must show `ok: true` and `unmapped: []`.
+6. If `unmapped` is not empty, stop rollout and investigate those payment-cycle keys before switching traffic.
+
+The current production Web App deployment remains on its existing deployed version while this manual migration is run.
 
 ## Create three Google Apps Script projects
 
@@ -29,6 +42,7 @@ Initially copy the same full file into all three projects. Do not manually delet
 Script Properties:
 
 - `SHEETS_BRIDGE_SECRET` = same secret used by the current bridge
+- `BACKEND_SPREADSHEET_ID` = ID of the current Admin ID backend spreadsheet
 - `BRIDGE_ROLE` = `customer`
 
 Deploy as Web App and save the `/exec` URL.
@@ -38,6 +52,7 @@ Deploy as Web App and save the `/exec` URL.
 Script Properties:
 
 - `SHEETS_BRIDGE_SECRET` = same secret used by the current bridge
+- `BACKEND_SPREADSHEET_ID` = same backend spreadsheet ID
 - `BRIDGE_ROLE` = `payment`
 
 Deploy as Web App and save the `/exec` URL.
@@ -47,11 +62,14 @@ Deploy as Web App and save the `/exec` URL.
 Script Properties:
 
 - `SHEETS_BRIDGE_SECRET` = same secret used by the current bridge
+- `BACKEND_SPREADSHEET_ID` = same backend spreadsheet ID
 - `BRIDGE_ROLE` = `notify`
 
 Deploy as Web App and save the `/exec` URL.
 
-The three projects must be bound to or otherwise operate against the same backend spreadsheet context as the current bridge. Verify this before switching Vercel.
+The three new projects may be standalone. They must all use the same `BACKEND_SPREADSHEET_ID`. The bridge helper opens that spreadsheet explicitly, so they do not depend on `getActiveSpreadsheet()`.
+
+Shared partial-payment cycle state is stored in the backend sheet `สถานะชำระ`; it is no longer read from per-project Script Properties.
 
 ## Verify each GAS deployment before touching production
 
@@ -63,7 +81,7 @@ Expected response shape:
 {
   "ok": true,
   "service": "Admin ID Google Sheets Bridge",
-  "version": "2026.09.29-126",
+  "version": "2026.09.29-127",
   "role": "customer"
 }
 ```
@@ -146,10 +164,12 @@ Notify examples:
    - close notice
    - automatic reminder batch
 8. Confirm notification queue row numbers/statuses are correct after batch insert.
-9. Confirm only these active data tabs are used:
+9. Confirm `สถานะชำระ` reflects partial payments and rollback correctly.
+10. Confirm a partial payment approved in Payment is immediately visible from Customer and Notify reads.
+11. Confirm only these active data tabs are used:
    - `v6 -> V6/10-69`
    - `v1/v3 -> v3/10-69`
-10. Compare response times before/after.
+12. Compare response times before/after.
 
 ## Rollback
 
