@@ -33,6 +33,7 @@ function makeContext() {
     },
     console,
     CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => '' }) },
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ({ getSheetByName: () => sourceSheet }),
       openById: () => ({ getSheets: () => [tab], getSheetByName: (name) => name === 'V6/10-69' ? tab : null }),
