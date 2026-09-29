@@ -4,6 +4,7 @@ import { bridgeRoleForAction, getBridgeRoutingStatus } from "../lib/sheetsBridge
 
 assert.equal(bridgeRoleForAction("getCustomerSelf"), "customer");
 assert.equal(bridgeRoleForAction("searchCustomer"), "customer");
+assert.equal(bridgeRoleForAction("searchCustomer", { paymentLookup: true }), "payment");
 assert.equal(bridgeRoleForAction("queuePayment"), "payment");
 assert.equal(bridgeRoleForAction("resolveReviewQueue"), "payment");
 assert.equal(bridgeRoleForAction("buildCustomerNotificationBatch"), "notify");
@@ -11,7 +12,8 @@ assert.equal(bridgeRoleForAction("getCustomerReminderBatch"), "notify");
 
 const gas = readFileSync("apps-script/AdminIdBridge.gs", "utf8");
 assert.match(gas, /function bridgeRole_\(\)/);
-assert.match(gas, /function bridgeRoleAllowsAction_\(role, action\)/);
+assert.match(gas, /function bridgeRoleAllowsAction_\(role, action, body\)/);
+assert.match(gas, /name === 'searchCustomer' && body && body\.paymentLookup === true/);
 assert.match(gas, /Action not allowed for this bridge role/);
 assert.match(gas, /role: bridgeRole/);
 
