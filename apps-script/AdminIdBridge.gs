@@ -77,8 +77,9 @@ function bridgeRole_() {
   return ['customer', 'payment', 'notify', 'all'].indexOf(raw) >= 0 ? raw : 'all';
 }
 
-function bridgeActionRole_(action) {
+function bridgeActionRole_(action, body) {
   const name = String(action || '').trim();
+  if (name === 'searchCustomer' && body && body.paymentLookup === true) return 'payment';
   const paymentActions = [
     'queuePayment', 'queueSlipReview', 'queueClose',
     'listReviewQueue', 'getReviewQueueItem', 'cancelReviewQueue',
@@ -98,12 +99,12 @@ function bridgeActionRole_(action) {
   return 'customer';
 }
 
-function bridgeRoleAllowsAction_(role, action) {
+function bridgeRoleAllowsAction_(role, action, body) {
   if (role === 'all') return true;
   if (['getBridgeVersion', 'postDeploySelfTest', 'readinessCheck'].indexOf(String(action || '').trim()) >= 0) {
     return true;
   }
-  return bridgeActionRole_(action) === role;
+  return bridgeActionRole_(action, body) === role;
 }
 
 function doGet() {
@@ -125,7 +126,7 @@ function doPost(e) {
     }
 
     const bridgeRole = bridgeRole_();
-    if (!bridgeRoleAllowsAction_(bridgeRole, body.action)) {
+    if (!bridgeRoleAllowsAction_(bridgeRole, body.action, body)) {
       return json_({
         ok: false,
         error: 'Action not allowed for this bridge role',
