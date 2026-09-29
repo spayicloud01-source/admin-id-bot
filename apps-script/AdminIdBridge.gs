@@ -1484,10 +1484,9 @@ function getCustomerReminderBatchLocked_(body) {
     if (daysFromDue < 0) continue;
     let paidTotal = 0;
     try {
-      const rawCycle = PropertiesService.getScriptProperties().getProperty(
-        paymentCycleKey_(source, sheet, c.queue, due)
+      paidTotal = paymentNumber_(
+        paymentCycleRecord_(source, sheet, c.queue, due).cycle.total
       );
-      if (rawCycle) paidTotal = paymentNumber_(JSON.parse(rawCycle).total);
     } catch (err) {
       // Do not claim that an unreadable payment ledger is unpaid.
       continue;
@@ -2643,10 +2642,9 @@ function calculateCustomerSelfSummary_(c) {
   let paidForCycle = 0;
   if (dueDate && c.source && c.sheet && c.queue) {
     try {
-      const raw = PropertiesService.getScriptProperties().getProperty(
-        paymentCycleKey_(c.source, c.sheet, c.queue, dueDate)
+      paidForCycle = paymentNumber_(
+        paymentCycleRecord_(c.source, c.sheet, c.queue, dueDate).cycle.total
       );
-      if (raw) paidForCycle = paymentNumber_(JSON.parse(raw).total);
     } catch (err) {}
   }
   const now = new Date();
@@ -3951,6 +3949,170 @@ function paymentCycleKey_(source, sheet, queue, due) {
   return 'payment-cycle:' + Utilities.base64EncodeWebSafe(digest).slice(0, 60);
 }
 
+function paymentStateSheet_(createIfMissing) {
+  const ss = backendSpreadsheet_();
+  let sh = ss.getSheetByName(CONFIG.PAYMENT_STATE_SHEET);
+  if (!sh && createIfMissing) {
+    sh = ss.insertSheet(CONFIG.PAYMENT_STATE_SHEET);
+    sh.getRange(1, 1, 1, 9).setValues([[
+      'key', 'source', 'sheet', 'queue', 'dueDate',
+      'total', 'byDayJson', 'reviewRowsJson', 'updatedAt'
+    ]]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function normalizePaymentCycle_(cycle) {
+  const value = cycle && typeof cycle === 'object' ? cycle : {};
+  const byDay = value.byDay && typeof value.byDay === 'object' ? value.byDay : {};
+  return {
+    total: Math.round(paymentNumber_(value.total) * 100) / 100,
+    byDay: byDay,
+    reviewRows: Array.isArray(value.reviewRows) ? value.reviewRows.slice() : []
+  };
+}
+
+function paymentCycleRecord_(source, sheet, queue, due) {
+  const key = paymentCycleKey_(source, sheet, queue, due);
+  const empty = { total: 0, byDay: {}, reviewRows: [] };
+  const sh = paymentStateSheet_(false);
+  if (!sh || sh.getLastRow() < 2) {
+    return { key: key, rowNo: 0, raw: '', cycle: empty };
+  }
+
+  const range = sh.getRange(2, 1, sh.getLastRow() - 1, 1);
+  let found = null;
+  try {
+    found = range.createTextFinder(key)
+      .matchEntireCell(true)
+      .matchCase(true)
+      .useRegularExpression(false)
+      .findNext();
+  } catch (err) {}
+  if (!found) return { key: key, rowNo: 0, raw: '', cycle: empty };
+
+  const rowNo = found.getRow();
+  const row = sh.getRange(rowNo, 1, 1, 9).getValues()[0];
+  let byDay = {};
+  let reviewRows = [];
+  try { byDay = row[6] ? JSON.parse(String(row[6])) : {}; } catch (err) {}
+  try { reviewRows = row[7] ? JSON.parse(String(row[7])) : []; } catch (err) {}
+  const cycle = normalizePaymentCycle_({
+    total: row[5],
+    byDay: byDay,
+    reviewRows: reviewRows
+  });
+  return {
+    key: key,
+    rowNo: rowNo,
+    raw: JSON.stringify(cycle),
+    cycle: cycle
+  };
+}
+
+function writePaymentCycleShared_(source, sheet, queue, due, cycle) {
+  const normalized = normalizePaymentCycle_(cycle);
+  const key = paymentCycleKey_(source, sheet, queue, due);
+  const sh = paymentStateSheet_(true);
+  let rowNo = 0;
+
+  if (sh.getLastRow() >= 2) {
+    try {
+      const found = sh.getRange(2, 1, sh.getLastRow() - 1, 1)
+        .createTextFinder(key)
+        .matchEntireCell(true)
+        .matchCase(true)
+        .useRegularExpression(false)
+        .findNext();
+      if (found) rowNo = found.getRow();
+    } catch (err) {}
+  }
+
+  const hasState = normalized.total > 0 ||
+    Object.keys(normalized.byDay || {}).length > 0 ||
+    normalized.reviewRows.length > 0;
+
+  if (!hasState) {
+    if (rowNo) sh.getRange(rowNo, 1, 1, 9).clearContent();
+    return { key: key, rowNo: rowNo, raw: '', cycle: normalized };
+  }
+
+  const values = [[
+    key,
+    String(source || '').trim(),
+    String(sheet || '').trim(),
+    String(queue || '').trim(),
+    dateKey_(due),
+    normalized.total,
+    JSON.stringify(normalized.byDay || {}),
+    JSON.stringify(normalized.reviewRows || []),
+    new Date()
+  ]];
+
+  if (rowNo) sh.getRange(rowNo, 1, 1, 9).setValues(values);
+  else {
+    rowNo = Math.max(2, sh.getLastRow() + 1);
+    sh.getRange(rowNo, 1, 1, 9).setValues(values);
+  }
+
+  return { key: key, rowNo: rowNo, raw: JSON.stringify(normalized), cycle: normalized };
+}
+
+function migratePaymentStateToSharedSheet() {
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties();
+  const paymentKeys = Object.keys(all).filter(function(key) {
+    return String(key || '').indexOf('payment-cycle:') === 0;
+  });
+
+  const metadata = {};
+  const log = backendSpreadsheet_().getSheetByName(CONFIG.LOG_SHEET);
+  if (log && log.getLastRow() >= 2) {
+    const rows = log.getRange(2, 1, log.getLastRow() - 1, 11).getDisplayValues();
+    rows.forEach(function(row) {
+      if (String(row[8] || '').trim() !== 'paymentSourceBackupAfter') return;
+      const raw = String(row[10] || '').trim();
+      if (!raw) return;
+      try {
+        const backup = JSON.parse(raw);
+        if (!backup || !backup.cycleKey || !backup.source || !backup.sheet || !backup.queue || !backup.oldDue) return;
+        metadata[String(backup.cycleKey)] = backup;
+      } catch (err) {}
+    });
+  }
+
+  let migrated = 0;
+  const unmapped = [];
+  paymentKeys.forEach(function(key) {
+    const backup = metadata[key];
+    if (!backup) {
+      unmapped.push(key);
+      return;
+    }
+    let cycle = null;
+    try { cycle = JSON.parse(all[key]); } catch (err) {}
+    if (!cycle) {
+      unmapped.push(key);
+      return;
+    }
+    const due = new Date(backup.oldDue);
+    if (isNaN(due.getTime())) {
+      unmapped.push(key);
+      return;
+    }
+    writePaymentCycleShared_(backup.source, backup.sheet, backup.queue, due, cycle);
+    migrated++;
+  });
+
+  return {
+    ok: unmapped.length === 0,
+    paymentKeys: paymentKeys.length,
+    migrated: migrated,
+    unmapped: unmapped
+  };
+}
+
 function paymentNumber_(value) {
   if (typeof value === 'number') return value;
   const n = Number(String(value == null ? '' : value).replace(/,/g, '').trim());
@@ -4186,11 +4348,10 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   if (!(amount > 0)) return { ok: false, message: 'ยอดชำระไม่ถูกต้อง' };
   if (!(fee > 0)) return { ok: false, message: 'ค่าเช่าในต้นทางไม่ถูกต้อง' };
   const props = PropertiesService.getScriptProperties();
-  const cycleKey = paymentCycleKey_(sourceName, sourceSheet, customer.queue, oldDue);
-  const previousCycleRaw = props.getProperty(cycleKey) || '';
-  let cycle;
-  try { cycle = previousCycleRaw ? JSON.parse(previousCycleRaw) : { total: 0, byDay: {} }; }
-  catch (err) { return { ok: false, message: 'อ่านยอดรับชำระสะสมไม่ได้ กรุณาตรวจคิวก่อน' }; }
+  const previousCycleRecord = paymentCycleRecord_(sourceName, sourceSheet, customer.queue, oldDue);
+  const cycleKey = previousCycleRecord.key;
+  const previousCycleRaw = previousCycleRecord.raw;
+  let cycle = previousCycleRecord.cycle;
 
   const calendarStartCol = headers.note ? headers.note + 1 : Math.max(headers.dueDate + 1, 15);
   const reconciledCycle = reconcilePaymentCycleWithSource_(
@@ -4198,8 +4359,7 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   );
   cycle = reconciledCycle.cycle;
   if (reconciledCycle.changed) {
-    if (cycle.total > 0) props.setProperty(cycleKey, JSON.stringify(cycle));
-    else props.deleteProperty(cycleKey);
+    writePaymentCycleShared_(sourceName, sourceSheet, customer.queue, oldDue, cycle);
   }
 
   const totalBefore = paymentNumber_(cycle.total);
@@ -4294,7 +4454,7 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   cycle.byDay[paidDay] = Math.round((recordedToday + amount) * 100) / 100;
   cycle.reviewRows = (cycle.reviewRows || []).concat(reviewRowNo);
   backup.cycleAfter = JSON.stringify(cycle);
-  props.setProperty(cycleKey, backup.cycleAfter);
+  writePaymentCycleShared_(sourceName, sourceSheet, customer.queue, oldDue, cycle);
   backup.after = Object.keys(unique).map(function(key) { return snapshotCell_(unique[key]); });
   backup.writtenAt = new Date().toISOString();
   props.setProperty(paymentSourceWriteKey_(reviewRowNo), JSON.stringify(backup));
@@ -4363,10 +4523,17 @@ function rollbackReviewQueueLocked_(body) {
     return { ok: true, rolledBack: false, message: 'คิวนี้ถูกยกเลิกรายการไปแล้ว' };
   }
 
-  if (backup.cycleKey &&
-      PropertiesService.getScriptProperties().getProperty(backup.cycleKey) !== backup.cycleAfter) {
-    return { ok: true, rolledBack: false, stale: true,
-      message: 'มีการรับชำระรายการใหม่ในรอบนี้แล้ว กรุณายกเลิกรายการล่าสุดก่อน' };
+  if (backup.cycleKey) {
+    const currentCycle = paymentCycleRecord_(
+      backup.source,
+      backup.sheet,
+      backup.queue,
+      new Date(backup.oldDue)
+    );
+    if (currentCycle.raw !== String(backup.cycleAfter || '')) {
+      return { ok: true, rolledBack: false, stale: true,
+        message: 'มีการรับชำระรายการใหม่ในรอบนี้แล้ว กรุณายกเลิกรายการล่าสุดก่อน' };
+    }
   }
 
   const sourceSs = SpreadsheetApp.openById(String(backup.spreadsheetId || ''));
@@ -4390,14 +4557,23 @@ function rollbackReviewQueueLocked_(body) {
   SpreadsheetApp.flush();
 
   if (backup.cycleKey) {
-    if (backup.cycleBefore) props.setProperty(backup.cycleKey, backup.cycleBefore);
-    else props.deleteProperty(backup.cycleKey);
+    let previousCycle = { total: 0, byDay: {}, reviewRows: [] };
+    if (backup.cycleBefore) {
+      try { previousCycle = JSON.parse(backup.cycleBefore); } catch (err) {}
+    }
+    writePaymentCycleShared_(
+      backup.source,
+      backup.sheet,
+      backup.queue,
+      new Date(backup.oldDue),
+      previousCycle
+    );
   }
 
   backup.reversedAt = new Date().toISOString();
   backup.reversedBy = access.staffName || 'เจ้าของ';
   props.setProperty(key, JSON.stringify(backup));
-  persistPaymentBackupLog_(backup, 'paymentSourceRollback', 'สำเร็จ', 'ยกเลิกรายการ #' + rowNo + ' และคืนค่าต้นทางแล้ว');
+  persistPaymentBackupLog_(backup, 'paymentSourceRollback', 'สำเร็จ', JSON.stringify(backup));
 
   reviewSheet.getRange(rowNo, 9).setValue('ยกเลิกรายการ');
   reviewSheet.getRange(rowNo, 10).setValue(access.staffName || 'เจ้าของ');
