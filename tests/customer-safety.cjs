@@ -92,6 +92,15 @@ const grid = (data) => ({
   getRange: (row, column, count = 1, width = 1) => ({
     getDisplayValues: () => data.slice(row - 1, row - 1 + count).map((r) => r.slice(column - 1, column - 1 + width).map((x) => String(x ?? ''))),
     getValues: () => data.slice(row - 1, row - 1 + count).map((r) => r.slice(column - 1, column - 1 + width)),
+    setValues: (values) => {
+      values.forEach((sourceRow, rowOffset) => {
+        const targetRow = row - 1 + rowOffset;
+        while (data.length <= targetRow) data.push([]);
+        sourceRow.forEach((value, colOffset) => {
+          data[targetRow][column - 1 + colOffset] = value;
+        });
+      });
+    },
   }),
   appendRow: (row) => data.push(row),
 });
