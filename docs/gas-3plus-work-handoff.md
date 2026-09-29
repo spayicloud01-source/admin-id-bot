@@ -154,7 +154,7 @@ Notify examples:
 1. Preview deployment must be READY.
 2. Check `/api/health`.
 3. Check `/api/sheets/diagnostics`.
-4. Check GET on all three GAS URLs: version `126`, correct role.
+4. Check GET on all three GAS URLs: version `2026.09.29-127`, correct role.
 5. Customer:
    - customer lookup
    - bound customer "ข้อมูล"
