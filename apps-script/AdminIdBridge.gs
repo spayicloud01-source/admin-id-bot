@@ -2759,10 +2759,11 @@ function getCustomerSelf_(body) {
     field: field
   };
 
-  // A few seconds of result caching makes consecutive customer buttons fast
-  // without leaving payment totals stale for long.
+  // Keep consecutive customer buttons fast, but use a short TTL because
+  // payment writes now happen in a separate GAS project and cannot invalidate
+  // this project's CacheService directly.
   if (selfCacheKey) {
-    try { cache.put(selfCacheKey, JSON.stringify(result), 20); } catch (err) {}
+    try { cache.put(selfCacheKey, JSON.stringify(result), 5); } catch (err) {}
   }
 
   // Last-access is operational metadata, not part of payment correctness.
