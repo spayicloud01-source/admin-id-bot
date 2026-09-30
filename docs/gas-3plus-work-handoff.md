@@ -2,6 +2,16 @@
 
 Branch: `refactor/gas-3plus`
 
+## Live progress, 2026-09-30 20:xx (Asia/Bangkok)
+
+- PR #10 is still Draft and unmerged. Branch head before this documentation update: `efc9a738893a5fd4573550276c80bffbf2e141f4`. GitHub CI succeeded and Vercel Preview is READY. Production evolved independently on `main` with the latest fine-receipt changes; do not overwrite it from an older bridge.
+- Found and renamed the existing unfinished Notify project, script ID `19bLLYOJFgM7170tNeRE3c93JkSeQ_Jz0W4ZjyZUsSjkQdQgREjzRBR7v`; no duplicate was created.
+- Customer, Payment, and Notify now each contain the complete current `apps-script/AdminIdBridge.gs` source, release `2026.09.30-129`. Full editor copies were compared with the branch file before saving. The branch source must be checked again immediately before deploy if new commits arrive.
+- All three Script Properties contain the backend spreadsheet ID, their respective `BRIDGE_ROLE`, and the same existing `SHEETS_BRIDGE_SECRET` (value must not be put in GitHub). Customer also has its legacy paused-conversation property. Notify has the legacy reminder target list. All three timezones are Bangkok.
+- No new Web App is live yet. Customer deploy was started with owner-only access, then Google presented an unverified-app warning requesting sensitive account access. Automatic approval review rejected clicking the warning's unsafe continuation. Do not bypass it without explicit user action/authorization. Broad Web App access `Anyone` was separately rejected by automatic approval review until explicitly authorized. No `/exec` URLs were collected; no dedicated Vercel URL variables were set; no live split-role tests have passed.
+- Vercel owner account `tortor55555568@gmail.com` was authenticated and the project Environment Variables page was opened. Existing `GOOGLE_APPS_SCRIPT_URL` remains configured in Preview and Production. Preserve it as fallback. Do not install a second daily reminder trigger during Preview because the legacy trigger remains active.
+- Next: finish Google OAuth and access decisions through the approved flow, deploy all three Web Apps, verify GET release `2026.09.30-129` and correct roles, set three Preview-only URLs, redeploy Preview, then run the full safe test matrix below. Keep PR #10 Draft and unmerged until all pass.
+
 ## Live progress, 2026-09-29 (Asia/Bangkok)
 
 - The legacy bound project `Scriptตามยอด` was opened from backend spreadsheet `1uUmRtl7YD0IryKz8MFwhw2r3l6aW3uxTMic7KpN5sKc`. A **new** `MigratePaymentState.gs` file was added; the existing `รหัส.gs` was not replaced or deployed.
@@ -22,7 +32,7 @@ Do **not** merge to `main` until all three Apps Script deployments below are liv
 - Vercel bridge routes actions by role: `customer`, `payment`, `notify`.
 - If a dedicated role URL is not configured, Vercel continues using the existing `GOOGLE_APPS_SCRIPT_URL`.
 - GAS supports `BRIDGE_ROLE` and rejects actions assigned to another role.
-- Current GAS version on this branch: `2026.09.29-127`.
+- Current GAS version on this branch: `2026.09.30-129` (recheck immediately before deployment).
 - Manual notification queue inserts are batched with `setValues()`.
 - Automatic reminder new-row inserts are batched with `setValues()`.
 - Existing CacheService behavior is retained for customer/search/settings reads.
@@ -102,7 +112,7 @@ Expected response shape:
 {
   "ok": true,
   "service": "Admin ID Google Sheets Bridge",
-  "version": "2026.09.29-127",
+  "version": "2026.09.30-129",
   "role": "customer"
 }
 ```
@@ -167,7 +177,7 @@ Notify examples:
 1. Preview deployment must be READY.
 2. Check `/api/health`.
 3. Check `/api/sheets/diagnostics`.
-4. Check GET on all three GAS URLs: version `2026.09.29-127`, correct role.
+4. Check GET on all three GAS URLs: version `2026.09.30-129` (or later current branch version), correct role.
 5. Customer:
    - customer lookup
    - bound customer "ข้อมูล"
