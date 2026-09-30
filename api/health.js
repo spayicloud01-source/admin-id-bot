@@ -2,7 +2,7 @@
 const HEALTH_SCHEMA_VERSION = 3;
 import { callSheetsBridge, getBridgeRoutingStatus } from "../lib/sheetsBridge.js";
 
-const EXPECTED_BRIDGE_VERSION = "2026.09.30-128";
+const EXPECTED_BRIDGE_VERSION = "2026.09.30-129";
 const EXPECTED_ACTIVE_SOURCES = 2;
 
 function normalizeSelfTestForActiveSources(selfTest) {
@@ -52,7 +52,7 @@ export default async function handler(req, res) {
       ok: envReady,
       service: "Admin ID",
       healthSchemaVersion: HEALTH_SCHEMA_VERSION,
-      appVersion: "2026.09.30-128",
+      appVersion: "2026.09.30-129",
       expectedBridgeVersion: EXPECTED_BRIDGE_VERSION,
       environment,
       bridgeRouting,
@@ -105,7 +105,7 @@ export default async function handler(req, res) {
     ok: readyForFullTest,
     service: "Admin ID",
     healthSchemaVersion: HEALTH_SCHEMA_VERSION,
-    appVersion: "2026.09.30-128",
+    appVersion: "2026.09.30-129",
     expectedBridgeVersion: EXPECTED_BRIDGE_VERSION,
     environment,
     bridgeRouting,

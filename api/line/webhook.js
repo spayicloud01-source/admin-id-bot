@@ -1660,7 +1660,7 @@ async function handleEvent(event) {
       if (command.action === "queuePayment" && (!command.query || !Number.isFinite(command.amount) || command.amount <= 0)) {
         await replyMessage(event.replyToken, [{
           type: "text",
-          text: "รับชำระ\nพิมพ์: <เลขคิว> <ยอดชำระจริง>\nตัวอย่าง: 310-4 1200\nระบบจะเลือกคิวที่ตรงเป๊ะก่อน หากยังซ้ำจึงค่อยให้ระบุเพิ่มเติม\nรายการจะเข้าคิวตรวจสอบก่อน ยังไม่แก้ยอดในชีตต้นทาง",
+          text: command.paymentKind === "fine" ? "พิมพ์: รับค่าปรับ <คิว> <ยอด> [วัน/เดือน/ปี]\nตัวอย่าง: รับค่าปรับ 310-3 100 29/9/2569\nหากไม่ระบุวันที่ จะใช้วันนี้" : "รับชำระ\nพิมพ์: <เลขคิว> <ยอดชำระจริง>\nตัวอย่าง: 310-4 1200\nระบบจะเลือกคิวที่ตรงเป๊ะก่อน หากยังซ้ำจึงค่อยให้ระบุเพิ่มเติม\nรายการจะเข้าคิวตรวจสอบก่อน ยังไม่แก้ยอดในชีตต้นทาง",
         }]);
         return;
       }
@@ -1717,6 +1717,8 @@ async function handleEvent(event) {
       if (command.idLast4) payload.idLast4 = command.idLast4;
       if (command.note) payload.note = command.note;
       if (command.amount != null) payload.amount = command.amount;
+      if (command.paymentKind) payload.paymentKind = command.paymentKind;
+      if (command.paidOn) payload.paidOn = command.paidOn;
       if (command.decision) payload.decision = command.decision;
       if (command.enabled != null) payload.enabled = command.enabled;
       if (command.dueMode) payload.dueMode = command.dueMode;
@@ -2199,7 +2201,9 @@ async function handleEvent(event) {
             ? (result.type === "ปิดยอด"
                 ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nรอรับรหัส***** สักครู่นะครับ ภายใน 24 ชม."
                 : result.sourceWritten
-                  ? result.sourceWrite?.cycleComplete !== false
+                  ? result.sourceWrite?.fineOnly
+                    ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nบันทึกค่าปรับแล้ว วันจ่ายและยอดค่าเช่าไม่เปลี่ยน"
+                    : result.sourceWrite?.cycleComplete !== false
                     ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nลงยอดครบในชีตต้นทางและเลื่อนวันจ่ายรอบถัดไปแล้ว"
                     : "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nรับชำระบางส่วนแล้ว สะสม " + result.sourceWrite?.paidTotal + " บาท เหลือ " + result.sourceWrite?.remaining + " บาท วันจ่ายยังไม่เลื่อน"
                   : "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nบันทึกประวัติแล้ว")

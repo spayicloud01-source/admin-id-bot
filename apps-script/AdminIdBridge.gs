@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.30-128',
+  VERSION: '2026.09.30-129',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -282,7 +282,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.30-128', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.30-129', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -512,7 +512,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.30-128', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.30-129', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -2131,7 +2131,7 @@ function latestDiscountStart_(customer, fallbackDate) {
   const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!sh || sh.getLastRow() < 2) return fallbackDate;
-  const allowed = { 'ชำระค่าเช่า': true, 'ค่าปรับ': true, 'ต่อรอบ': true };
+  const allowed = { 'ชำระค่าเช่า': true, 'ต่อรอบ': true };
   const queueText = String(customer.queue || '').trim();
   const queueKey = normalizeGeneral_(queueText);
   const queueRange = sh.getRange(2, 4, sh.getLastRow() - 1, 1);
@@ -3888,7 +3888,7 @@ function getReviewQueueItem_(body) {
 
 function appendHistoryFromApprovedReview_(reviewRow, reviewRowNo, approver, sourceWritten) {
   const type = String(reviewRow[1] || '').trim();
-  if (type !== 'บันทึกชำระ' && type !== 'ปิดยอด') return false;
+  if (type !== 'บันทึกชำระ' && type !== 'รับค่าปรับ' && type !== 'ปิดยอด') return false;
 
   const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
@@ -3897,11 +3897,11 @@ function appendHistoryFromApprovedReview_(reviewRow, reviewRowNo, approver, sour
   const sourceParts = String(reviewRow[4] || '').split(' / ');
   const source = String(sourceParts[0] || '').trim();
   const sourceSheet = sourceParts.slice(1).join(' / ').trim();
-  const eventType = type === 'ปิดยอด' ? 'ปิดยอด' : 'ชำระค่าเช่า';
+  const eventType = type === 'ปิดยอด' ? 'ปิดยอด' : type === 'รับค่าปรับ' ? 'ค่าปรับ' : 'ชำระค่าเช่า';
   const note = 'อนุมัติจากคิวตรวจสอบ #' + reviewRowNo + (sourceWritten ? ' / ซิงก์ชีตต้นทางแล้ว' : ' / ยังไม่ซิงก์ชีตต้นทาง');
 
   sh.appendRow([
-    new Date(),
+    type === 'รับค่าปรับ' ? finePaidDate_(reviewRow[5]) : new Date(),
     source,
     sourceSheet,
     String(reviewRow[2] || '').trim(),
@@ -4193,6 +4193,7 @@ function snapshotCell_(range) {
     formula: range.getFormula() || '',
     value: packCellValue_(range.getValue()),
     numberFormat: range.getNumberFormat() || '',
+    note: typeof range.getNote === 'function' ? range.getNote() || '' : undefined,
     background: range.getBackground() || ''
   };
 }
@@ -4203,11 +4204,13 @@ function restoreCellSnapshot_(sheet, snap) {
   else range.setValue(unpackCellValue_(snap.value));
   if (snap.numberFormat) range.setNumberFormat(snap.numberFormat);
   if (snap.background) range.setBackground(snap.background);
+  if (snap.note !== undefined) range.setNote(snap.note);
 }
 
 function snapshotMatchesCurrent_(sheet, snap) {
   const range = sheet.getRange(Number(snap.row), Number(snap.col));
   const formula = range.getFormula() || '';
+  if (snap.note !== undefined && (range.getNote() || '') !== snap.note) return false;
   if (formula !== String(snap.formula || '')) return false;
   if (formula) return true;
   const current = packCellValue_(range.getValue());
@@ -4309,6 +4312,66 @@ function reconcilePaymentCycleWithSource_(sheet, headers, sourceRow, calendarSta
       reviewRows: Array.isArray(original.reviewRows) ? original.reviewRows.slice() : []
     }
   };
+}
+
+function finePaidDate_(detail) {
+  const m = String(detail || '').match(/วันที่รับเงินจริง: (\d{4}-\d{2}-\d{2})/);
+  if (!m) return null;
+  const d = new Date(m[1] + 'T00:00:00+07:00');
+  return !isNaN(d.getTime()) && dateKey_(d) === m[1] && m[1] <= dateKey_(new Date()) ? d : null;
+}
+
+function applyApprovedFineToSource_(reviewRow, rawReviewRow, reviewRowNo) {
+  if (!isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false))) {
+    return { ok: false, message: 'ระบบเขียนชีตต้นทางยังปิดอยู่' };
+  }
+  const parts = String(reviewRow[4] || '').split(' / ');
+  const sourceName = String(parts.shift() || '').trim();
+  const sourceSheet = parts.join(' / ').trim();
+  if (!paymentTabAllowed_(sourceName, sourceSheet)) return { ok: false, message: 'แถบรับชำระไม่ถูกต้อง' };
+  const customer = findCustomerIdentity_(sourceName, sourceSheet, reviewRow[2]);
+  if (!customer || normalizeGeneral_(customer.name) !== normalizeGeneral_(reviewRow[3])) {
+    return { ok: false, message: 'ข้อมูลลูกค้าเปลี่ยนแล้ว กรุณาตรวจคิวก่อน' };
+  }
+  const amount = paymentNumber_(rawReviewRow[6]);
+  const paidAt = finePaidDate_(reviewRow[5]);
+  if (!(amount > 0) || !paidAt) return { ok: false, message: 'ยอดค่าปรับหรือวันที่รับเงินจริงไม่ถูกต้อง' };
+  const ss = sourceSpreadsheetFor_(sourceName);
+  const sheet = ss && ss.getSheetByName(sourceSheet);
+  if (!sheet) return { ok: false, message: 'เปิดชีตต้นทางไม่ได้' };
+  const headers = detectHeaders_(sheet);
+  if (!headers || !headers.dueDate) return { ok: false, message: 'หัวตารางต้นทางไม่ครบ' };
+  const col = findCalendarDateColumn_(sheet, headers.headerRow,
+    headers.note ? headers.note + 1 : Math.max(headers.dueDate + 1, 15), paidAt);
+  if (!col) return { ok: false, message: 'ไม่พบช่องวันที่รับค่าปรับในปฏิทิน' };
+  const range = sheet.getRange(Number(customer.row), col);
+  const props = PropertiesService.getScriptProperties();
+  const key = paymentSourceWriteKey_(reviewRowNo);
+  const existingBackup = props.getProperty(key);
+  if (existingBackup) {
+    const prior = JSON.parse(existingBackup);
+    if (prior.writtenAt && !prior.reversedAt && prior.kind === 'fine' &&
+        (range.getNote() || '').indexOf('[ค่าปรับ #' + reviewRowNo + ']') >= 0) {
+      return { ok: true, written: true, fineOnly: true, amount: amount, paidDate: dateKey_(paidAt) };
+    }
+    return { ok: false, message: 'รายการนี้มีข้อมูลสำรองแล้ว กรุณาตรวจสอบก่อนลองซ้ำ' };
+  }
+  const backup = { version: 1, kind: 'fine', reviewRowNo: reviewRowNo,
+    source: sourceName, sheet: sourceSheet, spreadsheetId: ss.getId(),
+    sourceRow: Number(customer.row), queue: customer.queue, name: customer.name,
+    amount: amount, paidAt: paidAt.toISOString(), before: [snapshotCell_(range)],
+    createdAt: new Date().toISOString() };
+  props.setProperty(key, JSON.stringify(backup));
+  persistPaymentBackupLog_(backup, 'paymentSourceBackup', 'สำเร็จ', JSON.stringify(backup));
+  const line = '[ค่าปรับ #' + reviewRowNo + '] รับ ' + amount + ' บาท วันที่ ' + dateKey_(paidAt);
+  range.setNote([range.getNote() || '', line].filter(Boolean).join('\n'));
+  SpreadsheetApp.flush();
+  backup.after = [snapshotCell_(range)];
+  backup.writtenAt = new Date().toISOString();
+  props.setProperty(key, JSON.stringify(backup));
+  persistPaymentBackupLog_(backup, 'paymentSourceBackupAfter', 'สำเร็จ', JSON.stringify(backup));
+  return { ok: true, written: true, fineOnly: true, amount: amount,
+    paidDate: dateKey_(paidAt), source: sourceName, sheet: sourceSheet, sourceRow: Number(customer.row) };
 }
 
 function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
@@ -4503,8 +4566,8 @@ function rollbackReviewQueueLocked_(body) {
   }
 
   const reviewRow = reviewSheet.getRange(rowNo, 1, 1, 12).getDisplayValues()[0];
-  if (String(reviewRow[1] || '').trim() !== 'บันทึกชำระ') {
-    return { ok: true, rolledBack: false, message: 'ยกเลิกรายการอัตโนมัติได้เฉพาะรายการบันทึกชำระ' };
+  if (['บันทึกชำระ', 'รับค่าปรับ'].indexOf(String(reviewRow[1] || '').trim()) < 0) {
+    return { ok: true, rolledBack: false, message: 'ยกเลิกรายการอัตโนมัติได้เฉพาะรายการบันทึกชำระหรือรับค่าปรับ' };
   }
   if (String(reviewRow[8] || '').trim() !== 'ผ่าน') {
     return { ok: true, rolledBack: false, message: 'คิวนี้ไม่ได้อยู่สถานะผ่าน' };
@@ -4668,8 +4731,10 @@ function resolveReviewQueueLocked_(body) {
   }
 
   let sourceWrite = null;
-  if (decision === 'ผ่าน' && String(displayRow[1] || '').trim() === 'บันทึกชำระ') {
-    sourceWrite = applyApprovedPaymentToSource_(displayRow, rawRow, rowNo);
+  if (decision === 'ผ่าน' && ['บันทึกชำระ', 'รับค่าปรับ'].indexOf(String(displayRow[1] || '').trim()) >= 0) {
+    sourceWrite = String(displayRow[1]).trim() === 'รับค่าปรับ'
+      ? applyApprovedFineToSource_(displayRow, rawRow, rowNo)
+      : applyApprovedPaymentToSource_(displayRow, rawRow, rowNo);
     if (!sourceWrite || !sourceWrite.ok || !sourceWrite.written) {
       return {
         ok: true,
@@ -4728,7 +4793,9 @@ function resolveReviewQueueLocked_(body) {
     sourceWrite: sourceWrite,
     message: decision === 'ผ่าน'
       ? ('คิว #' + rowNo + ' ผ่านการตรวจสอบแล้ว' + (sourceWrite && sourceWrite.written
-          ? sourceWrite.cycleComplete
+          ? sourceWrite.fineOnly
+            ? ' บันทึกค่าปรับแล้ว วันจ่ายและยอดค่าเช่าไม่เปลี่ยน'
+            : sourceWrite.cycleComplete
             ? ' ลงยอดครบและเลื่อนวันจ่ายรอบถัดไปแล้ว'
             : ' ลงยอดรับแล้ว สะสม ' + sourceWrite.paidTotal + ' บาท เหลือ ' + sourceWrite.remaining + ' บาท วันจ่ายยังไม่เลื่อน'
           : ''))
@@ -5081,8 +5148,10 @@ function queueFinancialReview_(body, type) {
 }
 
 function queueFinancialReviewLocked_(body, type) {
+  if (type === 'บันทึกชำระ' && body.paymentKind === 'fine') type = 'รับค่าปรับ';
   const permissionMap = {
     'บันทึกชำระ': 'บันทึกชำระ',
+    'รับค่าปรับ': 'บันทึกชำระ',
     'ตรวจสลิป': 'ยืนยันสลิป',
     'ปิดยอด': 'ปิดยอด'
   };
@@ -5098,7 +5167,7 @@ function queueFinancialReviewLocked_(body, type) {
   if (!query) return { ok: true, queued: false, message: 'กรุณาระบุคำค้นลูกค้า' };
 
   let customer = null;
-  if (type === 'บันทึกชำระ' && body.exactCustomer) {
+  if ((type === 'บันทึกชำระ' || type === 'รับค่าปรับ') && body.exactCustomer) {
     const exact = body.exactCustomer || {};
     const exactSource = String(exact.source || '').trim();
     const exactSheet = String(exact.sheet || '').trim();
@@ -5143,7 +5212,20 @@ function queueFinancialReviewLocked_(body, type) {
   if (!sh) return { ok: false, error: 'ไม่พบชีตคิวตรวจสอบ' };
 
   const amount = body.amount == null ? '' : Number(body.amount);
-  const requestId = type === 'บันทึกชำระ' ? String(body.requestId || '').trim() : '';
+  const requestId = (type === 'บันทึกชำระ' || type === 'รับค่าปรับ') ? String(body.requestId || '').trim() : '';
+  const paidOn = String(body.paidOn || dateKey_(new Date())).trim();
+  const fineDetail = 'ค่าปรับ | วันที่รับเงินจริง: ' + paidOn;
+  if (type === 'รับค่าปรับ') {
+    if (!(amount > 0) || !finePaidDate_(fineDetail)) return { ok: true, queued: false, message: 'ยอดค่าปรับหรือวันที่ไม่ถูกต้อง' };
+    const rows = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 12).getDisplayValues() : [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      if (r[1] === type && r[2] === String(customer.queue) && r[4] === customer.source + ' / ' + customer.sheet &&
+          r[5] === fineDetail && paymentNumber_(r[6]) === amount && ['รอตรวจ', 'ผ่าน'].indexOf(r[8]) >= 0) {
+        return { ok: true, queued: false, duplicate: true, duplicateRowNo: i + 2, message: 'มีรายการค่าปรับนี้แล้ว #' + (i + 2) };
+      }
+    }
+  }
   const duplicateRowNo = hasDuplicatePendingReview_(sh, type, customer, amount, requestId);
   if (duplicateRowNo) {
     return {
@@ -5157,7 +5239,7 @@ function queueFinancialReviewLocked_(body, type) {
     };
   }
 
-  const detail = type === 'บันทึกชำระ'
+  const detail = type === 'รับค่าปรับ' ? fineDetail : type === 'บันทึกชำระ'
     ? 'คำขอบันทึกชำระจาก LINE'
     : type === 'ปิดยอด'
       ? 'คำขอปิดยอดจาก LINE'
@@ -5267,3 +5349,4 @@ function extractSpreadsheetId_(url) {
 }
 function isTrue_(v) { return v===true || String(v).toLowerCase()==='true' || String(v).trim()==='1'; }
 function json_(obj) { return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
+
