@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.09.29-125',
+  VERSION: '2026.09.30-128',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -218,7 +218,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.09.29-125', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.09.30-128', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -448,7 +448,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.09.28-123', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.09.30-128', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -4132,12 +4132,8 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
 
   const totalBefore = paymentNumber_(cycle.total);
   const totalAfter = Math.round((totalBefore + amount) * 100) / 100;
-  if (totalAfter > fee + 0.005) {
-    return {
-      ok: false,
-      message: 'ยอดรวม ' + totalAfter + ' เกินค่าเช่า ' + fee + ' กรุณาตรวจสอบก่อนกดผ่าน'
-    };
-  }
+  // Record the full approved receipt, including any amount above rent.
+  // An excess does not increase next cycle's rent or buy extra cycles.
   const fullyPaid = totalAfter >= fee - 0.005;
 
   const nextDue = addDays_(oldDue, 10);
