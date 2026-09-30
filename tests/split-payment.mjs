@@ -101,14 +101,30 @@ test('two approved payments on the same day accumulate without moving due date u
   assert.equal(f.cells.has('6:41'), false);
 });
 
-test('an extra payment that exceeds this cycle is rejected without changing the source', () => {
+test('rent plus an extra amount records the full receipt and keeps next rent unchanged', () => {
+  const f = fixture();
+  const result = f.pay(1150, 12);
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.amount, 1150);
+  assert.equal(result.paidTotal, 1150);
+  assert.equal(result.remaining, 0);
+  assert.equal(result.cycleComplete, true);
+  assert.equal(f.cells.get('6:42'), 1150);
+  assert.equal(f.cells.get('6:13').getDate(), 7);
+  assert.equal(f.cells.get('6:52'), 1000);
+});
+
+test('partial rent followed by rent balance plus an extra amount records both receipts', () => {
   const f = fixture();
   const first = f.pay(300, 12);
   assert.equal(first.ok, true, first.message);
-  const excess = f.pay(701, 13);
-  assert.equal(excess.ok, false);
-  assert.equal(f.cells.get('6:42'), 300);
-  assert.equal(f.cells.get('6:13').getDate(), 27);
+  const excess = f.pay(850, 13);
+  assert.equal(excess.ok, true, excess.message);
+  assert.equal(excess.paidTotal, 1150);
+  assert.equal(excess.cycleComplete, true);
+  assert.equal(f.cells.get('6:42'), 1150);
+  assert.equal(f.cells.get('6:13').getDate(), 7);
+  assert.equal(f.cells.get('6:52'), 1000);
 });
 
 test('a partial payment on the due date remains visible when the balance is paid the next day', () => {
