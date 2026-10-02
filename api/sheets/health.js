@@ -1,10 +1,10 @@
 export default async function handler(req, res) {
-  const url = process.env.GOOGLE_APPS_SCRIPT_URL;
+  const url = process.env.GOOGLE_APPS_SCRIPT_CUSTOMER_URL || process.env.GOOGLE_APPS_SCRIPT_URL;
 
   if (!url) {
     return res.status(500).json({
       ok: false,
-      error: "GOOGLE_APPS_SCRIPT_URL is not configured",
+      error: "Customer Google Apps Script URL is not configured",
     });
   }
 
@@ -36,3 +36,4 @@ export default async function handler(req, res) {
     });
   }
 }
+

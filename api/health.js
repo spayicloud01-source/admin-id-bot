@@ -1,6 +1,6 @@
 // release-sync: customer-id-ocr
 const HEALTH_SCHEMA_VERSION = 3;
-import { callSheetsBridge } from "../lib/sheetsBridge.js";
+import { callSheetsBridge, getBridgeRoutingStatus } from "../lib/sheetsBridge.js";
 
 const EXPECTED_BRIDGE_VERSION = "2026.10.03-130";
 const EXPECTED_ACTIVE_SOURCES = 2;
@@ -31,11 +31,16 @@ function normalizeSelfTestForActiveSources(selfTest) {
 export default async function handler(req, res) {
   const deep = String(req.query?.deep || "") === "1";
 
+  const bridgeRouting = getBridgeRoutingStatus();
+  const splitUrlsReady = bridgeRouting.customer && bridgeRouting.payment && bridgeRouting.notify;
+  const splitSecretsReady =
+    bridgeRouting.sharedSecret ||
+    (bridgeRouting.customerSecret && bridgeRouting.paymentSecret && bridgeRouting.notifySecret);
   const environment = {
     lineChannelSecret: Boolean(process.env.LINE_CHANNEL_SECRET),
     lineAccessToken: Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN),
-    sheetsBridgeUrl: Boolean(process.env.GOOGLE_APPS_SCRIPT_URL),
-    sheetsBridgeSecret: Boolean(process.env.SHEETS_BRIDGE_SECRET),
+    sheetsBridgeUrl: bridgeRouting.legacyFallback || splitUrlsReady,
+    sheetsBridgeSecret: splitSecretsReady,
     spreadsheetId: Boolean(process.env.SPREADSHEET_ID),
   };
   const envReady = Object.values(environment).every(Boolean);
@@ -47,9 +52,10 @@ export default async function handler(req, res) {
       ok: envReady,
       service: "Admin ID",
       healthSchemaVersion: HEALTH_SCHEMA_VERSION,
-      appVersion: "2026.09.28-123",
+      appVersion: "2026.10.03-130",
       expectedBridgeVersion: EXPECTED_BRIDGE_VERSION,
       environment,
+      bridgeRouting,
       bridge: { checked: false },
       deep: false,
       readyForFullTest: envReady,
@@ -99,9 +105,10 @@ export default async function handler(req, res) {
     ok: readyForFullTest,
     service: "Admin ID",
     healthSchemaVersion: HEALTH_SCHEMA_VERSION,
-    appVersion: "2026.09.28-123",
+    appVersion: "2026.10.03-130",
     expectedBridgeVersion: EXPECTED_BRIDGE_VERSION,
     environment,
+    bridgeRouting,
     bridge,
     deep: true,
     readyForFullTest,

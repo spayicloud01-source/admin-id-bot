@@ -20,13 +20,21 @@ function fixture(dueDate = '27 ก.ย. 26') {
     customer.source, customer.sheet, customer.queue, 'ใช้งาน', null, null, 'TRUE']];
   const notificationSheet = {
     getLastRow: () => records.length + 1,
-    getRange(row, col, count) {
-      if (row === 2 && col === 1 && count === records.length) {
-        return { getValues: () => records };
-      }
-      return {
-        setValue(value) { records[row - 2][col - 1] = value; }
+    getRange(row, col, count = 1, width = 1) {
+      const range = {
+        getValues: () => records.slice(row - 2, row - 2 + count).map((r) => r.slice(col - 1, col - 1 + width)),
+        setValue(value) { records[row - 2][col - 1] = value; },
+        setValues(values) {
+          values.forEach((sourceRow, rowOffset) => {
+            const targetRow = row - 2 + rowOffset;
+            while (records.length <= targetRow) records.push([]);
+            sourceRow.forEach((value, colOffset) => {
+              records[targetRow][col - 1 + colOffset] = value;
+            });
+          });
+        }
       };
+      return range;
     },
     appendRow(row) { records.push(row); }
   };
@@ -99,3 +107,4 @@ test('active accounts still receive due reminders', () => {
   f.records[0][8] = 'ส่งแล้ว';
   assert.equal(f.run().items.length, 0);
 });
+

@@ -14,14 +14,15 @@ const CONFIG = {
   REVIEW_QUEUE_SHEET: 'คิวตรวจสอบ',
   GROUP_SHEET: 'กลุ่ม LINE',
   NOTIFICATION_QUEUE_SHEET: 'คิวแจ้งเตือน',
+  PAYMENT_STATE_SHEET: 'สถานะชำระ',
   CUSTOMER_LINE_SHEET: 'ลูกค้า LINE',
   CUSTOMER_IDENTITY_SHEET: 'ยืนยันตัวตนลูกค้า',
   MAX_RESULTS: 20,
   MAX_ROWS_PER_TAB: 3000,
   HEADER_SCAN_ROWS: 20,
   HEADER_SCAN_COLS: 40,
-  SEARCH_CACHE_SECONDS: 300,
-  CUSTOMER_CACHE_SECONDS: 60,
+  SEARCH_CACHE_SECONDS: 30,
+  CUSTOMER_CACHE_SECONDS: 5,
   SETTINGS_CACHE_SECONDS: 30,
   REMINDER_ENDPOINT: 'https://admin-id-bot.vercel.app/api/reminders/run',
   EXCLUDED_TAB_PATTERNS: [
@@ -54,11 +55,64 @@ function activeCustomerTab_(workbook, sourceName) {
 
 let SETTINGS_MEMORY_CACHE_ = null;
 
+function backendSpreadsheet_() {
+  const configuredId = String(
+    PropertiesService.getScriptProperties().getProperty('BACKEND_SPREADSHEET_ID') || ''
+  ).trim();
+  if (configuredId) return SpreadsheetApp.openById(configuredId);
+
+  const active = SpreadsheetApp.getActiveSpreadsheet();
+  if (!active) {
+    throw new Error('BACKEND_SPREADSHEET_ID is required for standalone Apps Script projects');
+  }
+  return active;
+}
+
+
+
+function bridgeRole_() {
+  const raw = String(
+    PropertiesService.getScriptProperties().getProperty('BRIDGE_ROLE') || 'all'
+  ).trim().toLowerCase();
+  return ['customer', 'payment', 'notify', 'all'].indexOf(raw) >= 0 ? raw : 'all';
+}
+
+function bridgeActionRole_(action, body) {
+  const name = String(action || '').trim();
+  if (name === 'searchCustomer' && body && body.paymentLookup === true) return 'payment';
+  const paymentActions = [
+    'queuePayment', 'queueSlipReview', 'queueClose',
+    'listReviewQueue', 'getReviewQueueItem', 'cancelReviewQueue',
+    'planSourceWrite', 'resolveReviewQueue', 'rollbackReviewQueue',
+    'rememberSlipMessage', 'rememberRecentImage', 'getRecentIdentityImages'
+  ];
+  const notifyActions = [
+    'installReminderTrigger', 'getReminderTriggerStatus',
+    'getReminderBatch', 'markReminderSent',
+    'getCustomerReminderBatch', 'markCustomerReminderSent',
+    'listCustomerNotificationSheets', 'setCustomerAutoReminderSheet',
+    'buildCustomerNotificationBatch', 'resolveCustomerNotificationRecipient',
+    'getCustomerContactRecipients', 'getStaffSlipRecipients'
+  ];
+  if (paymentActions.indexOf(name) >= 0) return 'payment';
+  if (notifyActions.indexOf(name) >= 0) return 'notify';
+  return 'customer';
+}
+
+function bridgeRoleAllowsAction_(role, action, body) {
+  if (role === 'all') return true;
+  if (['getBridgeVersion', 'postDeploySelfTest', 'readinessCheck'].indexOf(String(action || '').trim()) >= 0) {
+    return true;
+  }
+  return bridgeActionRole_(action, body) === role;
+}
+
 function doGet() {
   return json_({
     ok: true,
     service: 'Admin ID Google Sheets Bridge',
-    version: CONFIG.VERSION
+    version: CONFIG.VERSION,
+    role: bridgeRole_()
   });
 }
 
@@ -71,10 +125,20 @@ function doPost(e) {
       return json_({ ok: false, error: 'Unauthorized' });
     }
 
+    const bridgeRole = bridgeRole_();
+    if (!bridgeRoleAllowsAction_(bridgeRole, body.action, body)) {
+      return json_({
+        ok: false,
+        error: 'Action not allowed for this bridge role',
+        role: bridgeRole,
+        action: String(body.action || '')
+      });
+    }
+
     let result;
     switch (body.action) {
       case 'getBridgeVersion':
-        result = { ok: true, version: CONFIG.VERSION }; break;
+        result = { ok: true, version: CONFIG.VERSION, role: bridgeRole }; break;
       case 'postDeploySelfTest':
         result = postDeploySelfTest_(); break;
       case 'readinessCheck':
@@ -205,7 +269,7 @@ function doPost(e) {
 }
 
 function postDeploySelfTest_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const checks = [];
   const warnings = [];
 
@@ -294,7 +358,7 @@ function postDeploySelfTest_() {
 }
 
 function setSettingValue_(key, value) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
   if (!sh) return false;
   const lastRow = sh.getLastRow();
@@ -442,7 +506,7 @@ function readinessCheck_(body) {
     return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const checks = [];
   function add(name, pass, detail) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
@@ -458,7 +522,7 @@ function readinessCheck_(body) {
     const vals = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1, 3).getValues();
     enabledSources = vals.filter(function(r){ return String(r[1] || '').trim() && isTrue_(r[2]); }).length;
   }
-  add('แหล่งข้อมูล', enabledSources >= 8, enabledSources + ' แหล่ง');
+  add('แหล่งข้อมูล', enabledSources === 2, enabledSources + ' แหล่ง');
 
   const staffSheet = ss.getSheetByName(CONFIG.STAFF_SHEET);
   let ownerCount = 0, activeStaff = 0;
@@ -508,7 +572,7 @@ function checkAccess_(body) {
   const lineUserId = String(body.lineUserId || '').trim();
   if (!lineUserId) return { ok: true, allowed: false, message: 'ไม่พบ LINE User ID' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sheet = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sheet) return { ok: true, allowed: false, message: 'ไม่พบชีตเจ้าหน้าที่' };
 
@@ -596,7 +660,7 @@ function registerStaff_(body) {
     return { ok: true, registered: false, message: 'กรุณาพิมพ์ชื่อเจ้าหน้าที่ให้ตรงกับที่ลงทะเบียนไว้' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh) return { ok: false, error: 'ไม่พบชีตเจ้าหน้าที่' };
 
@@ -670,7 +734,7 @@ function registerStaff_(body) {
 function getGroupConfig_(groupId) {
   const id = String(groupId || '').trim();
   if (!id) return null;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.GROUP_SHEET);
   if (!sh || sh.getLastRow() < 2) return null;
 
@@ -706,7 +770,7 @@ function setGroupEnabled_(body) {
   }
 
   const enabled = body.enabled === true;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.GROUP_SHEET);
   if (!sh) return { ok: false, error: 'ไม่พบชีตกลุ่ม LINE' };
 
@@ -785,7 +849,7 @@ function setGroupNotification_(body) {
   const group = getGroupConfig_(body.groupId);
   if (!group) return { ok: true, changed: false, message: 'ต้องเปิดกลุ่มก่อนด้วยคำสั่ง เปิดกลุ่ม' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.GROUP_SHEET);
   const enabled = body.enabled === true;
   sh.getRange(group.rowNo, 5).setValue(enabled);
@@ -798,7 +862,7 @@ function setGroupNotification_(body) {
 }
 
 function getReminderOwnerLineIds_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) return [];
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
@@ -812,7 +876,7 @@ function getReminderOwnerLineIds_() {
 }
 
 function getReminderGroupIds_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.GROUP_SHEET);
   if (!sh || sh.getLastRow() < 2) return [];
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, 9).getValues();
@@ -892,7 +956,7 @@ function getReminderBatch_(body) {
 
 
 function getAllActiveStaffLineIds_() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) return [];
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
@@ -1004,7 +1068,7 @@ function setCustomerAutoReminderSheet_(body) {
 
 function isConfiguredCustomerNotificationSheet_(source, sheet) {
   if (!isActiveCustomerTarget_(source, sheet)) return false;
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const links = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!links || links.getLastRow() < 2) return false;
   const rows = links.getRange(2, 1, links.getLastRow() - 1, 3).getDisplayValues();
@@ -1204,7 +1268,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
   const lineSheet = customerLineSheet_();
   if (lineSheet.getLastRow() < 2) return { ok: true, allowed: true, items: [] };
   const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
-  const notifySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
+  const notifySheet = backendSpreadsheet_().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
   const type = 'เจ้าของ-' + notificationFieldLabel_(field);
   const todayKey = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
@@ -1223,6 +1287,8 @@ function buildCustomerNotificationBatchLocked_(body, access) {
 
   const items = [];
   const seen = {};
+  const rowsToAppend = [];
+  const firstNewRowNo = notifySheet.getLastRow() + 1;
   for (let i = 0; i < bindings.length; i++) {
     const r = bindings[i];
     if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
@@ -1244,7 +1310,8 @@ function buildCustomerNotificationBatchLocked_(body, access) {
     if (isInactiveDueStatus_(c.status)) continue;
     const summary = calculateCustomerSelfSummary_(c);
     const message = buildCustomerNotificationMessage_(summary, field, customMessage);
-    notifySheet.appendRow([
+    const rowNo = firstNewRowNo + rowsToAppend.length;
+    rowsToAppend.push([
       new Date(),
       type,
       queue,
@@ -1259,7 +1326,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
     ]);
     existingKeys[notificationKey] = true;
     items.push({
-      rowNo: notifySheet.getLastRow(),
+      rowNo: rowNo,
       lineUserId: lineUserId,
       queue: queue,
       name: summary.name || '',
@@ -1267,6 +1334,10 @@ function buildCustomerNotificationBatchLocked_(body, access) {
       message: message,
       summary: summary
     });
+  }
+
+  if (rowsToAppend.length) {
+    notifySheet.getRange(firstNewRowNo, 1, rowsToAppend.length, 11).setValues(rowsToAppend);
   }
 
   logAction_({
@@ -1349,7 +1420,7 @@ function getCustomerReminderBatchLocked_(body) {
   const lineSheet = customerLineSheet_();
   if (lineSheet.getLastRow() < 2) return { ok: true, items: [] };
 
-  const notifySheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
+  const notifySheet = backendSpreadsheet_().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
 
   const enabledKeys = getCustomerAutoReminderSheetKeys_();
@@ -1386,6 +1457,8 @@ function getCustomerReminderBatchLocked_(body) {
   });
 
   const items = [];
+  const rowsToAppend = [];
+  const firstNewRowNo = notifySheet.getLastRow() + 1;
   for (let i = 0; i < bindings.length; i++) {
     const r = bindings[i];
     if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
@@ -1416,10 +1489,9 @@ function getCustomerReminderBatchLocked_(body) {
     if (daysFromDue < 0) continue;
     let paidTotal = 0;
     try {
-      const rawCycle = PropertiesService.getScriptProperties().getProperty(
-        paymentCycleKey_(source, sheet, c.queue, due)
+      paidTotal = paymentNumber_(
+        paymentCycleRecord_(source, sheet, c.queue, due).cycle.total
       );
-      if (rawCycle) paidTotal = paymentNumber_(JSON.parse(rawCycle).total);
     } catch (err) {
       // Do not claim that an unreadable payment ledger is unpaid.
       continue;
@@ -1449,7 +1521,8 @@ function getCustomerReminderBatchLocked_(body) {
 
     let rowNo = found ? found.rowNo : 0;
     if (!rowNo) {
-      notifySheet.appendRow([
+      rowNo = firstNewRowNo + rowsToAppend.length;
+      rowsToAppend.push([
         new Date(),
         overdue ? 'ลูกค้า-ค้างชำระ' : 'ลูกค้า-ครบกำหนด',
         String(c.queue || '').trim(),
@@ -1462,7 +1535,6 @@ function getCustomerReminderBatchLocked_(body) {
         '',
         sourceKey
       ]);
-      rowNo = notifySheet.getLastRow();
       existingMap[key] = { rowNo: rowNo, status: 'รอส่ง' };
     } else {
       notifySheet.getRange(rowNo, 8).setValue(message);
@@ -1480,6 +1552,10 @@ function getCustomerReminderBatchLocked_(body) {
       sheet: sheet,
       message: message
     });
+  }
+
+  if (rowsToAppend.length) {
+    notifySheet.getRange(firstNewRowNo, 1, rowsToAppend.length, 11).setValues(rowsToAppend);
   }
 
   if (items.length) {
@@ -1510,7 +1586,7 @@ function markCustomerReminderSent_(body) {
   if (!Number.isInteger(rowNo) || rowNo < 2) {
     return { ok: false, error: 'rowNo ไม่ถูกต้อง' };
   }
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
+  const sh = backendSpreadsheet_().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!sh || rowNo > sh.getLastRow()) return { ok: false, error: 'ไม่พบรายการแจ้งเตือน' };
   const row = sh.getRange(rowNo, 1, 1, 11).getDisplayValues()[0];
   const currentStatus = String(row[8] || '').trim();
@@ -1636,7 +1712,7 @@ function staffPermissionMap_() {
 
 function findStaffByName_(staffName) {
   const name = String(staffName || '').trim();
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) return { sheet: sh, matches: [] };
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, 20).getValues();
@@ -1727,7 +1803,7 @@ function listStaff_(body) {
     return { ok: true, allowed: false, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
 
@@ -1759,7 +1835,7 @@ function setStaffEnabled_(body) {
   const enabled = body.enabled === true;
   if (!staffName) return { ok: true, changed: false, message: 'กรุณาระบุชื่อเจ้าหน้าที่' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) {
     return { ok: true, changed: false, message: 'ไม่พบเจ้าหน้าที่' };
@@ -1807,7 +1883,7 @@ function listPendingStaff_(body) {
     return { ok: true, allowed: false, message: requester.message || 'ไม่มีสิทธิ์จัดการเจ้าหน้าที่' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
 
@@ -1836,7 +1912,7 @@ function rejectStaff_(body) {
   const staffName = String(body.query || '').trim();
   if (!staffName) return { ok: true, rejected: false, message: 'รูปแบบ: ไม่อนุมัติ <ชื่อเจ้าหน้าที่>' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh || sh.getLastRow() < 2) {
     return { ok: true, rejected: false, message: 'ไม่พบเจ้าหน้าที่รออนุมัติ' };
@@ -1891,7 +1967,7 @@ function approveStaff_(body) {
   const staffName = String(body.query || '').trim();
   if (!staffName) return { ok: true, approved: false, message: 'รูปแบบ: อนุมัติ <ชื่อเจ้าหน้าที่>' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.STAFF_SHEET);
   if (!sh) return { ok: false, error: 'ไม่พบชีตเจ้าหน้าที่' };
 
@@ -1952,7 +2028,7 @@ function getSettingValue_(key, fallback) {
 
     if (!SETTINGS_MEMORY_CACHE_) {
       const map = {};
-      const ss = SpreadsheetApp.getActiveSpreadsheet();
+      const ss = backendSpreadsheet_();
       const sh = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
       if (sh && sh.getLastRow() >= 2) {
         const values = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues();
@@ -1979,7 +2055,7 @@ function getSettingValue_(key, fallback) {
   }
   return fallback;
   /* legacy direct-sheet lookup retained below for rollback reference
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.SETTINGS_SHEET);
   if (!sh || sh.getLastRow() < 2) return fallback;
   const values = sh.getRange(2, 1, sh.getLastRow() - 1, 5).getValues();
@@ -2052,7 +2128,7 @@ function formatThaiDate_(d) {
 }
 
 function latestDiscountStart_(customer, fallbackDate) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!sh || sh.getLastRow() < 2) return fallbackDate;
   const allowed = { 'ชำระค่าเช่า': true, 'ต่อรอบ': true };
@@ -2119,7 +2195,7 @@ function verifyCustomerIdentity_(body) {
   }
 
   const m = matches[0];
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.CUSTOMER_IDENTITY_SHEET);
   if (!sh) throw new Error('ไม่พบชีต ' + CONFIG.CUSTOMER_IDENTITY_SHEET);
 
@@ -2180,7 +2256,7 @@ function verifyCustomerIdentity_(body) {
 }
 
 function findVerifiedIdentity_(queue, fullName) {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.CUSTOMER_IDENTITY_SHEET);
+  const sh = backendSpreadsheet_().getSheetByName(CONFIG.CUSTOMER_IDENTITY_SHEET);
   if (!sh || sh.getLastRow() < 2) return [];
   const q = normalizeGeneral_(queue);
   const n = normalizeGeneral_(fullName);
@@ -2202,7 +2278,7 @@ function findVerifiedIdentity_(queue, fullName) {
 }
 
 function customerLineSheet_() {
-  const sh = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(CONFIG.CUSTOMER_LINE_SHEET);
+  const sh = backendSpreadsheet_().getSheetByName(CONFIG.CUSTOMER_LINE_SHEET);
   if (!sh) throw new Error('ไม่พบชีต ' + CONFIG.CUSTOMER_LINE_SHEET);
   return sh;
 }
@@ -2571,10 +2647,9 @@ function calculateCustomerSelfSummary_(c) {
   let paidForCycle = 0;
   if (dueDate && c.source && c.sheet && c.queue) {
     try {
-      const raw = PropertiesService.getScriptProperties().getProperty(
-        paymentCycleKey_(c.source, c.sheet, c.queue, dueDate)
+      paidForCycle = paymentNumber_(
+        paymentCycleRecord_(c.source, c.sheet, c.queue, dueDate).cycle.total
       );
-      if (raw) paidForCycle = paymentNumber_(JSON.parse(raw).total);
     } catch (err) {}
   }
   const now = new Date();
@@ -2685,10 +2760,11 @@ function getCustomerSelf_(body) {
     field: field
   };
 
-  // A few seconds of result caching makes consecutive customer buttons fast
-  // without leaving payment totals stale for long.
+  // Keep consecutive customer buttons fast, but use a short TTL because
+  // payment writes now happen in a separate GAS project and cannot invalidate
+  // this project's CacheService directly.
   if (selfCacheKey) {
-    try { cache.put(selfCacheKey, JSON.stringify(result), 20); } catch (err) {}
+    try { cache.put(selfCacheKey, JSON.stringify(result), 5); } catch (err) {}
   }
 
   // Last-access is operational metadata, not part of payment correctness.
@@ -2874,7 +2950,7 @@ function listDueCustomers_(body) {
     try { return JSON.parse(cached); } catch (err) {}
   }
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const sourceSheet = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!sourceSheet || sourceSheet.getLastRow() < 2) return { ok: true, items: [] };
 
@@ -2965,7 +3041,7 @@ function getStaffActivity_(body) {
 
   const targetName = String(body.query || '').trim();
   const todayOnly = body.activityToday === true;
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.LOG_SHEET);
   if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
 
@@ -3010,7 +3086,7 @@ function dailyOwnerReport_(body) {
     return { ok: true, allowed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const tz = 'Asia/Bangkok';
   const todayKey = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
 
@@ -3076,7 +3152,7 @@ function systemStatus_(body) {
     return { ok: true, allowed: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const src = ss.getSheetByName(CONFIG.SOURCE_SHEET);
   let enabledSources = 0;
   if (src && src.getLastRow() >= 2) {
@@ -3140,7 +3216,7 @@ function searchCustomer_(query, includeDetails) {
     } catch (err) {}
   }
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const sourceSheet = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!sourceSheet) throw new Error('ไม่พบชีต "' + CONFIG.SOURCE_SHEET + '"');
 
@@ -3194,7 +3270,7 @@ function searchCustomerInConfiguredTab_(sourceName, sheetName, query) {
     try { return JSON.parse(cached); } catch (err) {}
   }
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const sourceSheet = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!sourceSheet || sourceSheet.getLastRow() < 2) return [];
   const rows = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1, 3).getValues();
@@ -3316,7 +3392,7 @@ function getHistory_(body) {
   const query = String(body.query || '').trim();
   if (!query) return { ok: false, error: 'กรุณาระบุคำค้น' };
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
 
@@ -3357,7 +3433,7 @@ function addNote_(body) {
   if (matches.length > 1) return { ok: true, added: false, needsSelection: true, matches: matches.slice(0, 10) };
 
   const m = matches[0];
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!sh) throw new Error('ไม่พบชีตประวัติลูกค้า');
 
@@ -3375,7 +3451,7 @@ function auditSourceWriteCapabilities_(body) {
     return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น', items: [] };
   }
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!src || src.getLastRow() < 2) {
     return { ok: true, items: [], summary: { tabs: 0, safeRead: 0, paymentReady: 0, closeReady: 0 } };
@@ -3480,7 +3556,7 @@ function findCustomerIdentity_(sourceName, sheetName, queueValue) {
     if (cached) return JSON.parse(cached);
   } catch (err) {}
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!src || src.getLastRow() < 2) return null;
 
@@ -3573,7 +3649,7 @@ function auditSourceSchemas_(body) {
     return { ok: true, message: 'เฉพาะเจ้าของระบบเท่านั้น', items: [] };
   }
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!src || src.getLastRow() < 2) return { ok: true, items: [], summary: { sources: 0, tabs: 0, ready: 0, issues: 0 } };
 
@@ -3639,7 +3715,7 @@ function cancelReviewQueue_(body) {
     return { ok: true, cancelled: false, message: 'รูปแบบ: ยกเลิกคิว <เลขคิว>' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh || rowNo > sh.getLastRow()) {
     return { ok: true, cancelled: false, message: 'ไม่พบคิวนี้' };
@@ -3675,7 +3751,7 @@ function planSourceWrite_(body) {
     return { ok: true, plan: null, message: 'รูปแบบ: จำลองบันทึก <เลขคิว>' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh || rowNo > sh.getLastRow()) {
     return { ok: true, plan: null, message: 'ไม่พบคิวนี้' };
@@ -3698,7 +3774,7 @@ function planSourceWrite_(body) {
   const writesEnabled = isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false));
   const detectedFields = [];
   try {
-    const backend = SpreadsheetApp.getActiveSpreadsheet();
+    const backend = backendSpreadsheet_();
     const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
     const srcRows = src && src.getLastRow() >= 2
       ? src.getRange(2, 1, src.getLastRow() - 1, 7).getValues()
@@ -3792,7 +3868,7 @@ function getReviewQueueItem_(body) {
     return { ok: true, item: null, message: 'รูปแบบ: ดูคิว <เลขคิว>' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh || rowNo > sh.getLastRow()) return { ok: true, item: null, message: 'ไม่พบคิวนี้' };
 
@@ -3831,7 +3907,7 @@ function appendHistoryFromApprovedReview_(reviewRow, reviewRowNo, approver, sour
   const type = String(reviewRow[1] || '').trim();
   if (type !== 'บันทึกชำระ' && type !== 'รับค่าปรับ' && type !== 'ปิดยอด') return false;
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!sh) return false;
 
@@ -3868,7 +3944,7 @@ function listReviewQueue_(body) {
     return { ok: true, allowed: false, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh || sh.getLastRow() < 2) return { ok: true, items: [] };
 
@@ -3896,6 +3972,170 @@ function paymentCycleKey_(source, sheet, queue, due) {
   return 'payment-cycle:' + Utilities.base64EncodeWebSafe(digest).slice(0, 60);
 }
 
+function paymentStateSheet_(createIfMissing) {
+  const ss = backendSpreadsheet_();
+  let sh = ss.getSheetByName(CONFIG.PAYMENT_STATE_SHEET);
+  if (!sh && createIfMissing) {
+    sh = ss.insertSheet(CONFIG.PAYMENT_STATE_SHEET);
+    sh.getRange(1, 1, 1, 9).setValues([[
+      'key', 'source', 'sheet', 'queue', 'dueDate',
+      'total', 'byDayJson', 'reviewRowsJson', 'updatedAt'
+    ]]);
+    sh.setFrozenRows(1);
+  }
+  return sh;
+}
+
+function normalizePaymentCycle_(cycle) {
+  const value = cycle && typeof cycle === 'object' ? cycle : {};
+  const byDay = value.byDay && typeof value.byDay === 'object' ? value.byDay : {};
+  return {
+    total: Math.round(paymentNumber_(value.total) * 100) / 100,
+    byDay: byDay,
+    reviewRows: Array.isArray(value.reviewRows) ? value.reviewRows.slice() : []
+  };
+}
+
+function paymentCycleRecord_(source, sheet, queue, due) {
+  const key = paymentCycleKey_(source, sheet, queue, due);
+  const empty = { total: 0, byDay: {}, reviewRows: [] };
+  const sh = paymentStateSheet_(false);
+  if (!sh || sh.getLastRow() < 2) {
+    return { key: key, rowNo: 0, raw: '', cycle: empty };
+  }
+
+  const range = sh.getRange(2, 1, sh.getLastRow() - 1, 1);
+  let found = null;
+  try {
+    found = range.createTextFinder(key)
+      .matchEntireCell(true)
+      .matchCase(true)
+      .useRegularExpression(false)
+      .findNext();
+  } catch (err) {}
+  if (!found) return { key: key, rowNo: 0, raw: '', cycle: empty };
+
+  const rowNo = found.getRow();
+  const row = sh.getRange(rowNo, 1, 1, 9).getValues()[0];
+  let byDay = {};
+  let reviewRows = [];
+  try { byDay = row[6] ? JSON.parse(String(row[6])) : {}; } catch (err) {}
+  try { reviewRows = row[7] ? JSON.parse(String(row[7])) : []; } catch (err) {}
+  const cycle = normalizePaymentCycle_({
+    total: row[5],
+    byDay: byDay,
+    reviewRows: reviewRows
+  });
+  return {
+    key: key,
+    rowNo: rowNo,
+    raw: JSON.stringify(cycle),
+    cycle: cycle
+  };
+}
+
+function writePaymentCycleShared_(source, sheet, queue, due, cycle) {
+  const normalized = normalizePaymentCycle_(cycle);
+  const key = paymentCycleKey_(source, sheet, queue, due);
+  const sh = paymentStateSheet_(true);
+  let rowNo = 0;
+
+  if (sh.getLastRow() >= 2) {
+    try {
+      const found = sh.getRange(2, 1, sh.getLastRow() - 1, 1)
+        .createTextFinder(key)
+        .matchEntireCell(true)
+        .matchCase(true)
+        .useRegularExpression(false)
+        .findNext();
+      if (found) rowNo = found.getRow();
+    } catch (err) {}
+  }
+
+  const hasState = normalized.total > 0 ||
+    Object.keys(normalized.byDay || {}).length > 0 ||
+    normalized.reviewRows.length > 0;
+
+  if (!hasState) {
+    if (rowNo) sh.getRange(rowNo, 1, 1, 9).clearContent();
+    return { key: key, rowNo: rowNo, raw: '', cycle: normalized };
+  }
+
+  const values = [[
+    key,
+    String(source || '').trim(),
+    String(sheet || '').trim(),
+    String(queue || '').trim(),
+    dateKey_(due),
+    normalized.total,
+    JSON.stringify(normalized.byDay || {}),
+    JSON.stringify(normalized.reviewRows || []),
+    new Date()
+  ]];
+
+  if (rowNo) sh.getRange(rowNo, 1, 1, 9).setValues(values);
+  else {
+    rowNo = Math.max(2, sh.getLastRow() + 1);
+    sh.getRange(rowNo, 1, 1, 9).setValues(values);
+  }
+
+  return { key: key, rowNo: rowNo, raw: JSON.stringify(normalized), cycle: normalized };
+}
+
+function migratePaymentStateToSharedSheet() {
+  const props = PropertiesService.getScriptProperties();
+  const all = props.getProperties();
+  const paymentKeys = Object.keys(all).filter(function(key) {
+    return String(key || '').indexOf('payment-cycle:') === 0;
+  });
+
+  const metadata = {};
+  const log = backendSpreadsheet_().getSheetByName(CONFIG.LOG_SHEET);
+  if (log && log.getLastRow() >= 2) {
+    const rows = log.getRange(2, 1, log.getLastRow() - 1, 11).getDisplayValues();
+    rows.forEach(function(row) {
+      if (String(row[8] || '').trim() !== 'paymentSourceBackupAfter') return;
+      const raw = String(row[10] || '').trim();
+      if (!raw) return;
+      try {
+        const backup = JSON.parse(raw);
+        if (!backup || !backup.cycleKey || !backup.source || !backup.sheet || !backup.queue || !backup.oldDue) return;
+        metadata[String(backup.cycleKey)] = backup;
+      } catch (err) {}
+    });
+  }
+
+  let migrated = 0;
+  const unmapped = [];
+  paymentKeys.forEach(function(key) {
+    const backup = metadata[key];
+    if (!backup) {
+      unmapped.push(key);
+      return;
+    }
+    let cycle = null;
+    try { cycle = JSON.parse(all[key]); } catch (err) {}
+    if (!cycle) {
+      unmapped.push(key);
+      return;
+    }
+    const due = new Date(backup.oldDue);
+    if (isNaN(due.getTime())) {
+      unmapped.push(key);
+      return;
+    }
+    writePaymentCycleShared_(backup.source, backup.sheet, backup.queue, due, cycle);
+    migrated++;
+  });
+
+  return {
+    ok: unmapped.length === 0,
+    paymentKeys: paymentKeys.length,
+    migrated: migrated,
+    unmapped: unmapped
+  };
+}
+
 function paymentNumber_(value) {
   if (typeof value === 'number') return value;
   const n = Number(String(value == null ? '' : value).replace(/,/g, '').trim());
@@ -3914,7 +4154,7 @@ function addDays_(value, days) {
 }
 
 function sourceSpreadsheetFor_(sourceName) {
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const src = backend.getSheetByName(CONFIG.SOURCE_SHEET);
   if (!src || src.getLastRow() < 2) return null;
   const rows = src.getRange(2, 1, src.getLastRow() - 1, 7).getValues();
@@ -3999,7 +4239,7 @@ function snapshotMatchesCurrent_(sheet, snap) {
 
 function persistPaymentBackupLog_(backup, actionName, status, note) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = backendSpreadsheet_();
     const sh = ss.getSheetByName(CONFIG.LOG_SHEET);
     if (!sh) return false;
     sh.appendRow([
@@ -4023,7 +4263,7 @@ function persistPaymentBackupLog_(backup, actionName, status, note) {
 
 function loadPaymentBackupFromLog_(reviewRowNo) {
   try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const ss = backendSpreadsheet_();
     const sh = ss.getSheetByName(CONFIG.LOG_SHEET);
     if (!sh || sh.getLastRow() < 2) return null;
     const values = sh.getRange(2, 1, sh.getLastRow() - 1, 11).getDisplayValues();
@@ -4258,11 +4498,10 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   if (!(amount > 0)) return { ok: false, message: 'ยอดชำระไม่ถูกต้อง' };
   if (!(fee > 0)) return { ok: false, message: 'ค่าเช่าในต้นทางไม่ถูกต้อง' };
   const props = PropertiesService.getScriptProperties();
-  const cycleKey = paymentCycleKey_(sourceName, sourceSheet, customer.queue, oldDue);
-  const previousCycleRaw = props.getProperty(cycleKey) || '';
-  let cycle;
-  try { cycle = previousCycleRaw ? JSON.parse(previousCycleRaw) : { total: 0, byDay: {} }; }
-  catch (err) { return { ok: false, message: 'อ่านยอดรับชำระสะสมไม่ได้ กรุณาตรวจคิวก่อน' }; }
+  const previousCycleRecord = paymentCycleRecord_(sourceName, sourceSheet, customer.queue, oldDue);
+  const cycleKey = previousCycleRecord.key;
+  const previousCycleRaw = previousCycleRecord.raw;
+  let cycle = previousCycleRecord.cycle;
 
   const calendarStartCol = headers.note ? headers.note + 1 : Math.max(headers.dueDate + 1, 15);
   const reconciledCycle = reconcilePaymentCycleWithSource_(
@@ -4270,8 +4509,7 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   );
   cycle = reconciledCycle.cycle;
   if (reconciledCycle.changed) {
-    if (cycle.total > 0) props.setProperty(cycleKey, JSON.stringify(cycle));
-    else props.deleteProperty(cycleKey);
+    writePaymentCycleShared_(sourceName, sourceSheet, customer.queue, oldDue, cycle);
   }
 
   const totalBefore = paymentNumber_(cycle.total);
@@ -4362,7 +4600,7 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   cycle.byDay[paidDay] = Math.round((recordedToday + amount) * 100) / 100;
   cycle.reviewRows = (cycle.reviewRows || []).concat(reviewRowNo);
   backup.cycleAfter = JSON.stringify(cycle);
-  props.setProperty(cycleKey, backup.cycleAfter);
+  writePaymentCycleShared_(sourceName, sourceSheet, customer.queue, oldDue, cycle);
   backup.after = Object.keys(unique).map(function(key) { return snapshotCell_(unique[key]); });
   backup.writtenAt = new Date().toISOString();
   props.setProperty(paymentSourceWriteKey_(reviewRowNo), JSON.stringify(backup));
@@ -4402,7 +4640,7 @@ function rollbackReviewQueueLocked_(body) {
     return { ok: true, rolledBack: false, message: 'รูปแบบ: ยกเลิกรายการ <เลขคิว>' };
   }
 
-  const backend = SpreadsheetApp.getActiveSpreadsheet();
+  const backend = backendSpreadsheet_();
   const reviewSheet = backend.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!reviewSheet || rowNo > reviewSheet.getLastRow()) {
     return { ok: true, rolledBack: false, message: 'ไม่พบคิวนี้' };
@@ -4431,10 +4669,17 @@ function rollbackReviewQueueLocked_(body) {
     return { ok: true, rolledBack: false, message: 'คิวนี้ถูกยกเลิกรายการไปแล้ว' };
   }
 
-  if (backup.cycleKey &&
-      PropertiesService.getScriptProperties().getProperty(backup.cycleKey) !== backup.cycleAfter) {
-    return { ok: true, rolledBack: false, stale: true,
-      message: 'มีการรับชำระรายการใหม่ในรอบนี้แล้ว กรุณายกเลิกรายการล่าสุดก่อน' };
+  if (backup.cycleKey) {
+    const currentCycle = paymentCycleRecord_(
+      backup.source,
+      backup.sheet,
+      backup.queue,
+      new Date(backup.oldDue)
+    );
+    if (currentCycle.raw !== String(backup.cycleAfter || '')) {
+      return { ok: true, rolledBack: false, stale: true,
+        message: 'มีการรับชำระรายการใหม่ในรอบนี้แล้ว กรุณายกเลิกรายการล่าสุดก่อน' };
+    }
   }
 
   const sourceSs = SpreadsheetApp.openById(String(backup.spreadsheetId || ''));
@@ -4463,14 +4708,23 @@ function rollbackReviewQueueLocked_(body) {
   SpreadsheetApp.flush();
 
   if (backup.cycleKey) {
-    if (backup.cycleBefore) props.setProperty(backup.cycleKey, backup.cycleBefore);
-    else props.deleteProperty(backup.cycleKey);
+    let previousCycle = { total: 0, byDay: {}, reviewRows: [] };
+    if (backup.cycleBefore) {
+      try { previousCycle = JSON.parse(backup.cycleBefore); } catch (err) {}
+    }
+    writePaymentCycleShared_(
+      backup.source,
+      backup.sheet,
+      backup.queue,
+      new Date(backup.oldDue),
+      previousCycle
+    );
   }
 
   backup.reversedAt = new Date().toISOString();
   backup.reversedBy = access.staffName || 'เจ้าของ';
   props.setProperty(key, JSON.stringify(backup));
-  persistPaymentBackupLog_(backup, 'paymentSourceRollback', 'สำเร็จ', 'ยกเลิกรายการ #' + rowNo + ' และคืนค่าต้นทางแล้ว');
+  persistPaymentBackupLog_(backup, 'paymentSourceRollback', 'สำเร็จ', JSON.stringify(backup));
 
   reviewSheet.getRange(rowNo, 9).setValue('ยกเลิกรายการ');
   reviewSheet.getRange(rowNo, 10).setValue(access.staffName || 'เจ้าของ');
@@ -4532,7 +4786,7 @@ function resolveReviewQueueLocked_(body) {
     return { ok: true, resolved: false, message: 'ผลตรวจไม่ถูกต้อง' };
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh || rowNo > sh.getLastRow()) {
     return { ok: true, resolved: false, message: 'ไม่พบคิวนี้' };
@@ -5039,7 +5293,7 @@ function queueFinancialReviewLocked_(body, type) {
     }
   }
 
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh) return { ok: false, error: 'ไม่พบชีตคิวตรวจสอบ' };
 
@@ -5122,7 +5376,7 @@ function queueFinancialReviewLocked_(body, type) {
 }
 
 function logAction_(body) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.LOG_SHEET);
   if (!sh) return { ok: true, logged: false };
   sh.appendRow([
@@ -5181,4 +5435,5 @@ function extractSpreadsheetId_(url) {
 }
 function isTrue_(v) { return v===true || String(v).toLowerCase()==='true' || String(v).trim()==='1'; }
 function json_(obj) { return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
+
 

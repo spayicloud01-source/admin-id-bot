@@ -33,6 +33,7 @@ function makeContext() {
     },
     console,
     CacheService: { getScriptCache: () => ({ get: () => null, put: () => {} }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: () => '' }) },
     SpreadsheetApp: {
       getActiveSpreadsheet: () => ({ getSheetByName: () => sourceSheet }),
       openById: () => ({ getSheets: () => [tab], getSheetByName: (name) => name === 'V6/10-69' ? tab : null }),
@@ -59,3 +60,4 @@ test('closed and deleted rows are excluded from overdue while status buckets sta
   const pendingLock = context.listDueCustomers_({ ...base, dueMode: 'pending_lock' });
   assert.deepEqual(Array.from(pendingLock.items, (x) => x.queue), ['A-4']);
 });
+
