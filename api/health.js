@@ -2,7 +2,7 @@
 const HEALTH_SCHEMA_VERSION = 3;
 import { callSheetsBridge } from "../lib/sheetsBridge.js";
 
-const EXPECTED_BRIDGE_VERSION = "2026.09.30-129";
+const EXPECTED_BRIDGE_VERSION = "2026.10.03-130";
 const EXPECTED_ACTIVE_SOURCES = 2;
 
 function normalizeSelfTestForActiveSources(selfTest) {
@@ -107,3 +107,4 @@ export default async function handler(req, res) {
     readyForFullTest,
   });
 }
+
