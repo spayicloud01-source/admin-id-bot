@@ -1,4 +1,4 @@
-import { callSheetsBridge, getBridgeRoutingStatus } from "../../lib/sheetsBridge.js";
+import { callSheetsBridge, getBridgeRoutingStatus, inspectBridgeRole } from "../../lib/sheetsBridge.js";
 
 export default async function handler(req, res) {
   if (req.method !== "GET") {
@@ -38,10 +38,22 @@ export default async function handler(req, res) {
     };
   }
 
+  result.checks.roles = {};
+  const roles = ["customer", "payment", "notify"];
+  await Promise.all(roles.map(async (role) => {
+    try {
+      const bridge = await inspectBridgeRole(role);
+      result.checks.roles[role] = { ok: bridge?.ok === true && bridge.role === role && bridge.version === "2026.10.03-130", role: bridge.role, version: bridge.version };
+    } catch (error) {
+      result.checks.roles[role] = { ok: false, error: String(error?.message || error).slice(0, 160) };
+    }
+  }));
+
   result.ok =
     result.env.appsScriptUrl &&
     result.env.bridgeSecret &&
-    result.checks.searchCustomer?.ok === true;
+    result.checks.searchCustomer?.ok === true &&
+    roles.every((role) => result.checks.roles[role]?.ok === true);
 
   return res.status(result.ok ? 200 : 500).json(result);
 }
