@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.10.03-130',
+  VERSION: '2026.10.03-131',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -3903,7 +3903,7 @@ function getReviewQueueItem_(body) {
   };
 }
 
-function appendHistoryFromApprovedReview_(reviewRow, reviewRowNo, approver, sourceWritten) {
+function appendHistoryFromApprovedReview_(reviewRow, reviewRowNo, approver, sourceWritten, paymentTiming) {
   const type = String(reviewRow[1] || '').trim();
   if (type !== 'บันทึกชำระ' && type !== 'รับค่าปรับ' && type !== 'ปิดยอด') return false;
 
@@ -3915,10 +3915,11 @@ function appendHistoryFromApprovedReview_(reviewRow, reviewRowNo, approver, sour
   const source = String(sourceParts[0] || '').trim();
   const sourceSheet = sourceParts.slice(1).join(' / ').trim();
   const eventType = type === 'ปิดยอด' ? 'ปิดยอด' : type === 'รับค่าปรับ' ? 'ค่าปรับ' : 'ชำระค่าเช่า';
-  const note = 'อนุมัติจากคิวตรวจสอบ #' + reviewRowNo + (sourceWritten ? ' / ซิงก์ชีตต้นทางแล้ว' : ' / ยังไม่ซิงก์ชีตต้นทาง');
+  const note = 'อนุมัติจากคิวตรวจสอบ #' + reviewRowNo + (sourceWritten ? ' / ซิงก์ชีตต้นทางแล้ว' : ' / ยังไม่ซิงก์ชีตต้นทาง') +
+    (paymentTiming && paymentTiming.timingDetail ? ' / ' + paymentTiming.timingDetail : '');
 
   sh.appendRow([
-    type === 'รับค่าปรับ' ? finePaidDate_(reviewRow[5]) : new Date(),
+    type === 'รับค่าปรับ' ? finePaidDate_(reviewRow[5]) : paymentTiming && paymentTiming.paidAt ? new Date(paymentTiming.paidAt) : new Date(),
     source,
     sourceSheet,
     String(reviewRow[2] || '').trim(),
@@ -4151,6 +4152,14 @@ function addDays_(value, days) {
   const d = new Date(value.getTime());
   d.setDate(d.getDate() + days);
   return d;
+}
+
+function paymentTiming_(due, paid) {
+  const dueDay = dateKey_(due), paidDay = dateKey_(paid);
+  const days = Math.round((Date.parse(paidDay + 'T00:00:00Z') - Date.parse(dueDay + 'T00:00:00Z')) / 86400000);
+  const label = days > 0 ? 'ชำระช้า ' + days + ' วัน' : days < 0 ? 'ชำระก่อนกำหนด ' + Math.abs(days) + ' วัน' : 'ชำระตรงกำหนด';
+  return { dueDate: dueDay, paidDate: paidDay, paidAt: paid.toISOString(), daysFromDue: days,
+    timingDetail: 'กำหนดเดิม ' + dueDay + ' / รับเงินจริง ' + paidDay + ' / ' + label };
 }
 
 function sourceSpreadsheetFor_(sourceName) {
@@ -4539,6 +4548,7 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
 
   const paidExisting = paidRange.getValue();
   const paidDay = dateKey_(paidAt);
+  const timing = paymentTiming_(oldDue, paidAt);
   const recordedToday = paymentNumber_((cycle.byDay || {})[paidDay]);
   if (recordedToday > 0 && Math.abs(paymentNumber_(paidExisting) - recordedToday) > 0.005) {
     return { ok: false, message: 'ช่องรับชำระวันนี้ไม่ตรงยอดที่บันทึกไว้ กรุณาตรวจชีตก่อน' };
@@ -4549,6 +4559,8 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   }
 
   const nextExisting = nextDueRange ? nextDueRange.getValue() : '';
+  const oldDueWasReceipt = String(oldDueRange.getBackground()).toUpperCase() === '#CCFF00';
+  const nextDueWasReceipt = nextDueRange && String(nextDueRange.getBackground()).toUpperCase() === '#CCFF00';
   if (fullyPaid && nextDueCol !== oldDueCol && nextDueCol !== paidCol && String(nextExisting || '').trim() && paymentNumber_(nextExisting) !== fee) {
     return { ok: false, message: 'ช่องรอบถัดไปมีข้อมูลเดิมอยู่ จึงไม่เขียนทับ' };
   }
@@ -4574,6 +4586,7 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
     oldDue: oldDue.toISOString(),
     paidAt: paidAt.toISOString(),
     nextDue: nextDue.toISOString(),
+    paymentTiming: timing,
     cycleKey: cycleKey,
     cycleBefore: previousCycleRaw,
     cycleAfter: '',
@@ -4586,9 +4599,20 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   if (fullyPaid) dueRange.setValue(nextDue);
   paidRange.setValue(Math.round((recordedToday + amount) * 100) / 100);
   paidRange.setBackground('#CCFF00');
-  if (fullyPaid && oldDueCol !== paidCol && oldDueCol !== nextDueCol &&
-      !paymentNumber_((cycle.byDay || {})[dateKey_(oldDue)])) oldDueRange.clearContent();
-  if (fullyPaid) nextDueRange.setValue(fee);
+  const timingLine = '[ชำระ #' + reviewRowNo + '] รับ ' + amount + ' บาท / ' + timing.timingDetail;
+  paidRange.setNote([paidRange.getNote() || '', timingLine].filter(Boolean).join('\n'));
+  // A due-date marker is a color, never a forecast receipt. Preserve actual receipts.
+  if (oldDueCol !== paidCol && !oldDueWasReceipt &&
+      !paymentNumber_((cycle.byDay || {})[dateKey_(oldDue)])) oldDueRange.setBackground('#FFF2CC');
+  if (oldDueCol !== paidCol && !paymentNumber_((cycle.byDay || {})[dateKey_(oldDue)]) &&
+      paymentNumber_(oldDueRange.getValue()) === fee &&
+      !/^\[(ชำระ|ค่าปรับ) #/m.test(oldDueRange.getNote() || '') &&
+      !oldDueWasReceipt) oldDueRange.clearContent();
+  if (fullyPaid) {
+    if (!nextDueWasReceipt && paymentNumber_(nextDueRange.getValue()) === fee &&
+        !/^\[(ชำระ|ค่าปรับ) #/m.test(nextDueRange.getNote() || '')) nextDueRange.clearContent();
+    if (!nextDueWasReceipt) nextDueRange.setBackground('#FFF2CC');
+  }
   try {
     paidRange.setNumberFormat(feeRange.getNumberFormat());
     if (fullyPaid) nextDueRange.setNumberFormat(feeRange.getNumberFormat());
@@ -4618,7 +4642,8 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
     fee: fee,
     paidTotal: totalAfter,
     remaining: Math.max(0, Math.round((fee - totalAfter) * 100) / 100),
-    cycleComplete: fullyPaid
+    cycleComplete: fullyPaid,
+    paymentTiming: timing
   };
 }
 
@@ -4841,7 +4866,8 @@ function resolveReviewQueueLocked_(body) {
       displayRow,
       rowNo,
       access.staffName || 'เจ้าของ',
-      !!(sourceWrite && sourceWrite.written)
+      !!(sourceWrite && sourceWrite.written),
+      sourceWrite && sourceWrite.paymentTiming
     );
     sh.getRange(rowNo, 12).setValue(
       sourceWrite && sourceWrite.written
@@ -5435,5 +5461,3 @@ function extractSpreadsheetId_(url) {
 }
 function isTrue_(v) { return v===true || String(v).toLowerCase()==='true' || String(v).trim()==='1'; }
 function json_(obj) { return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON); }
-
-

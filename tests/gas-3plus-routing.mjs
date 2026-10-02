@@ -83,7 +83,7 @@ process.env.SHEETS_BRIDGE_SECRET = 'test-only';
 globalThis.fetch = async (url, options) => {
   assert.ok(url.startsWith('https://payment.example'));
   assert.equal(JSON.parse(options.body).action, 'getBridgeVersion');
-  return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, role: 'payment', version: '2026.10.03-130' }) };
+  return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, role: 'payment', version: '2026.10.03-131' }) };
 };
 try {
   assert.equal((await inspectBridgeRole('payment')).role, 'payment');

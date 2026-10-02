@@ -11,7 +11,7 @@ function fixture() {
     ['6:13', new Date(2026, 8, 27)],
     ['6:41', 1000],
   ]);
-  const colors = new Map();
+  const colors = new Map(), notes = new Map();
   const props = new Map();
   const source = {
     getRange(row, col) {
@@ -26,6 +26,8 @@ function fixture() {
         getFormula: () => '',
         getNumberFormat: () => '#,##0',
         setNumberFormat() {},
+        getNote: () => notes.get(key) || '',
+        setNote: note => notes.set(key, note),
         getBackground: () => colors.get(key) ?? '#ffffff',
         setBackground: color => colors.set(key, color),
       };
@@ -71,7 +73,7 @@ function fixture() {
       : '',
     findCalendarDateColumn_: (_sheet, _row, _start, date) => {
       const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-      return ({ '2026-09-27': 41, '2026-09-28': 42, '2026-10-07': 52 })[key] || 0;
+      return ({ '2026-09-26': 40, '2026-09-27': 41, '2026-09-28': 42, '2026-10-07': 52 })[key] || 0;
     },
     snapshotCell_: range => ({ a1: range.getA1Notation(), value: range.getValue() }),
     persistPaymentBackupLog_: () => true,
@@ -80,7 +82,7 @@ function fixture() {
     [null, 'บันทึกชำระ', '310-2', 'ลูกค้าทดสอบ', 'v1/v3 / v3/10-69'],
     [new Date(2026, 8, day), null, null, null, null, null, amount], row
   );
-  return { pay, cells, props };
+  return { pay, cells, props, colors, notes, context };
 }
 
 test('two approved payments on the same day accumulate without moving due date until fee is covered', () => {
@@ -97,8 +99,32 @@ test('two approved payments on the same day accumulate without moving due date u
   assert.equal(second.cycleComplete, true);
   assert.equal(f.cells.get('6:42'), 1000);
   assert.equal(f.cells.get('6:13').getDate(), 7);
-  assert.equal(f.cells.get('6:52'), 1000);
+  assert.equal(f.cells.get('6:52') ?? '', '');
+  assert.equal(f.colors.get('6:52'), '#FFF2CC');
+  assert.equal(f.colors.get('6:41'), '#FFF2CC');
   assert.equal(f.cells.has('6:41'), false);
+});
+
+test('late and early receipts retain the original due date and actual date in their notes and backups',()=>{
+ for(const [day,offset,col,label] of [[28,1,42,'ชำระช้า 1 วัน'],[26,-1,40,'ชำระก่อนกำหนด 1 วัน']]) {
+  const f=fixture();const r=f.pay(1000,12,day);
+  assert.equal(r.paymentTiming.daysFromDue,offset);
+  assert.equal(r.paymentTiming.dueDate,'2026-09-27');
+  assert.match(f.notes.get('6:'+col),new RegExp(label));
+  assert.equal(f.cells.get('6:13').getDate(),7);
+  assert.equal(f.colors.get('6:41'),'#FFF2CC');
+  assert.equal(f.cells.has('6:41'),false);
+  assert.equal(f.cells.get('6:52')??'','');
+  assert.equal(JSON.parse(f.props.get('payment-source-write:12')).paymentTiming.daysFromDue,offset);
+ }
+});
+
+test('paid on the due date retains actual money and green receipt color over yellow due marker',()=>{
+ const f=fixture();const r=f.pay(1000,12,27);
+ assert.equal(r.paymentTiming.daysFromDue,0);
+ assert.equal(f.cells.get('6:41'),1000);
+ assert.equal(f.colors.get('6:41'),'#CCFF00');
+ assert.equal(f.cells.get('6:52')??'','');
 });
 
 test('rent plus an extra amount records the full receipt and keeps next rent unchanged', () => {
@@ -111,7 +137,9 @@ test('rent plus an extra amount records the full receipt and keeps next rent unc
   assert.equal(result.cycleComplete, true);
   assert.equal(f.cells.get('6:42'), 1150);
   assert.equal(f.cells.get('6:13').getDate(), 7);
-  assert.equal(f.cells.get('6:52'), 1000);
+  assert.equal(f.cells.get('6:52') ?? '', '');
+  assert.equal(f.colors.get('6:52'), '#FFF2CC');
+  assert.equal(f.colors.get('6:41'), '#FFF2CC');
 });
 
 test('partial rent followed by rent balance plus an extra amount records both receipts', () => {
@@ -124,7 +152,9 @@ test('partial rent followed by rent balance plus an extra amount records both re
   assert.equal(excess.cycleComplete, true);
   assert.equal(f.cells.get('6:42'), 1150);
   assert.equal(f.cells.get('6:13').getDate(), 7);
-  assert.equal(f.cells.get('6:52'), 1000);
+  assert.equal(f.cells.get('6:52') ?? '', '');
+  assert.equal(f.colors.get('6:52'), '#FFF2CC');
+  assert.equal(f.colors.get('6:41'), '#FFF2CC');
 });
 
 test('a partial payment on the due date remains visible when the balance is paid the next day', () => {
@@ -150,4 +180,3 @@ test('stale shared payment total is ignored when no matching payment exists in t
   assert.equal(f.cells.get('6:42'), 1000);
   assert.equal(f.cells.get('6:13').getDate(), 7);
 });
-

@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
+const code=readFileSync(new URL('../apps-script/MarkDueDates.gs',import.meta.url),'utf8');
+const due=new Date('2026-10-06T12:00:00Z');
+const values=new Map([[3,800],[4,800],[5,123]]),colors=new Map([[4,'#CCFF00']]);
+let audits=0,released=0;
+const sheet={getLastRow:()=>5,getParent:()=>({getId:()=> 'test'}),getName:()=> 'test',getRange:(r,c)=>c===1?{getValues:()=>[3,4,5].map(r=>['q'+r,'name','ปกติ',800,due])}:{getValue:()=>values.get(r)||'',getBackground:()=>colors.get(r)||'#ffffff',getNote:()=>'',clearContent:()=>values.delete(r),setBackground:x=>colors.set(r,x)}};
+const ctx=vm.createContext({Date,console,LockService:{getScriptLock:()=>({tryLock:()=>true,releaseLock:()=>released++})},SpreadsheetApp:{flush(){}},CONFIG:{REVIEW_QUEUE_SHEET:'review',LOG_SHEET:'log'},backendSpreadsheet_:()=>({getSheetByName:n=>n==='review'?{getLastRow:()=>1}:{appendRow:()=>audits++}}),sourceSpreadsheetFor_:()=>({getSheetByName:()=>sheet}),detectHeaders_:()=>({headerRow:2,queue:1,name:2,status:3,fee:4,dueDate:5,note:6}),paymentNumber_:v=>Number(v||0),findCalendarDateColumn_:()=>7,snapshotCell_:range=>({value:range.getValue()}),dateKey_:d=>d.toISOString().slice(0,10)});
+vm.runInContext(code,ctx);ctx.markCurrentDueDatesYellow();
+assert.equal(values.has(3),false);assert.equal(colors.get(3),'#FFF2CC');
+assert.equal(values.get(4),800);assert.equal(colors.get(4),'#CCFF00');
+assert.equal(values.get(5),123);assert.equal(audits,1);assert.equal(released,1);
+console.log('Due marker migration preserves real and unknown amounts: passed');

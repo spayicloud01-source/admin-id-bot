@@ -43,7 +43,7 @@ export default async function handler(req, res) {
   await Promise.all(roles.map(async (role) => {
     try {
       const bridge = await inspectBridgeRole(role);
-      result.checks.roles[role] = { ok: bridge?.ok === true && bridge.role === role && bridge.version === "2026.10.03-130", role: bridge.role, version: bridge.version };
+      result.checks.roles[role] = { ok: bridge?.ok === true && bridge.role === role && bridge.version === "2026.10.03-131", role: bridge.role, version: bridge.version };
     } catch (error) {
       result.checks.roles[role] = { ok: false, error: String(error?.message || error).slice(0, 160) };
     }
