@@ -25,6 +25,28 @@ function fixture() {
   const review=['','รับค่าปรับ','310-3','นิภาพรรณ','v1/v3 / v3/10-69','ค่าปรับ | วันที่รับเงินจริง: 2026-09-29',100];
   return {context,values,notes,props,review,range,formulas};
 }
+test('legacy fine migration preserves customer cells, supports rollback, and never duplicates totals',()=>{
+ const f=fixture();
+ f.context.applyApprovedFineToSource_(f.review,f.review,6);
+ const key='payment-source-write:6';
+ const old=JSON.parse(f.props.get(key));delete old.fineTotal;
+ old.before=old.before.slice(0,1);old.after=old.after.slice(0,1);
+ f.props.set(key,JSON.stringify(old));f.values.delete('27:43');f.notes.delete('27:43');
+ const customerBefore=JSON.stringify([...f.values]);const noteBefore=f.notes.get('8:43');
+ const sheet={getName:()=> 'v3/10-69',getRange:f.range,getLastRow:()=>27};
+ f.context.sourceSpreadsheetFor_=()=>({getId:()=> 'source',getSheetByName:()=>sheet});
+ f.context.backendSpreadsheet_=()=>({getSheetByName:()=>({getRange:()=>({getDisplayValues:()=>[[...f.review,'','ผ่าน']]})})});
+ let released=0,logs=0;
+ f.context.LockService={getScriptLock:()=>({tryLock:()=>true,releaseLock:()=>released++})};
+ f.context.persistPaymentBackupLog_=()=>{logs++;return true;};
+ vm.runInContext(readFileSync(new URL('../apps-script/RepairLegacyFine.gs',import.meta.url),'utf8'),f.context);
+ f.context.repairLegacyFine6DailyTotal();
+ assert.equal(f.values.get('27:43'),100);assert.equal(f.notes.get('8:43'),noteBefore);
+ assert.equal(JSON.stringify([...f.values].filter(([k])=>!k.startsWith('27:'))),customerBefore);
+ f.context.repairLegacyFine6DailyTotal();assert.equal(logs,1);assert.equal(released,2);
+ assert.equal(f.context.rollbackFineSource_(sheet,JSON.parse(f.props.get(key)),6).ok,true);
+ assert.equal(f.values.get('27:43'),0);
+});
 test('fine command parses BE and CE dates without changing ordinary rent commands',()=>{
  const c=parseCommand('รับค่าปรับ 310-3 100 29/9/2569');
  assert.equal(c.action,'queuePayment');assert.equal(c.paymentKind,'fine');assert.equal(c.paidOn,'2026-09-29');
