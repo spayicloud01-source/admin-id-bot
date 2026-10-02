@@ -45,3 +45,4 @@ export default async function handler(req, res) {
 
   return res.status(result.ok ? 200 : 500).json(result);
 }
+

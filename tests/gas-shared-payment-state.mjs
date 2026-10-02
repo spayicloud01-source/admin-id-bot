@@ -142,3 +142,4 @@ assert.equal(read.cycle.total, 0);
 assert.deepEqual(Object.keys(read.cycle.byDay), []);
 
 console.log("GAS shared payment state: passed");
+

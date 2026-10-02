@@ -130,3 +130,4 @@ assert.equal(send({ queue: '6121' }).items.length, 0);
 assert.equal(notificationRows.length, 3);
 assert.equal(context.buildCustomerNotificationBatch_({ source: 'bad', sheet: 'other', field: 'due' }).items.length, 0);
 console.log('notification selection and duplicate protection: passed');
+

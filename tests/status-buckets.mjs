@@ -60,3 +60,4 @@ test('closed and deleted rows are excluded from overdue while status buckets sta
   const pendingLock = context.listDueCustomers_({ ...base, dueMode: 'pending_lock' });
   assert.deepEqual(Array.from(pendingLock.items, (x) => x.queue), ['A-4']);
 });
+

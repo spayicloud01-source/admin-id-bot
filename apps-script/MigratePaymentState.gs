@@ -144,3 +144,4 @@ function migrateLegacyPaymentStateToSharedSheet() {
   console.log(JSON.stringify(result));
   return result;
 }
+

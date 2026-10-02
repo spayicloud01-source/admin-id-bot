@@ -107,3 +107,4 @@ test('active accounts still receive due reminders', () => {
   f.records[0][8] = 'ส่งแล้ว';
   assert.equal(f.run().items.length, 0);
 });
+

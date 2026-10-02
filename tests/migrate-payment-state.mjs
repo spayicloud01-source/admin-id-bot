@@ -133,3 +133,4 @@ assert.deepEqual(Array.from(failure.unmapped), ["payment-cycle:key-b"]);
 assert.equal(JSON.stringify(stateRows), before);
 
 console.log("legacy payment state migration helper: passed");
+

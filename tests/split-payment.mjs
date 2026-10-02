@@ -150,3 +150,4 @@ test('stale shared payment total is ignored when no matching payment exists in t
   assert.equal(f.cells.get('6:42'), 1000);
   assert.equal(f.cells.get('6:13').getDate(), 7);
 });
+
