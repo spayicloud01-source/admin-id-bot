@@ -5,8 +5,8 @@ const bridge = readFileSync("lib/sheetsBridge.js", "utf8");
 const apps = readFileSync("apps-script/AdminIdBridge.gs", "utf8");
 const health = readFileSync("api/health.js", "utf8");
 
-assert.match(apps, /VERSION: '2026\.09\.30-129'/);
-assert.match(health, /EXPECTED_BRIDGE_VERSION = "2026\.09\.30-129"/);
+assert.match(apps, /VERSION: '2026\.10\.03-130'/);
+assert.match(health, /EXPECTED_BRIDGE_VERSION = "2026\.10\.03-130"/);
 assert.match(bridge, /"markCustomerReminderSent", "markReminderSent", "buildCustomerNotificationBatch"/);
 assert.doesNotMatch(bridge, /customerNotificationBatch \? 2/);
 
@@ -49,3 +49,4 @@ console.log("audit log latency cap: passed");
 assert.match(apps, /function reconcilePaymentCycleWithSource_/);
 assert.match(apps, /Only a hard-written payment cell can validate PropertiesService state/);
 console.log("stale payment cycle repair: passed");
+

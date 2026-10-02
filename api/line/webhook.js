@@ -2054,7 +2054,10 @@ async function handleEvent(event) {
       } else if (command.action === "dailyOwnerReport") {
         const r = result.report;
         responseText = r ? [
-          "รายงานวันนี้",
+          "สรุปยอดวันนี้",
+          "ค่าเช่ารับ: " + formatMoney(r.rentReceived || 0) + " บาท",
+          "ค่าปรับรับ: " + formatMoney(r.fineReceived || 0) + " บาท",
+          "รวมรับ: " + formatMoney(r.totalReceived || 0) + " บาท",
           "ใช้งานคำสั่ง: " + r.commandCount,
           "ค้นลูกค้า: " + r.searchCount,
           "ผิดพลาด: " + r.errorCount,
@@ -2202,7 +2205,7 @@ async function handleEvent(event) {
                 ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nรอรับรหัส***** สักครู่นะครับ ภายใน 24 ชม."
                 : result.sourceWritten
                   ? result.sourceWrite?.fineOnly
-                    ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nบันทึกค่าปรับแล้ว วันจ่ายและยอดค่าเช่าไม่เปลี่ยน"
+                    ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nบันทึกค่าปรับและรวมยอดรายวันแล้ว วันจ่ายและยอดค่าเช่าไม่เปลี่ยน"
                     : result.sourceWrite?.cycleComplete !== false
                     ? "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nลงยอดครบในชีตต้นทางและเลื่อนวันจ่ายรอบถัดไปแล้ว"
                     : "คิว #" + result.rowNo + " ผ่านการตรวจสอบแล้ว\nรับชำระบางส่วนแล้ว สะสม " + result.sourceWrite?.paidTotal + " บาท เหลือ " + result.sourceWrite?.remaining + " บาท วันจ่ายยังไม่เลื่อน"
@@ -2428,4 +2431,5 @@ export default async function handler(req, res) {
     });
   }
 }
+
 
