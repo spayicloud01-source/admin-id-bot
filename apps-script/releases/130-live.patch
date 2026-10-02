@@ -1,0 +1,203 @@
+--- live-release-129.gs
++++ live-release-130.gs
+@@ -1,5 +1,5 @@
+ const CONFIG = {
+-  VERSION: '2026.09.30-129',
++  VERSION: '2026.10.03-130',
+   CUSTOMER_PILOT_SOURCE: 'v6',
+   CUSTOMER_PILOT_SHEET: 'V6/10-69',
+   CUSTOMER_BINDING_TARGETS: [
+@@ -199,7 +199,7 @@
+     });
+   }
+ 
+-  add('version', CONFIG.VERSION === '2026.09.30-129', CONFIG.VERSION, true);
++  add('version', CONFIG.VERSION === '2026.10.03-130', CONFIG.VERSION, true);
+   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
+   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
+   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
+@@ -429,7 +429,7 @@
+     checks.push({ name: name, pass: !!pass, detail: detail || '' });
+   }
+ 
+-  add('Apps Script version', CONFIG.VERSION === '2026.09.30-129', CONFIG.VERSION);
++  add('Apps Script version', CONFIG.VERSION === '2026.10.03-130', CONFIG.VERSION);
+   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
+   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
+ 
+@@ -3016,6 +3016,20 @@
+     pendingReview = vals.filter(function(r){ return String(r[0] || '').trim() === 'รอตรวจ'; }).length;
+   }
+ 
++  let rentReceived = 0, fineReceived = 0;
++  if (rq && rq.getLastRow() >= 2) {
++    const receipts = rq.getRange(2, 1, rq.getLastRow() - 1, 12).getValues();
++    receipts.forEach(function(r) {
++      if (String(r[8] || '').trim() !== 'ผ่าน') return;
++      const kind = String(r[1] || '').trim();
++      if (kind !== 'รับค่าปรับ' && kind !== 'บันทึกชำระ') return;
++      const paidAt = kind === 'รับค่าปรับ' ? finePaidDate_(r[5]) : parseDateFlexible_(r[0]);
++      if (!paidAt || Utilities.formatDate(paidAt, tz, 'yyyy-MM-dd') !== todayKey) return;
++      if (kind === 'รับค่าปรับ') fineReceived += paymentNumber_(r[6]);
++      else rentReceived += paymentNumber_(r[6]);
++    });
++  }
++
+   let pendingStaff = 0;
+   const st = ss.getSheetByName(CONFIG.STAFF_SHEET);
+   if (st && st.getLastRow() >= 2) {
+@@ -3026,6 +3040,9 @@
+   return {
+     ok: true,
+     report: {
++      rentReceived: rentReceived,
++      fineReceived: fineReceived,
++      totalReceived: rentReceived + fineReceived,
+       commandCount: commandCount,
+       searchCount: searchCount,
+       errorCount: errorCount,
+@@ -4021,14 +4038,65 @@
+   const d = new Date(m[1] + 'T00:00:00+07:00');
+   return !isNaN(d.getTime()) && dateKey_(d) === m[1] && m[1] <= dateKey_(new Date()) ? d : null;
+ }
++function findFineTotalRow_(sheet, headers) {
++  if (!headers.note) return 0;
++  const labels = sheet.getRange(1, headers.note, sheet.getLastRow(), 1).getDisplayValues();
++  const rows = [];
++  labels.forEach(function(r, i) { if (String(r[0] || '').trim() === 'ค่าปรับ') rows.push(i + 1); });
++  return rows.length === 1 ? rows[0] : 0;
++}
++function fineTotalValue_(range) {
++  if (range.getFormula()) return null;
++  const value = range.getValue();
++  if (value === '' || value == null) return 0;
++  if (typeof value !== 'number' && typeof value !== 'string') return null;
++  const number = typeof value === 'number' ? value : Number(String(value).replace(/,/g, '').trim());
++  return Number.isFinite(number) && number >= 0 ? number : null;
++}
++function rollbackFineSource_(sheet, backup, reviewRowNo) {
++  const customer = findCustomerIdentity_(backup.source, backup.sheet, backup.queue);
++  if (!customer || Number(customer.row) !== Number(backup.sourceRow) ||
++      normalizeGeneral_(customer.name) !== normalizeGeneral_(backup.name)) {
++    return { ok: false, message: 'ข้อมูลลูกค้าเปลี่ยนแล้ว กรุณาตรวจชีตก่อนยกเลิก' };
++  }
++  const headers = detectHeaders_(sheet);
++  if (!headers || findFineTotalRow_(sheet, headers) !== backup.fineTotal.row ||
++      findCalendarDateColumn_(sheet, headers.headerRow, headers.note + 1, new Date(backup.paidAt)) !== backup.fineTotal.col) {
++    return { ok: false, message: 'ตำแหน่งสรุปค่าปรับเปลี่ยนแล้ว กรุณาตรวจชีตก่อน' };
++  }
++  const range = sheet.getRange(backup.sourceRow, backup.fineTotal.col);
++  const total = sheet.getRange(backup.fineTotal.row, backup.fineTotal.col);
++  const value = fineTotalValue_(total);
++  const marker = '[ค่าปรับ #' + reviewRowNo + ']';
++  const customerLines = (range.getNote() || '').split('\n');
++  const totalLines = (total.getNote() || '').split('\n');
++  const hasMarker = function(line) { return line.indexOf(marker + ' ') === 0; };
++  if (value === null || value < backup.amount || !customerLines.some(hasMarker) || !totalLines.some(hasMarker)) {
++    return { ok: false, message: 'ยอดหรือโน้ตค่าปรับถูกแก้ กรุณาตรวจชีตก่อนยกเลิก' };
++  }
++  const before = [snapshotCell_(range), snapshotCell_(total)];
++  try {
++    total.setValue(Math.round((value - backup.amount) * 100) / 100);
++    total.setNote(totalLines.filter(function(line) { return !hasMarker(line); }).join('\n'));
++    range.setNote(customerLines.filter(function(line) { return !hasMarker(line); }).join('\n'));
++  } catch (err) {
++    before.forEach(function(snap) { restoreCellSnapshot_(sheet, snap); });
++    throw err;
++  }
++  return { ok: true };
++}
+ function applyApprovedFineToSource_(reviewRow, rawReviewRow, reviewRowNo) {
+-  if (!isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false))) return { ok: false, message: 'ระบบเขียนชีตต้นทางยังปิดอยู่' };
++  if (!isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false))) {
++    return { ok: false, message: 'ระบบเขียนชีตต้นทางยังปิดอยู่' };
++  }
+   const parts = String(reviewRow[4] || '').split(' / ');
+   const sourceName = String(parts.shift() || '').trim();
+   const sourceSheet = parts.join(' / ').trim();
+   if (!paymentTabAllowed_(sourceName, sourceSheet)) return { ok: false, message: 'แถบรับชำระไม่ถูกต้อง' };
+   const customer = findCustomerIdentity_(sourceName, sourceSheet, reviewRow[2]);
+-  if (!customer || normalizeGeneral_(customer.name) !== normalizeGeneral_(reviewRow[3])) return { ok: false, message: 'ข้อมูลลูกค้าเปลี่ยนแล้ว กรุณาตรวจคิวก่อน' };
++  if (!customer || normalizeGeneral_(customer.name) !== normalizeGeneral_(reviewRow[3])) {
++    return { ok: false, message: 'ข้อมูลลูกค้าเปลี่ยนแล้ว กรุณาตรวจคิวก่อน' };
++  }
+   const amount = paymentNumber_(rawReviewRow[6]);
+   const paidAt = finePaidDate_(reviewRow[5]);
+   if (!(amount > 0) || !paidAt) return { ok: false, message: 'ยอดค่าปรับหรือวันที่รับเงินจริงไม่ถูกต้อง' };
+@@ -4037,28 +4105,51 @@
+   if (!sheet) return { ok: false, message: 'เปิดชีตต้นทางไม่ได้' };
+   const headers = detectHeaders_(sheet);
+   if (!headers || !headers.dueDate) return { ok: false, message: 'หัวตารางต้นทางไม่ครบ' };
+-  const col = findCalendarDateColumn_(sheet, headers.headerRow, headers.note ? headers.note + 1 : Math.max(headers.dueDate + 1, 15), paidAt);
++  const col = findCalendarDateColumn_(sheet, headers.headerRow,
++    headers.note ? headers.note + 1 : Math.max(headers.dueDate + 1, 15), paidAt);
+   if (!col) return { ok: false, message: 'ไม่พบช่องวันที่รับค่าปรับในปฏิทิน' };
+   const range = sheet.getRange(Number(customer.row), col);
++  const totalRow = findFineTotalRow_(sheet, headers);
++  if (!totalRow || totalRow === Number(customer.row)) return { ok: false, message: 'ไม่พบแถวสรุปค่าปรับที่ชัดเจน' };
++  const totalRange = sheet.getRange(totalRow, col);
++  const totalValue = fineTotalValue_(totalRange);
++  if (totalValue === null) return { ok: false, message: 'ช่องสรุปค่าปรับเป็นสูตรหรือไม่ใช่ตัวเลข กรุณาตรวจชีตก่อน' };
+   const props = PropertiesService.getScriptProperties();
+   const key = paymentSourceWriteKey_(reviewRowNo);
+   const existingBackup = props.getProperty(key);
+   if (existingBackup) {
+     const prior = JSON.parse(existingBackup);
+-    if (prior.writtenAt && !prior.reversedAt && prior.kind === 'fine' && (range.getNote() || '').indexOf('[ค่าปรับ #' + reviewRowNo + ']') >= 0) return { ok: true, written: true, fineOnly: true, amount: amount, paidDate: dateKey_(paidAt) };
++    if (prior.writtenAt && !prior.reversedAt && prior.kind === 'fine' &&
++        (range.getNote() || '').indexOf('[ค่าปรับ #' + reviewRowNo + ']') >= 0) {
++      return { ok: true, written: true, fineOnly: true, amount: amount, paidDate: dateKey_(paidAt) };
++    }
+     return { ok: false, message: 'รายการนี้มีข้อมูลสำรองแล้ว กรุณาตรวจสอบก่อนลองซ้ำ' };
+   }
+-  const backup = { version: 1, kind: 'fine', reviewRowNo: reviewRowNo, source: sourceName, sheet: sourceSheet, spreadsheetId: ss.getId(), sourceRow: Number(customer.row), queue: customer.queue, name: customer.name, amount: amount, paidAt: paidAt.toISOString(), before: [snapshotCell_(range)], createdAt: new Date().toISOString() };
++  const backup = { version: 1, kind: 'fine', reviewRowNo: reviewRowNo,
++    source: sourceName, sheet: sourceSheet, spreadsheetId: ss.getId(),
++    sourceRow: Number(customer.row), queue: customer.queue, name: customer.name,
++    amount: amount, paidAt: paidAt.toISOString(), fineTotal: { row: totalRow, col: col },
++    before: [snapshotCell_(range), snapshotCell_(totalRange)],
++    createdAt: new Date().toISOString() };
+   props.setProperty(key, JSON.stringify(backup));
+   persistPaymentBackupLog_(backup, 'paymentSourceBackup', 'สำเร็จ', JSON.stringify(backup));
+   const line = '[ค่าปรับ #' + reviewRowNo + '] รับ ' + amount + ' บาท วันที่ ' + dateKey_(paidAt);
+-  range.setNote([range.getNote() || '', line].filter(Boolean).join('\n'));
++  try {
++    range.setNote([range.getNote() || '', line].filter(Boolean).join('\n'));
++    totalRange.setValue(Math.round((totalValue + amount) * 100) / 100);
++    totalRange.setNote([totalRange.getNote() || '', line + ' คิว ' + customer.queue].filter(Boolean).join('\n'));
++  } catch (err) {
++    backup.before.forEach(function(snap) { restoreCellSnapshot_(sheet, snap); });
++    props.deleteProperty(key);
++    throw err;
++  }
+   SpreadsheetApp.flush();
+-  backup.after = [snapshotCell_(range)];
++  backup.after = [snapshotCell_(range), snapshotCell_(totalRange)];
+   backup.writtenAt = new Date().toISOString();
+   props.setProperty(key, JSON.stringify(backup));
+   persistPaymentBackupLog_(backup, 'paymentSourceBackupAfter', 'สำเร็จ', JSON.stringify(backup));
+-  return { ok: true, written: true, fineOnly: true, amount: amount, paidDate: dateKey_(paidAt), source: sourceName, sheet: sourceSheet, sourceRow: Number(customer.row) };
++  return { ok: true, written: true, fineOnly: true, amount: amount,
++    paidDate: dateKey_(paidAt), source: sourceName, sheet: sourceSheet, sourceRow: Number(customer.row) };
+ }
+ 
+ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
+@@ -4277,6 +4368,10 @@
+   const sourceSheet = sourceSs.getSheetByName(String(backup.sheet || ''));
+   if (!sourceSheet) return { ok: true, rolledBack: false, message: 'ไม่พบชีตต้นทางสำหรับยกเลิกรายการ' };
+ 
++  if (backup.kind === 'fine' && backup.fineTotal) {
++    const reversed = rollbackFineSource_(sourceSheet, backup, rowNo);
++    if (!reversed.ok) return { ok: true, rolledBack: false, stale: true, message: reversed.message };
++  } else {
+   const after = Array.isArray(backup.after) ? backup.after : [];
+   for (let i = 0; i < after.length; i++) {
+     if (!snapshotMatchesCurrent_(sourceSheet, after[i])) {
+@@ -4291,6 +4386,7 @@
+ 
+   const before = Array.isArray(backup.before) ? backup.before : [];
+   before.forEach(function(snap) { restoreCellSnapshot_(sourceSheet, snap); });
++  }
+   SpreadsheetApp.flush();
+ 
+   if (backup.cycleKey) {
