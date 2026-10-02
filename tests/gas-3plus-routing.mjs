@@ -75,3 +75,24 @@ for (const [key, value] of Object.entries(oldEnv)) {
 }
 console.log("gas 3+ routing: passed");
 
+
+const { inspectBridgeRole } = await import('../lib/sheetsBridge.js');
+const savedFetch = globalThis.fetch;
+process.env.GOOGLE_APPS_SCRIPT_PAYMENT_URL = 'https://payment.example';
+process.env.SHEETS_BRIDGE_SECRET = 'test-only';
+globalThis.fetch = async (url, options) => {
+  assert.ok(url.startsWith('https://payment.example'));
+  assert.equal(JSON.parse(options.body).action, 'getBridgeVersion');
+  return { ok: true, status: 200, text: async () => JSON.stringify({ ok: true, role: 'payment', version: '2026.10.03-130' }) };
+};
+try {
+  assert.equal((await inspectBridgeRole('payment')).role, 'payment');
+  await assert.rejects(inspectBridgeRole('unexpected'), /Invalid bridge role/);
+} finally {
+  globalThis.fetch = savedFetch;
+  for (const [key, value] of Object.entries(oldEnv)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+console.log('role diagnostics use the dedicated endpoint: passed');

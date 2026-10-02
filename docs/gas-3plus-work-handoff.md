@@ -2,6 +2,18 @@
 
 Branch: `refactor/gas-3plus`
 
+## Live progress, 2026-10-03 01:00 (Asia/Bangkok)
+
+- Integrated production main `3d08f16` into the GAS 3+ branch, preserving daily fine totals, separate fine history/calendar notes, cancellation behavior, and the six-button staff menu.
+- Customer, Payment, and Notify editor source was backed up and compared to branch release 129 (identical except trailing whitespace), then replaced with the tested merged release 130. Each existing Web App was updated in place to version 2; access and URLs are unchanged.
+- All 17 automated test files passed, including shared state, migration, routing, fine accumulation/rollback, and staff menu. Role diagnostics now authenticate to each dedicated endpoint and report only version/role, without exposing URLs or secrets.
+- Preview deep health passed all 15 critical checks. Preview diagnostics verified customer/payment/notify roles at release 130 and customer search returned zero matches as intended. One earlier customer search aborted; a subsequent check succeeded, so intermittent Google delays remain a limitation.
+- Legacy migration was rerun immediately before cutover: `ok:true`, `paymentKeys:5`, `migrated:5`, `unmapped:[]`. Shared payment state now includes the five current legacy cycle keys.
+- Three dedicated Production URL variables were added using the already-deployed Web App URLs. Existing legacy URL and shared secret are retained.
+- No customer financial entry was fabricated and no unsolicited customer notification was sent. Live receipt/approval/cancellation and outbound notification checks require an actual authorized receipt or designated test customer; automated fixtures cover those flows.
+- The existing legacy daily reminder trigger remains the only scheduled trigger. Do not add a second Notify trigger. It invokes the production Vercel reminder endpoint, which will route reminder work to Notify after cutover.
+- The legacy bridge remains deployed for recovery, but rolling Payment back after new shared-state writes requires reconciling the shared cycle state to legacy first; do not blindly route payment traffic to stale Script Properties.
+
 ## Live progress, 2026-09-30 20:xx (Asia/Bangkok)
 
 - PR #10 is still Draft and unmerged. Branch head before this documentation update: `efc9a738893a5fd4573550276c80bffbf2e141f4`. GitHub CI succeeded and Vercel Preview is READY. Production evolved independently on `main` with the latest fine-receipt changes; do not overwrite it from an older bridge.
