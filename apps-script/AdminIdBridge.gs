@@ -2944,7 +2944,7 @@ function listDueCustomers_(body) {
   const statusMode = ['deleted','pending_lock','sold','fraud','installment'].indexOf(mode) !== -1;
   const remindDays = Number(getSettingValue_('REMIND_BEFORE_DAYS', 1)) || 1;
   const cache = CacheService.getScriptCache();
-  const cacheKey = 'due-list:' + mode + ':' + remindDays;
+  const cacheKey = 'due-list:named-v1:' + mode + ':' + remindDays;
   const cached = cache.get(cacheKey);
   if (cached) {
     try { return JSON.parse(cached); } catch (err) {}
@@ -2983,6 +2983,10 @@ function listDueCustomers_(body) {
 
         for (let r = 0; r < values.length && items.length < 50; r++) {
           const row = values[r];
+          // Queue/date-only template rows are not customers. Filter before
+          // counting and truncating so they cannot fill the reminder digest.
+          const customerName = String(getCell_(row, h.name) || '').trim();
+          if (!customerName || /^[-–—]+$/.test(customerName)) continue;
           const status = getCell_(row, h.status);
           const statusClass = customerStatusClass_(status);
           if (mode === 'deleted' && statusClass !== 'deleted') continue;
@@ -3007,7 +3011,7 @@ function listDueCustomers_(body) {
             sheet: sh.getName(),
             row: startRow + r,
             queue: getCell_(row, h.queue),
-            name: getCell_(row, h.name),
+            name: customerName,
             phone: getCell_(row, h.phone),
             dueDate: dueText,
             daysDelta: delta,
