@@ -1242,8 +1242,9 @@ async function handleEvent(event) {
             hasItems,
           });
 
-          // Customer menu is linked during binding. Avoid extra bridge calls
-          // here so self-service buttons stay responsive even when Sheets is busy.
+          // Migrate existing verified customers too, after delivering the result.
+          // The staff guard and per-instance cache keep staff menus untouched.
+          if (result.bound) await safeLinkCustomerMenu(lineUserId);
           return;
         } catch (error) {
           console.warn("Customer self-service failed", { field, error: String(error?.message || error) });
@@ -2431,4 +2432,3 @@ export default async function handler(req, res) {
     });
   }
 }
-

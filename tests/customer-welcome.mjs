@@ -9,11 +9,13 @@ process.env.GOOGLE_APPS_SCRIPT_URL='https://example.test/bridge';
 process.env.PUBLIC_BASE_URL='https://admin-id-bot.example';
 let binding;
 let selfResult={bound:false};
+let staffAccess={ok:true,allowed:false,message:'บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID'};
 const replies=[];
 const loadingRequests=[];
 const progressMessages=[];
 const bindingRequests=[];
 const auditLogs=[];
+const menuLinks=[];
 const json=(body,status=200)=>({ok:status<400,status,json:async()=>body,text:async()=>JSON.stringify(body)});
 globalThis.fetch=async(url,options={})=>{
  const method=options.method||'GET';
@@ -24,11 +26,12 @@ globalThis.fetch=async(url,options={})=>{
   if(input.action==='logAction') {auditLogs.push(input);return json({ok:true,logged:true});}
   if(input.action==='requestCustomerBinding') {bindingRequests.push(input);return json({ok:true,...binding});}
   if(input.action==='getCustomerSelf') return json({ok:true,...selfResult});
-  if(input.action==='checkAccess') return json({ok:true,allowed:false,message:'บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID'});
+  if(input.action==='checkAccess') return json(staffAccess);
   return json({ok:true,bound:false});
  }
  if(url.endsWith('/message/reply')) {replies.push(JSON.parse(options.body).messages);return json({});}
- if(url.endsWith('/richmenu/list')) return json({richmenus:[{name:'admin-id-customer-v2',richMenuId:'richmenu-test'}]});
+ if(url.endsWith('/richmenu/list')) return json({richmenus:[{name:'admin-id-customer-v3',richMenuId:'richmenu-test'}]});
+ if(url.includes('/richmenu/richmenu-test')) {menuLinks.push(url);return json({});}
  if(url.endsWith('/content')) return json({});
  return json({});
 };
@@ -93,4 +96,12 @@ assert.equal(paymentResult.contents.footer.contents[0].action.label,'เปิ�
 const fallback=await send('U-hyphen','มีเรื่องอยากถาม');
 assert.equal(fallback[0].type,'flex');
 assert.match(fallback[0].contents.body.contents[1].text,/ติดต่อแอดมิน/);
+await send('U-existing-customer','สถานะ');
+assert.ok(menuLinks.some(url=>url.includes('/user/U-existing-customer/')));
+staffAccess={ok:true,allowed:true,role:'เจ้าของ'};
+await send('U-staff-customer','สถานะ');
+assert.ok(!menuLinks.some(url=>url.includes('/user/U-staff-customer/')));
+staffAccess={ok:true,allowed:false,message:'บัญชีเจ้าหน้าที่ถูกระงับ'};
+await send('U-disabled-staff-customer','สถานะ');
+assert.ok(!menuLinks.some(url=>url.includes('/user/U-disabled-staff-customer/')));
 console.log('PASS: verified overview card, exact fields, six buttons; rejected binding has no card');
