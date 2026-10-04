@@ -59,6 +59,10 @@ async function handleLakroi(req, res) {
   try {
     res.setHeader("Cache-Control", "no-store");
     if (req.method === "GET") {
+      if (String(req.query?.probe || "") === "1") {
+        const p = await lakroiPut("lakroi/probe.txt", "ok " + new Date().toISOString(), "text/plain; charset=utf-8");
+        return res.status(200).json({ ok: true, probe: true, url: p.url || lakroiBlobUrl("lakroi/probe.txt") });
+      }
       const state = await lakroiReadState();
       return res.status(200).json({ ok: true, ...state });
     }
