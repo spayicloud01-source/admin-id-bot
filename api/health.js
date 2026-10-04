@@ -71,6 +71,11 @@ async function lakroiReadState() {
 async function handleLakroi(req, res) {
   try {
     res.setHeader("Cache-Control", "no-store");
+    const expectedPin = String(process.env.LAKROI_DASHBOARD_PIN || "").trim();
+    const suppliedPin = String(req.headers["x-lakroi-pin"] || "").trim();
+    if (!expectedPin || suppliedPin !== expectedPin) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
     if (req.method === "GET") {
       const state = await lakroiReadState();
       return res.status(200).json({ ok: true, ...state });
