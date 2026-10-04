@@ -81,7 +81,7 @@ canvas{width:100%;height:260px;display:block}.table{display:grid;gap:8px}.row{di
 <script>
 (function(){
 const KEY="lakroi_dashboard_v1",GOAL_KEY="lakroi_daily_goal";
-let bills=[],editId=null,pendingPhoto="";
+let bills=[],editId=null,pendingPhoto="",loading=false,saving=false,salesWritable=false;
 let APP_PIN=localStorage.getItem("lakroi_dashboard_pin")||"";
 function apiHeaders(extra){return Object.assign({"x-lakroi-pin":APP_PIN},extra||{})}
 function showLock(msg){$("lockscreen").classList.remove("hidden");$("pinError").textContent=msg||"";$("pinInput").focus()}
@@ -90,7 +90,7 @@ const $=id=>document.getElementById(id);
 const money=n=>"฿"+Number(n||0).toLocaleString("th-TH",{maximumFractionDigits:0});
 const iso=d=>{const x=new Date(d);return x.toISOString().slice(0,10)};
 const bangkokDate=d=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit"}).format(d||new Date());
-const today=bangkokDate(new Date());
+let today=bangkokDate(new Date());
 function shiftDate(dateStr,days){const d=new Date(dateStr+"T12:00:00+07:00");d.setDate(d.getDate()+days);return bangkokDate(d)}
 function monthStart(dateStr){return dateStr.slice(0,7)+"-01"}
 function getRange(){
@@ -108,58 +108,53 @@ function formatThaiDate(s){if(!s)return"";return new Date(s+"T12:00:00+07:00").t
 function formatRange(a,b){return a===b?formatThaiDate(a):formatThaiDate(a)+" – "+formatThaiDate(b)}
 function inRange(x,r){return (!r.from||x.date>=r.from)&&(!r.to||x.date<=r.to)}
 async function load(){
-  try{bills=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){bills=[]}
-  $("goalInput").value=localStorage.getItem(GOAL_KEY)||"15000";
+  if(loading||saving)return;
   if(!APP_PIN){showLock();return}
+  loading=true;
   try{
     const r=await fetch("/api/health?lakroi=1",{cache:"no-store",headers:apiHeaders()});
     const j=await r.json();
     if(r.status===401){localStorage.removeItem("lakroi_dashboard_pin");APP_PIN="";showLock("รหัสไม่ถูกต้อง");return}
-    if(r.ok&&j.ok){
-      hideLock();
-      $("syncLabel").textContent="อัปเดตล่าสุด "+new Date().toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
-      render();
-      const localBills=bills.slice();
-      if(Array.isArray(j.bills)&&j.bills.length){
-        bills=j.bills;
-        $("goalInput").value=String(j.goal||15000);
-        localStorage.setItem(KEY,JSON.stringify(bills));
-        localStorage.setItem(GOAL_KEY,$("goalInput").value);
-        render();
-      }else if(localBills.length){
-        bills=localBills;
-        await save();
-      }else{
-        bills=[];
-        $("goalInput").value=String(j.goal||15000);
-        render();
-      }
-    }
+    if(!r.ok||!j.ok||!Array.isArray(j.bills))throw new Error(j.error||"อ่านข้อมูลไม่สำเร็จ");
+    hideLock();
+    salesWritable=j.salesWritable===true;
+    $("newBill").disabled=!salesWritable;
+    $("newBill").textContent=salesWritable?"＋ ลงบิลยอดขาย":"ลงบิลผ่าน LINE เดิม";
+    const stamp=j.updatedAt?new Date(j.updatedAt).toLocaleString("th-TH",{timeZone:"Asia/Bangkok"}):"ไม่ทราบเวลา";
+    $("syncLabel").textContent=(j.sourceMode==="snapshot"?"ข้อมูลสำเนาชีต • ":"ข้อมูลชีต • ")+stamp;
+    bills=j.bills;
+    $("goalInput").value=String(j.goal??15000);
+    localStorage.setItem(KEY,JSON.stringify(bills));
+    localStorage.setItem(GOAL_KEY,$("goalInput").value);
+    render();
   }catch(e){
-    $("syncLabel").textContent="เชื่อมข้อมูลไม่สำเร็จ";
+    $("syncLabel").textContent="เชื่อมข้อมูลไม่สำเร็จ • ยอดอาจไม่เป็นปัจจุบัน";
+    if(!$("lockscreen").classList.contains("hidden"))$("pinError").textContent="เชื่อมข้อมูลไม่สำเร็จ กรุณาลองอีกครั้ง";
     console.warn("shared data unavailable",e);
-  }
+  }finally{loading=false}
 }
-async function save(){
-  localStorage.setItem(KEY,JSON.stringify(bills));
-  localStorage.setItem(GOAL_KEY,$("goalInput").value||"15000");
-  render();
+async function save(nextBills=bills){
+  if(saving)throw new Error("กำลังบันทึก กรุณารอสักครู่");
+  saving=true;
   try{
-    const r=await fetch("/api/health?lakroi=1",{method:"POST",headers:apiHeaders({"content-type":"application/json"}),body:JSON.stringify({action:"save",bills,goal:Number($("goalInput").value||15000)})});
+    const r=await fetch("/api/health?lakroi=1",{method:"POST",headers:apiHeaders({"content-type":"application/json"}),body:JSON.stringify({action:"save",bills:nextBills,goal:Number($("goalInput").value||15000)})});
     const j=await r.json();
     if(!r.ok||!j.ok)throw new Error(j.error||"บันทึกออนไลน์ไม่สำเร็จ");
-  }catch(e){
-    console.warn("shared save failed",e);
-  }
+    bills=nextBills;
+    localStorage.setItem(KEY,JSON.stringify(bills));
+    localStorage.setItem(GOAL_KEY,$("goalInput").value||"15000");
+    render();
+  }finally{saving=false}
 }
 function render(){
-$("todayLabel").textContent=new Date().toLocaleDateString("th-TH",{day:"numeric",month:"short",year:"numeric"});
+today=bangkokDate(new Date());
+$("todayLabel").textContent=new Date().toLocaleDateString("th-TH",{timeZone:"Asia/Bangkok",day:"numeric",month:"short",year:"numeric"});
 const q=$("search").value.trim().toLowerCase(),bf=$("branchFilter").value,r=getRange();
 $("rangeLabel").textContent=r.label;
 const filtered=bills.filter(x=>inRange(x,r)&&(!bf||x.branch===bf)&&(!q||String(x.note||"").toLowerCase().includes(q)||String(x.id).includes(q)||String(x.branch).toLowerCase().includes(q)));
 const todayRows=bills.filter(x=>x.date===today),todayTotal=todayRows.reduce((a,b)=>a+Number(b.amount||0),0);
 $("todaySales").textContent=money(todayTotal);$("todayBills").textContent=todayRows.length+" บิลวันนี้";
-const total=filtered.reduce((a,b)=>a+Number(b.amount||0),0),cash=filtered.filter(x=>x.method==="เงินสด").reduce((a,b)=>a+Number(b.amount||0),0);
+const total=filtered.reduce((a,b)=>a+Number(b.amount||0),0),cash=filtered.reduce((a,b)=>a+Number(b.cashAmount??(b.method==="เงินสด"?b.amount:0)),0);
 $("allSales").textContent=money(total);$("billCount").textContent=filtered.length;$("avgBill").textContent=money(filtered.length?total/filtered.length:0);$("cashSales").textContent=money(cash);$("otherSales").textContent=money(total-cash);
 const goal=Number($("goalInput").value||15000),pct=goal?Math.min(100,Math.round(todayTotal/goal*100)):0;$("goalFill").style.width=pct+"%";$("goalText").textContent=money(todayTotal)+" / "+money(goal);$("goalPct").textContent=pct+"%";
 renderBranches(filtered);renderBills(filtered);drawChart(filtered,r);
@@ -170,13 +165,13 @@ names.forEach(n=>{const rr=rows.filter(x=>x.branch===n),s=rr.reduce((a,b)=>a+Num
 function renderBills(rows){
 const box=$("billTable");if(!rows.length){box.innerHTML='<div class="empty">ยังไม่มีบิล กด “ลงบิลยอดขาย” เพื่อเริ่มบันทึก</div>';return}
 let out='<div class="row head"><div>รูป</div><div>รายการ</div><div>ยอด</div><div class="hideM">สาขา</div><div class="hideM">จัดการ</div></div>';
-rows.slice().sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt)).forEach(x=>{out+=`<div class="row"><div>${x.photo?'<img class="thumb" src="'+x.photo+'">':'<div class="thumb"></div>'}</div><div><div class="name">${esc(x.note||"บิลขาย")}</div><div class="muted">${esc(x.date)} • ${esc(x.method)}</div></div><div class="amount">${money(x.amount)}</div><div class="hideM"><div class="name">${esc(x.branch)}</div></div><div class="actions controls"><button class="btn soft" data-photo="${x.id}">${x.photo?"เปลี่ยนรูป":"เพิ่มรูป"}</button><button class="btn red" data-del="${x.id}">ลบ</button></div></div>`});box.innerHTML=out;
-box.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{if(confirm("ลบบิลนี้?")){bills=bills.filter(x=>x.id!==b.dataset.del);save()}});
+rows.slice().sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt)).forEach(x=>{out+=`<div class="row"><div>${x.photo?'<img class="thumb" src="'+esc(x.photo)+'">':'<div class="thumb"></div>'}</div><div><div class="name">${esc(x.note||"บิลขาย")}</div><div class="muted">${esc(x.date)} • ${esc(x.method)}</div></div><div class="amount">${money(x.amount)}</div><div class="hideM"><div class="name">${esc(x.branch)}</div></div><div class="actions controls"><button class="btn soft" data-photo="${esc(x.id)}">${x.photo?"เปลี่ยนรูป":"เพิ่มรูป"}</button>${salesWritable?`<button class="btn red" data-del="${esc(x.id)}">ลบ</button>`:""}</div></div>`});box.innerHTML=out;
+box.querySelectorAll("[data-del]").forEach(b=>b.onclick=async()=>{if(confirm("ลบบิลนี้?")){try{await save(bills.filter(x=>x.id!==b.dataset.del))}catch(e){alert(e.message)}}});
 box.querySelectorAll("[data-photo]").forEach(b=>b.onclick=()=>openEdit(b.dataset.photo));
 }
 function esc(s){return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#039;"}[c]))}
-function openNew(){editId=null;pendingPhoto="";$("modalTitle").textContent="ลงบิลยอดขาย";$("fDate").value=today;$("fBranch").value="ลพบุรี";$("fAmount").value="";$("fMethod").value="เงินสด";$("fNote").value="";$("fPhoto").value="";$("photoPreview").innerHTML="";$("billModal").classList.remove("hidden")}
-function openEdit(id){const x=bills.find(b=>b.id===id);if(!x)return;editId=id;pendingPhoto=x.photo||"";$("modalTitle").textContent="เพิ่ม/เปลี่ยนรูปบิล";$("fDate").value=x.date;$("fBranch").value=x.branch;$("fAmount").value=x.amount;$("fMethod").value=x.method;$("fNote").value=x.note||"";$("fPhoto").value="";$("photoPreview").innerHTML=x.photo?'<img src="'+x.photo+'">':"";$("billModal").classList.remove("hidden")}
+function openNew(){if(!salesWritable){alert("ยังไม่เชื่อมบันทึกชีต กรุณาลงบิลผ่าน LINE เดิม");return}editId=null;pendingPhoto="";$("modalTitle").textContent="ลงบิลยอดขาย";$("fDate").value=today;$("fBranch").value="ลพบุรี";$("fAmount").value="";$("fMethod").value="เงินสด";$("fNote").value="";$("fPhoto").value="";$("photoPreview").innerHTML="";$("billModal").classList.remove("hidden")}
+function openEdit(id){const x=bills.find(b=>b.id===id);if(!x)return;editId=id;pendingPhoto=x.photo||"";$("modalTitle").textContent="เพิ่ม/เปลี่ยนรูปบิล";["fDate","fBranch","fAmount","fMethod","fNote"].forEach(k=>$(k).disabled=!salesWritable);$("fDate").value=x.date;$("fBranch").value=x.branch;$("fAmount").value=x.amount;$("fMethod").value=x.method;$("fNote").value=x.note||"";$("fPhoto").value="";$("photoPreview").innerHTML=x.photo?'<img src="'+esc(x.photo)+'">':"";$("billModal").classList.remove("hidden")}
 function close(){ $("billModal").classList.add("hidden") }
 $("fPhoto").onchange=async e=>{
   const f=e.target.files&&e.target.files[0];if(!f)return;
@@ -215,9 +210,10 @@ $("saveBill").onclick=async()=>{
     const id=editId||("B"+Date.now());
     const photo=await uploadPendingPhoto(id);
     const base={date:$("fDate").value||today,branch:$("fBranch").value,amount,method:$("fMethod").value,note:$("fNote").value.trim(),photo};
-    if(editId){const i=bills.findIndex(x=>x.id===editId);if(i>=0)bills[i]={...bills[i],...base}}
-    else{bills.push({id,createdAt:new Date().toISOString(),...base})}
-    await save();close();
+    let nextBills;
+    if(editId){nextBills=bills.map(x=>x.id===editId?{...x,...(salesWritable?base:{photo})}:x)}
+    else{nextBills=[...bills,{id,createdAt:new Date().toISOString(),...base}]}
+    await save(nextBills);close();
   }catch(e){alert("บันทึกไม่สำเร็จ: "+(e.message||e))}
   finally{$("saveBill").disabled=false;$("saveBill").textContent="บันทึกบิล"}
 }
@@ -226,7 +222,7 @@ $("pinInput").onkeydown=e=>{if(e.key==="Enter")$("pinBtn").click()};
 $("dateFrom").value=shiftDate(today,-6);$("dateTo").value=today;
 $("datePreset").onchange=()=>{$("customDates").classList.toggle("hidden",$("datePreset").value!=="custom");render()};
 $("applyDates").onclick=render;$("dateFrom").onchange=()=>{if($("datePreset").value==="custom")render()};$("dateTo").onchange=()=>{if($("datePreset").value==="custom")render()};
-$("newBill").onclick=openNew;$("closeModal").onclick=close;$("cancelBill").onclick=close;$("search").oninput=render;$("branchFilter").onchange=render;$("saveGoal").onclick=async()=>{localStorage.setItem(GOAL_KEY,$("goalInput").value||"15000");await save()}
+$("newBill").onclick=openNew;$("closeModal").onclick=close;$("cancelBill").onclick=close;$("search").oninput=render;$("branchFilter").onchange=render;$("saveGoal").onclick=async()=>{try{await save()}catch(e){alert("บันทึกเป้าหมายไม่สำเร็จ: "+e.message)}}
 function drawChart(rows,r){
   const c=$("chart"),ctx=c.getContext("2d"),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);
   let from=r.from,to=r.to;

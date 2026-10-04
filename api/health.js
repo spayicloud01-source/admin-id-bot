@@ -1,7 +1,7 @@
 // release-sync: customer-id-ocr
 const HEALTH_SCHEMA_VERSION = 3;
 import { callSheetsBridge, getBridgeRoutingStatus } from "../lib/sheetsBridge.js";
-import { LAKROI_SEED_BILLS } from "../lib/lakroiSeed.js";
+import { LAKROI_SEED_BILLS, LAKROI_SEED_SYNCED_AT } from "../lib/lakroiSeed.js";
 
 const EXPECTED_BRIDGE_VERSION = "2026.10.03-131";
 const EXPECTED_ACTIVE_SOURCES = 2;
@@ -40,16 +40,6 @@ async function lakroiPut(pathname, body, contentType) {
   if (!r.ok) throw new Error((data.error && data.error.message) || text || ("Blob HTTP " + r.status));
   return data;
 }
-async function lakroiSeedState() {
-  const state = {
-    bills: Array.isArray(LAKROI_SEED_BILLS) ? LAKROI_SEED_BILLS : [],
-    goal: 15000,
-    updatedAt: new Date().toISOString(),
-    seededFrom: "หลักร้อยเฟอร์ฯ - ยอดขายและลงของ / บิลขาย",
-  };
-  await lakroiPut("lakroi/data.json", JSON.stringify(state), "application/json; charset=utf-8");
-  return state;
-}
 async function lakroiReadState() {
   // Sales rows are grounded in the latest synced Google Sheet snapshot.
   // Cloud is used only to preserve dashboard metadata such as goal/photos.
@@ -67,13 +57,11 @@ async function lakroiReadState() {
   const state = {
     bills,
     goal: Number(cloud.goal || 15000),
-    updatedAt: new Date().toISOString(),
+    updatedAt: LAKROI_SEED_SYNCED_AT,
+    sourceMode: "snapshot",
+    salesWritable: false,
     seededFrom: "หลักร้อยเฟอร์ฯ - ยอดขายและลงของ / บิลขาย",
   };
-  // Heal old cloud states that contained duplicate/dashboard-only sales rows.
-  if (!Array.isArray(cloud.bills) || cloud.bills.length !== bills.length) {
-    try { await lakroiPut("lakroi/data.json", JSON.stringify(state), "application/json; charset=utf-8"); } catch {}
-  }
   return state;
 }
 async function handleLakroi(req, res) {
@@ -104,6 +92,14 @@ async function handleLakroi(req, res) {
       return res.status(200).json({ ok: true, url: result.url || lakroiBlobUrl(path) });
     }
     if (action === "save") {
+      const fields = ["id", "createdAt", "date", "branch", "amount", "method", "note", "cashAmount", "transferAmount", "thaiAmount"];
+      const salesKey = x => JSON.stringify(fields.map(k => x[k] ?? ""));
+      const expected = new Map(LAKROI_SEED_BILLS.map(x => [x.id, salesKey(x)]));
+      const incoming = Array.isArray(body.bills) ? body.bills : [];
+      if (incoming.length !== expected.size || new Set(incoming.map(x => x.id)).size !== expected.size ||
+          incoming.some(x => expected.get(x.id) !== salesKey(x))) {
+        return res.status(409).json({ok:false,error:"ยังไม่เชื่อมการบันทึกชีต กรุณาลงหรือแก้บิลผ่าน LINE เดิม"});
+      }
       const bills = Array.isArray(body.bills) ? body.bills.slice(-2000) : [];
       const clean = bills.map((x) => ({
         id: String(x.id || ""),
@@ -111,11 +107,18 @@ async function handleLakroi(req, res) {
         date: String(x.date || ""),
         branch: String(x.branch || ""),
         amount: Number(x.amount || 0),
+        cashAmount: Number(x.cashAmount || 0),
+        transferAmount: Number(x.transferAmount || 0),
+        thaiAmount: Number(x.thaiAmount || 0),
         method: String(x.method || ""),
         note: String(x.note || "").slice(0, 500),
         photo: String(x.photo || "").slice(0, 2000),
       })).filter((x) => x.id && x.date && x.amount >= 0);
-      const state = { bills: clean, goal: Number(body.goal || 15000), updatedAt: new Date().toISOString() };
+      const previousResponse = await fetch(lakroiBlobUrl("lakroi/data.json") + "?t=" + Date.now(), {cache:"no-store"});
+      if (!previousResponse.ok && previousResponse.status !== 404) throw new Error("อ่านข้อมูลเดิมก่อนบันทึกไม่สำเร็จ");
+      const previous = previousResponse.ok ? await previousResponse.json() : {bills:[]};
+      const preserved = (Array.isArray(previous.bills) ? previous.bills : []).filter(x => !expected.has(x.id));
+      const state = { bills: [...clean, ...preserved], goal: Number(body.goal || 15000), updatedAt: new Date().toISOString() };
       await lakroiPut("lakroi/data.json", JSON.stringify(state), "application/json; charset=utf-8");
       return res.status(200).json({ ok: true, updatedAt: state.updatedAt, count: clean.length });
     }
