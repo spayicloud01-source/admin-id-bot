@@ -16,6 +16,7 @@ button,input,select,textarea{font:inherit}.top{position:sticky;top:0;z-index:20;
 canvas{width:100%;height:260px;display:block}.table{display:grid;gap:8px}.row{display:grid;grid-template-columns:95px 1fr 110px 100px 94px;gap:8px;align-items:center;padding:11px;border:1px solid #eee7db;border-radius:13px;background:#fff}.row.head{background:#f5f1e8;font-size:11px;color:var(--muted);font-weight:800}.row div{min-width:0}.name{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.muted{font-size:11px;color:var(--muted)}.amount{font-weight:900}.thumb{width:50px;height:50px;border-radius:10px;background:#eee8dc;object-fit:cover}.empty{padding:28px 12px;text-align:center;color:var(--muted);border:1px dashed #d9d1c3;border-radius:14px}
 .fab{position:fixed;right:18px;bottom:18px;border:0;border-radius:18px;background:linear-gradient(145deg,#173c2a,#2b6749);color:#fff;padding:14px 17px;font-weight:900;box-shadow:0 10px 30px rgba(23,60,42,.32);z-index:15}
 .modal{position:fixed;inset:0;background:rgba(18,30,24,.48);z-index:50;display:flex;align-items:flex-end;justify-content:center}.modal.hidden{display:none}.sheet{background:#fffdf9;width:100%;max-width:720px;max-height:92vh;overflow:auto;border-radius:24px 24px 0 0;padding:18px 18px 26px}.modalhead{display:flex;justify-content:space-between;align-items:center}.modalhead h3{margin:0}.close{border:0;width:38px;height:38px;border-radius:10px;background:#f0ece3;font-size:22px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.field label{display:block;font-size:11px;color:var(--muted);font-weight:800;margin-bottom:6px}.field input,.field select,.field textarea{width:100%;border:1px solid #d8d3c8;border-radius:12px;padding:11px;background:#fff}.field textarea{min-height:85px;resize:vertical}.full{grid-column:1/-1}.preview{display:flex;gap:10px;flex-wrap:wrap}.preview img{width:82px;height:82px;border-radius:12px;object-fit:cover;border:1px solid var(--line)}.notice{font-size:11px;color:var(--muted);line-height:1.5;margin-top:8px}
+.lockscreen{position:fixed;inset:0;z-index:100;background:linear-gradient(160deg,#173c2a,#274f39);display:grid;place-items:center;padding:20px}.lockbox{width:min(390px,100%);background:#fffdf9;border-radius:24px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.25);text-align:center}.lockbox .logo{margin:0 auto 14px}.lockbox h2{margin:0 0 6px}.lockbox p{font-size:12px;color:var(--muted);margin:0 0 16px}.lockrow{display:flex;gap:8px}.lockrow input{flex:1;min-width:0;text-align:center;font-size:20px;letter-spacing:4px}.lockerror{min-height:18px;font-size:11px;color:var(--red);margin-top:8px}.hidden{display:none!important}
 @media(max-width:880px){.hero,.grid{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}.row{grid-template-columns:76px 1fr 86px}.row .hideM{display:none}.row .actions{grid-column:2/4;display:flex;justify-content:flex-end}}
 @media(max-width:520px){.brand p{display:none}.heroBox h2{font-size:23px}.heroValue{font-size:36px}.cards{grid-template-columns:1fr 1fr}.card b{font-size:22px}.wrap{padding-left:10px;padding-right:10px}.panel{padding:14px}.formgrid{grid-template-columns:1fr}.full{grid-column:1}.row{grid-template-columns:70px 1fr 82px;padding:9px}.thumb{width:44px;height:44px}}
 </style>
@@ -44,6 +45,7 @@ canvas{width:100%;height:260px;display:block}.table{display:grid;gap:8px}.row{di
 </section>
 </main>
 <button class="fab" id="newBill">＋ ลงบิลยอดขาย</button>
+<div class="lockscreen" id="lockscreen"><div class="lockbox"><div class="logo">HR</div><h2>หลักร้อยเฟอร์นิเจอร์</h2><p>ใส่รหัสเพื่อเปิด Dashboard ยอดขาย</p><div class="lockrow"><input id="pinInput" class="input" inputmode="numeric" maxlength="6" placeholder="••••••"><button id="pinBtn" class="btn primary">เข้าใช้งาน</button></div><div id="pinError" class="lockerror"></div></div></div>
 
 <div class="modal hidden" id="billModal"><div class="sheet">
 <div class="modalhead"><h3 id="modalTitle">ลงบิลยอดขาย</h3><button class="close" id="closeModal">×</button></div>
@@ -62,6 +64,10 @@ canvas{width:100%;height:260px;display:block}.table{display:grid;gap:8px}.row{di
 (function(){
 const KEY="lakroi_dashboard_v1",GOAL_KEY="lakroi_daily_goal";
 let bills=[],editId=null,pendingPhoto="";
+let APP_PIN=localStorage.getItem("lakroi_dashboard_pin")||"";
+function apiHeaders(extra){return Object.assign({"x-lakroi-pin":APP_PIN},extra||{})}
+function showLock(msg){$("lockscreen").classList.remove("hidden");$("pinError").textContent=msg||"";$("pinInput").focus()}
+function hideLock(){$("lockscreen").classList.add("hidden");$("pinError").textContent=""}
 const $=id=>document.getElementById(id);
 const money=n=>"฿"+Number(n||0).toLocaleString("th-TH",{maximumFractionDigits:0});
 const iso=d=>{const x=new Date(d);return x.toISOString().slice(0,10)};
@@ -70,11 +76,14 @@ const today=bangkokDate(new Date());
 async function load(){
   try{bills=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){bills=[]}
   $("goalInput").value=localStorage.getItem(GOAL_KEY)||"15000";
-  render();
+  if(!APP_PIN){showLock();return}
   try{
-    const r=await fetch("/api/health?lakroi=1",{cache:"no-store"});
+    const r=await fetch("/api/health?lakroi=1",{cache:"no-store",headers:apiHeaders()});
     const j=await r.json();
+    if(r.status===401){localStorage.removeItem("lakroi_dashboard_pin");APP_PIN="";showLock("รหัสไม่ถูกต้อง");return}
     if(r.ok&&j.ok){
+      hideLock();
+      render();
       const localBills=bills.slice();
       if(Array.isArray(j.bills)&&j.bills.length){
         bills=j.bills;
@@ -100,7 +109,7 @@ async function save(){
   localStorage.setItem(GOAL_KEY,$("goalInput").value||"15000");
   render();
   try{
-    const r=await fetch("/api/health?lakroi=1",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"save",bills,goal:Number($("goalInput").value||15000)})});
+    const r=await fetch("/api/health?lakroi=1",{method:"POST",headers:apiHeaders({"content-type":"application/json"}),body:JSON.stringify({action:"save",bills,goal:Number($("goalInput").value||15000)})});
     const j=await r.json();
     if(!r.ok||!j.ok)throw new Error(j.error||"บันทึกออนไลน์ไม่สำเร็จ");
   }catch(e){
@@ -156,7 +165,7 @@ function compressImage(file){
 }
 async function uploadPendingPhoto(billId){
   if(!pendingPhoto||!pendingPhoto.startsWith("data:image/"))return pendingPhoto;
-  const r=await fetch("/api/health?lakroi=1",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"uploadImage",billId,dataUrl:pendingPhoto})});
+  const r=await fetch("/api/health?lakroi=1",{method:"POST",headers:apiHeaders({"content-type":"application/json"}),body:JSON.stringify({action:"uploadImage",billId,dataUrl:pendingPhoto})});
   const j=await r.json();
   if(!r.ok||!j.ok)throw new Error(j.error||"อัปโหลดรูปไม่สำเร็จ");
   return j.url;
@@ -175,6 +184,8 @@ $("saveBill").onclick=async()=>{
   }catch(e){alert("บันทึกไม่สำเร็จ: "+(e.message||e))}
   finally{$("saveBill").disabled=false;$("saveBill").textContent="บันทึกบิล"}
 }
+$("pinBtn").onclick=async()=>{const pin=$("pinInput").value.trim();if(!/^\d{6}$/.test(pin)){showLock("กรอกรหัส 6 หลัก");return}APP_PIN=pin;localStorage.setItem("lakroi_dashboard_pin",pin);$("pinError").textContent="กำลังตรวจ…";await load()};
+$("pinInput").onkeydown=e=>{if(e.key==="Enter")$("pinBtn").click()};
 $("newBill").onclick=openNew;$("closeModal").onclick=close;$("cancelBill").onclick=close;$("search").oninput=render;$("branchFilter").onchange=render;$("saveGoal").onclick=async()=>{localStorage.setItem(GOAL_KEY,$("goalInput").value||"15000");await save()}
 function drawChart(){const c=$("chart"),ctx=c.getContext("2d"),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(bangkokDate(d))}const vals=days.map(d=>bills.filter(x=>x.date===d).reduce((a,b)=>a+Number(b.amount||0),0)),max=Math.max(1,...vals);ctx.strokeStyle="#ddd5c8";ctx.lineWidth=1;for(let i=0;i<4;i++){let y=35+i*55;ctx.beginPath();ctx.moveTo(46,y);ctx.lineTo(w-18,y);ctx.stroke()}ctx.strokeStyle="#173c2a";ctx.lineWidth=4;ctx.lineJoin="round";ctx.beginPath();vals.forEach((v,i)=>{const x=50+i*((w-80)/6),y=210-(v/max)*160;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();ctx.fillStyle="#173c2a";vals.forEach((v,i)=>{const x=50+i*((w-80)/6),y=210-(v/max)*160;ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fill();ctx.fillStyle="#7a857e";ctx.font="12px sans-serif";ctx.textAlign="center";ctx.fillText(new Date(days[i]).toLocaleDateString("th-TH",{day:"numeric",month:"short"}),x,238);ctx.fillStyle="#173c2a"})}
 load();
