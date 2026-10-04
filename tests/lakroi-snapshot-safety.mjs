@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
 import handler from '../api/health.js';
-import {LAKROI_SEED_BILLS as bills, LAKROI_SEED_SYNCED_AT} from '../lib/lakroiSeed.js';
+import {LAKROI_SEED_BILLS as bills, LAKROI_SEED_SYNCED_AT} from '../lakroi-dashboard/lib/seed.js';
 
 process.env.LAKROI_DASHBOARD_PIN='test-pin';
 process.env.BLOB_STORE_ID='store_test';
@@ -48,7 +48,7 @@ new vm.Script(script);
 const elements=new Map();
 const element=id=>{if(!elements.has(id))elements.set(id,{value:id==='goalInput'?'15000':'',classList:{add(){},remove(){},contains(){return false}},focus(){}});return elements.get(id)};
 const cached=[];
-const context=vm.createContext({document:{getElementById:element},localStorage:{getItem(){return null},setItem(...v){cached.push(v)}},Intl,Date,Number,String,console,setInterval(){},fetch:async()=>({ok:false,json:async()=>({ok:false,error:'save failed'})})});
+const context=vm.createContext({location:{pathname:"/lakroi-dashboard/"},document:{getElementById:element},localStorage:{getItem(){return null},setItem(...v){cached.push(v)}},Intl,Date,Number,String,console,setInterval(){},fetch:async()=>({ok:false,json:async()=>({ok:false,error:'save failed'})})});
 vm.runInContext(script.replace('load();\nsetInterval','globalThis.testSave=save;\nload();\nsetInterval'),context);
 await assert.rejects(context.testSave([{id:'unsaved'}]),/save failed/);
 assert.equal(cached.length,0,'failed saves cannot be marked locally as saved');

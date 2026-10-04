@@ -1,1262 +1,1654 @@
+export const LAKROI_SEED_SYNCED_AT = "2026-10-04T15:26:40Z";
 export const LAKROI_SEED_BILLS = [
   {
-    "id": "SHEET-2",
+    "id": "SHEET-2-2026-09-20-105734",
     "createdAt": "2026-09-20T10:57:34+07:00",
     "date": "2026-09-20",
     "branch": "โคกสำโรง",
     "amount": 1400,
     "method": "โอน",
     "note": "เครื่องตัดหญ้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 1400,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-3",
+    "id": "SHEET-3-2026-09-20-113659",
     "createdAt": "2026-09-20T11:36:59+07:00",
     "date": "2026-09-20",
     "branch": "ลพบุรี",
     "amount": 490,
     "method": "ไทยช่วยไทย",
     "note": "โต๊ะกลม",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 490
   },
   {
-    "id": "SHEET-4",
+    "id": "SHEET-4-2026-09-20-123106",
     "createdAt": "2026-09-20T12:31:06+07:00",
     "date": "2026-09-20",
     "branch": "โคกสำโรง",
     "amount": 220,
     "method": "เงินสด",
     "note": "ชั้นเหล็ก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 220,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-5",
+    "id": "SHEET-5-2026-09-20-132304",
     "createdAt": "2026-09-20T13:23:04+07:00",
     "date": "2026-09-20",
     "branch": "ลพบุรี",
     "amount": 350,
     "method": "โอน",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 350,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-6",
+    "id": "SHEET-6-2026-09-20-154831",
     "createdAt": "2026-09-20T15:48:31+07:00",
     "date": "2026-09-20",
     "branch": "ลพบุรี",
     "amount": 350,
     "method": "โอน",
     "note": "ชั้นไม้",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 350,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-7",
+    "id": "SHEET-7-2026-09-20-160336",
     "createdAt": "2026-09-20T16:03:36+07:00",
     "date": "2026-09-20",
     "branch": "ลพบุรี",
     "amount": 890,
     "method": "โอน",
     "note": "ตู้",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 890,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-8",
+    "id": "SHEET-8-2026-09-20-161816",
     "createdAt": "2026-09-20T16:18:16+07:00",
     "date": "2026-09-20",
     "branch": "ลพบุรี",
     "amount": 150,
     "method": "เงินสด",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 150,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-9",
+    "id": "SHEET-9-2026-09-20-214158",
     "createdAt": "2026-09-20T21:41:58+07:00",
     "date": "2026-09-20",
     "branch": "ลพบุรี",
     "amount": 500,
     "method": "โอน",
     "note": "โต๊ะ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 500,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-10",
+    "id": "SHEET-10-2026-09-21-092600",
     "createdAt": "2026-09-21T09:26:00+07:00",
     "date": "2026-09-21",
     "branch": "ลพบุรี",
     "amount": 350,
-    "method": "เงินสด",
+    "method": "เงินสด + ไทยช่วยไทย",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 150,
+    "transferAmount": 0,
+    "thaiAmount": 200
   },
   {
-    "id": "SHEET-11",
+    "id": "SHEET-11-2026-09-21-095205",
     "createdAt": "2026-09-21T09:52:05+07:00",
     "date": "2026-09-21",
     "branch": "โคกสำโรง",
     "amount": 900,
     "method": "เงินสด",
     "note": "ตู้ขาว+ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 900,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-12",
+    "id": "SHEET-12-2026-09-21-122240",
     "createdAt": "2026-09-21T12:22:40+07:00",
     "date": "2026-09-21",
     "branch": "โคกสำโรง",
     "amount": 180,
     "method": "เงินสด",
     "note": "ราวตากผ้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 180,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-13",
+    "id": "SHEET-13-2026-09-21-124544",
     "createdAt": "2026-09-21T12:45:44+07:00",
     "date": "2026-09-21",
     "branch": "โคกสำโรง",
     "amount": 1100,
     "method": "โอน",
     "note": "ราวสามอัน",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 1100,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-14",
+    "id": "SHEET-14-2026-09-21-150100",
     "createdAt": "2026-09-21T15:01:00+07:00",
     "date": "2026-09-21",
     "branch": "โคกสำโรง",
     "amount": 1360,
     "method": "เงินสด",
     "note": "ชั้นเหล็ก โต๊ะพับ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 1360,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-15",
+    "id": "SHEET-15-2026-09-21-150100",
     "createdAt": "2026-09-21T15:01:00+07:00",
     "date": "2026-09-21",
     "branch": "โคกสำโรง",
     "amount": 400,
     "method": "เงินสด",
     "note": "ชั้นวางรองเท้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 400,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-16",
+    "id": "SHEET-16-2026-09-21-154100",
     "createdAt": "2026-09-21T15:41:00+07:00",
     "date": "2026-09-21",
     "branch": "ลพบุรี",
     "amount": 890,
-    "method": "โอน",
+    "method": "โอน + ไทยช่วยไทย",
     "note": "ตู้ลิ้นชัก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 224,
+    "thaiAmount": 666
   },
   {
-    "id": "SHEET-17",
+    "id": "SHEET-17-2026-09-21-161200",
     "createdAt": "2026-09-21T16:12:00+07:00",
     "date": "2026-09-21",
     "branch": "ลพบุรี",
     "amount": 350,
     "method": "โอน",
     "note": "ชั้นพลาสติกหลากสีฝาก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 350,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-18",
+    "id": "SHEET-18-2026-09-21-165400",
     "createdAt": "2026-09-21T16:54:00+07:00",
     "date": "2026-09-21",
     "branch": "โคกสำโรง",
     "amount": 890,
     "method": "โอน",
     "note": "ชั้นน้ำตาลรับพรุ่งนี้",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 890,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-632866274603172576",
+    "id": "632866274603172576",
     "createdAt": "2026-09-22T10:49:58+07:00",
     "date": "2026-09-22",
     "branch": "โคกสำโรง",
     "amount": 750,
     "method": "โอน",
     "note": "เก้าอี้",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 750,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-632871884198773145",
+    "id": "632871884198773145",
     "createdAt": "2026-09-22T11:45:42+07:00",
     "date": "2026-09-22",
     "branch": "ลพบุรี",
     "amount": 350,
     "method": "เงินสด",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 350,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-632880721983701728",
+    "id": "632880721983701728",
     "createdAt": "2026-09-22T13:13:30+07:00",
     "date": "2026-09-22",
     "branch": "ลพบุรี",
     "amount": 490,
     "method": "โอน",
     "note": "ชั้น",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 490,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-632883745875820937",
+    "id": "632883745875820937",
     "createdAt": "2026-09-22T13:43:32+07:00",
     "date": "2026-09-22",
     "branch": "โคกสำโรง",
     "amount": 390,
     "method": "โอน",
     "note": "ชั้นวางของ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 390,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-632883767769301277",
+    "id": "632883767769301277",
     "createdAt": "2026-09-22T13:43:45+07:00",
     "date": "2026-09-22",
     "branch": "โคกสำโรง",
     "amount": 900,
     "method": "เงินสด",
     "note": "หัวเครื่องตัดหญ้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 900,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-632888455290159208",
+    "id": "632888455290159208",
     "createdAt": "2026-09-22T14:30:19+07:00",
     "date": "2026-09-22",
     "branch": "ลพบุรี",
     "amount": 330,
     "method": "โอน",
     "note": "ราว+ที่คว่ำจาน",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 330,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-632895663940305411",
+    "id": "632895663940305411",
     "createdAt": "2026-09-22T15:41:56+07:00",
     "date": "2026-09-22",
     "branch": "ลพบุรี",
     "amount": 890,
     "method": "โอน",
     "note": "ตู้ขาวฝาก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 890,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633005434680115239",
+    "id": "633005434680115239",
     "createdAt": "2026-09-23T09:52:24+07:00",
     "date": "2026-09-23",
     "branch": "ลพบุรี",
     "amount": 980,
     "method": "โอน",
     "note": "ชั้นพลาสติก+ราวตากผ้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 980,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633012538187711273",
+    "id": "633012538187711273",
     "createdAt": "2026-09-23T11:02:58+07:00",
     "date": "2026-09-23",
     "branch": "โคกสำโรง",
     "amount": 350,
     "method": "โอน",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 350,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633012591086010407",
+    "id": "633012591086010407",
     "createdAt": "2026-09-23T11:03:30+07:00",
     "date": "2026-09-23",
     "branch": "โคกสำโรง",
     "amount": 900,
     "method": "เงินสด",
     "note": "เครื่องตัดหญ้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 900,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633020223779504651",
+    "id": "633020223779504651",
     "createdAt": "2026-09-23T12:19:19+07:00",
     "date": "2026-09-23",
     "branch": "โคกสำโรง",
     "amount": 750,
     "method": "โอน",
     "note": "เก้าอี้สำนักงาน",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 750,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633025047178772636",
+    "id": "633025047178772636",
     "createdAt": "2026-09-23T13:07:14+07:00",
     "date": "2026-09-23",
     "branch": "โคกสำโรง",
     "amount": 550,
     "method": "โอน",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 550,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633030941199040777",
+    "id": "633030941199040777",
     "createdAt": "2026-09-23T14:05:47+07:00",
     "date": "2026-09-23",
     "branch": "โคกสำโรง",
     "amount": 290,
     "method": "โอน",
     "note": "รถเข็น",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 290,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633037083555922180",
+    "id": "633037083555922180",
     "createdAt": "2026-09-23T15:06:48+07:00",
     "date": "2026-09-23",
     "branch": "โคกสำโรง",
     "amount": 350,
     "method": "โอน",
     "note": "โต๊ะนักเรียน",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 350,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633039610707968158",
+    "id": "633039610707968158",
     "createdAt": "2026-09-23T15:31:55+07:00",
     "date": "2026-09-23",
     "branch": "ลพบุรี",
     "amount": 150,
     "method": "เงินสด",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 150,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633177302578233551",
+    "id": "633177302578233551",
     "createdAt": "2026-09-24T14:19:46+07:00",
     "date": "2026-09-24",
     "branch": "ลพบุรี",
     "amount": 555,
     "method": "ไทยช่วยไทย",
     "note": "ชั้นสแตนเลส+เก้าอี้พลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 555
   },
   {
-    "id": "SHEET-633177387823005902",
+    "id": "633177387823005902",
     "createdAt": "2026-09-24T14:20:36+07:00",
     "date": "2026-09-24",
     "branch": "ลพบุรี",
     "amount": 400,
     "method": "ไทยช่วยไทย",
     "note": "ราวตากผ้า2อัน",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 400
   },
   {
-    "id": "SHEET-633296242637800097",
+    "id": "633296242637800097",
     "createdAt": "2026-09-25T10:01:19+07:00",
     "date": "2026-09-25",
     "branch": "โคกสำโรง",
     "amount": 1400,
-    "method": "เงินสด",
+    "method": "เงินสด + โอน",
     "note": "ตู้ไม้ไผ่",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 1000,
+    "transferAmount": 400,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633323194799096664",
+    "id": "633323194799096664",
     "createdAt": "2026-09-25T14:29:04+07:00",
     "date": "2026-09-25",
     "branch": "ลพบุรี",
     "amount": 350,
     "method": "โอน",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 350,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633451053995524428",
+    "id": "633451053995524428",
     "createdAt": "2026-09-26T11:39:14+07:00",
     "date": "2026-09-26",
     "branch": "โคกสำโรง",
     "amount": 1540,
     "method": "โอน",
     "note": "ชั้นไม้+ตู้รองเท้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 1540,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633466667057545847",
+    "id": "633466667057545847",
     "createdAt": "2026-09-26T14:14:20+07:00",
     "date": "2026-09-26",
     "branch": "โคกสำโรง",
     "amount": 1250,
     "method": "โอน",
     "note": "ตู้ขาว",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 1250,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633468880207741494",
+    "id": "633468880207741494",
     "createdAt": "2026-09-26T14:36:19+07:00",
     "date": "2026-09-26",
     "branch": "ลพบุรี",
     "amount": 120,
     "method": "เงินสด",
     "note": "เขียง",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 120,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633478951586497041",
+    "id": "633478951586497041",
     "createdAt": "2026-09-26T16:16:22+07:00",
     "date": "2026-09-26",
     "branch": "โคกสำโรง",
     "amount": 555,
     "method": "โอน",
     "note": "โต๊ะพับ+รถเข็น โปร",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 555,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633481187822141733",
+    "id": "633481187822141733",
     "createdAt": "2026-09-26T16:38:35+07:00",
     "date": "2026-09-26",
     "branch": "ลพบุรี",
     "amount": 100,
     "method": "เงินสด",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 100,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633481741386383689",
+    "id": "633481741386383689",
     "createdAt": "2026-09-26T16:44:05+07:00",
     "date": "2026-09-26",
     "branch": "ลพบุรี",
     "amount": 450,
     "method": "ไทยช่วยไทย",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 450
   },
   {
-    "id": "SHEET-633482474684416228",
+    "id": "633482474684416228",
     "createdAt": "2026-09-26T16:51:22+07:00",
     "date": "2026-09-26",
     "branch": "ลพบุรี",
     "amount": 150,
     "method": "เงินสด",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 150,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633483994666893790",
+    "id": "633483994666893790",
     "createdAt": "2026-09-26T17:06:28+07:00",
     "date": "2026-09-26",
     "branch": "ลพบุรี",
     "amount": 650,
     "method": "โอน",
     "note": "เก้าอี้สำนักงาน",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 650,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633590208336232554",
+    "id": "633590208336232554",
     "createdAt": "2026-09-27T10:41:37+07:00",
     "date": "2026-09-27",
     "branch": "โคกสำโรง",
     "amount": 2300,
     "method": "โอน",
     "note": "เก้าอี้สีส้ม2ตัว+โต๊ะกลม+ชั้นว่างของสีขาว+โต๊ะคอม+ราวผ้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 2300,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633593264305602683",
+    "id": "633593264305602683",
     "createdAt": "2026-09-27T11:11:58+07:00",
     "date": "2026-09-27",
     "branch": "โคกสำโรง",
     "amount": 530,
     "method": "โอน",
     "note": "โต๊ะพับญี่ปุ่น+ราวตากผ้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 530,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633595280574382578",
+    "id": "633595280574382578",
     "createdAt": "2026-09-27T11:32:00+07:00",
     "date": "2026-09-27",
     "branch": "โคกสำโรง",
     "amount": 555,
     "method": "โอน",
     "note": "ชั้นลิ้นชักขาวโปร",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 555,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633598279368049224",
+    "id": "633598279368049224",
     "createdAt": "2026-09-27T12:01:47+07:00",
     "date": "2026-09-27",
     "branch": "โคกสำโรง",
     "amount": 777,
     "method": "โอน",
-    "note": "เตียง • ฝาก 0648859923 ต๋อม",
-    "photo": ""
+    "note": "เตียง",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 777,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633605831279509509",
+    "id": "633605831279509509",
     "createdAt": "2026-09-27T13:16:49+07:00",
     "date": "2026-09-27",
     "branch": "ลพบุรี",
     "amount": 150,
     "method": "โอน",
     "note": "กล่องพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 150,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633608232937980179",
+    "id": "633608232937980179",
     "createdAt": "2026-09-27T13:40:40+07:00",
     "date": "2026-09-27",
     "branch": "โคกสำโรง",
     "amount": 500,
     "method": "เงินสด",
     "note": "ชั้นวางต้นไม้",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 500,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633609618836685023",
+    "id": "633609618836685023",
     "createdAt": "2026-09-27T13:54:26+07:00",
     "date": "2026-09-27",
     "branch": "โคกสำโรง",
     "amount": 500,
-    "method": "โอน",
+    "method": "โอน + ไทยช่วยไทย",
     "note": "ราวตากผ้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 167,
+    "thaiAmount": 333
   },
   {
-    "id": "SHEET-633614864451371521",
+    "id": "633614864451371521",
     "createdAt": "2026-09-27T14:46:33+07:00",
     "date": "2026-09-27",
     "branch": "โคกสำโรง",
     "amount": 900,
     "method": "โอน",
     "note": "ไดโว่+สาย",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 900,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633615382666019280",
+    "id": "633615382666019280",
     "createdAt": "2026-09-27T14:51:42+07:00",
     "date": "2026-09-27",
     "branch": "โคกสำโรง",
     "amount": 200,
     "method": "ไทยช่วยไทย",
     "note": "ราวตากผ้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 200
   },
   {
-    "id": "SHEET-633629992467038261",
+    "id": "633629992467038261",
     "createdAt": "2026-09-27T17:16:50+07:00",
     "date": "2026-09-27",
     "branch": "ลพบุรี",
     "amount": 139,
     "method": "โอน",
     "note": "โต๊ะน้อย",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 139,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633751598291484776",
+    "id": "633751598291484776",
     "createdAt": "2026-09-28T13:24:52+07:00",
     "date": "2026-09-28",
     "branch": "ลพบุรี",
     "amount": 390,
     "method": "โอน",
     "note": "ชั้นเหล็ก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 390,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633765639412252694",
+    "id": "633765639412252694",
     "createdAt": "2026-09-28T15:44:22+07:00",
     "date": "2026-09-28",
     "branch": "ลพบุรี",
     "amount": 549,
     "method": "โอน",
     "note": "กล่องโมเดล+ตู้รองเท้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 549,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633772225425834324",
+    "id": "633772225425834324",
     "createdAt": "2026-09-28T16:49:47+07:00",
     "date": "2026-09-28",
     "branch": "ลพบุรี",
     "amount": 1197,
     "method": "โอน",
     "note": "ตู้ขาว 3 ตัว",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 1197,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633772274717033001",
+    "id": "633772274717033001",
     "createdAt": "2026-09-28T16:50:17+07:00",
     "date": "2026-09-28",
     "branch": "ลพบุรี",
     "amount": 399,
     "method": "โอน",
     "note": "ตู้ขาว",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 399,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633775213297270822",
+    "id": "633775213297270822",
     "createdAt": "2026-09-28T17:19:28+07:00",
     "date": "2026-09-28",
     "branch": "ลพบุรี",
     "amount": 399,
-    "method": "โอน",
+    "method": "โอน + ไทยช่วยไทย",
     "note": "เคาน์เตอร์",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 66,
+    "thaiAmount": 333
   },
   {
-    "id": "SHEET-633779563612864923",
+    "id": "633779563612864923",
     "createdAt": "2026-09-28T18:02:41+07:00",
     "date": "2026-09-28",
     "branch": "ลพบุรี",
     "amount": 399,
     "method": "โอน",
     "note": "ตู้มินิมอล",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 399,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633871581995073880",
+    "id": "633871581995073880",
     "createdAt": "2026-09-29T09:16:48+07:00",
     "date": "2026-09-29",
     "branch": "ลพบุรี",
     "amount": 399,
     "method": "เงินสด",
     "note": "ตู้เหล็ก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 399,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633877842278744550",
+    "id": "633877842278744550",
     "createdAt": "2026-09-29T10:19:00+07:00",
     "date": "2026-09-29",
     "branch": "ลพบุรี",
     "amount": 500,
     "method": "โอน",
-    "note": "มัดจำตู้รองเท้า • เหลือค้าง700",
-    "photo": ""
+    "note": "มัดจำตู้รองเท้า",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 500,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633880017193664876",
+    "id": "633880017193664876",
     "createdAt": "2026-09-29T10:40:36+07:00",
     "date": "2026-09-29",
     "branch": "โคกสำโรง",
     "amount": 390,
     "method": "โอน",
-    "note": "ตู้นอนแมว • รับของไม่เกินวันเสาร์",
-    "photo": ""
+    "note": "ตู้นอนแมว",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 390,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633881817690407531",
+    "id": "633881817690407531",
     "createdAt": "2026-09-29T10:58:29+07:00",
     "date": "2026-09-29",
     "branch": "ลพบุรี",
     "amount": 750,
     "method": "โอน",
     "note": "เก้าอี้สำนักงาน",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 750,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633882676012515482",
+    "id": "633882676012515482",
     "createdAt": "2026-09-29T11:07:01+07:00",
     "date": "2026-09-29",
     "branch": "โคกสำโรง",
     "amount": 350,
     "method": "โอน",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 350,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633891960037311333",
+    "id": "633891960037311333",
     "createdAt": "2026-09-29T12:39:15+07:00",
     "date": "2026-09-29",
     "branch": "ลพบุรี",
     "amount": 550,
     "method": "โอน",
     "note": "ชั้นพับได้",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 550,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633895171112567185",
+    "id": "633895171112567185",
     "createdAt": "2026-09-29T13:11:09+07:00",
     "date": "2026-09-29",
     "branch": "ลพบุรี",
     "amount": 200,
     "method": "เงินสด",
     "note": "โต๊ะพับ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 200,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633900403121193200",
+    "id": "633900403121193200",
     "createdAt": "2026-09-29T14:03:07+07:00",
     "date": "2026-09-29",
     "branch": "ลพบุรี",
     "amount": 399,
     "method": "โอน",
     "note": "โต๊ะนักเรียน",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 399,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633905147886174330",
+    "id": "633905147886174330",
     "createdAt": "2026-09-29T14:50:15+07:00",
     "date": "2026-09-29",
     "branch": "โคกสำโรง",
     "amount": 800,
     "method": "เงินสด",
     "note": "ตู้เก็บชั้นวางของ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 800,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633909576533540973",
+    "id": "633909576533540973",
     "createdAt": "2026-09-29T15:34:15+07:00",
     "date": "2026-09-29",
     "branch": "โคกสำโรง",
     "amount": 700,
     "method": "เงินสด",
     "note": "ชั้นไม้ขาเหล็ก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 700,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633914955007000764",
+    "id": "633914955007000764",
     "createdAt": "2026-09-29T16:27:41+07:00",
     "date": "2026-09-29",
     "branch": "ลพบุรี",
     "amount": 750,
     "method": "โอน",
     "note": "โต๊ะคอม",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 750,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633915816836596156",
+    "id": "633915816836596156",
     "createdAt": "2026-09-29T16:36:14+07:00",
     "date": "2026-09-29",
     "branch": "โคกสำโรง",
     "amount": 250,
     "method": "โอน",
     "note": "ลิ้นชักน้อย",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 250,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633915940568301811",
+    "id": "633915940568301811",
     "createdAt": "2026-09-29T16:37:28+07:00",
     "date": "2026-09-29",
     "branch": "โคกสำโรง",
     "amount": 1000,
     "method": "โอน",
     "note": "ตู้รองเท้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 1000,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-633917951921619066",
+    "id": "633917951921619066",
     "createdAt": "2026-09-29T16:57:27+07:00",
     "date": "2026-09-29",
     "branch": "ลพบุรี",
     "amount": 430,
     "method": "เงินสด",
     "note": "โต๊ะพับตัวใหญ่",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 430,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634020267454103715",
+    "id": "634020267454103715",
     "createdAt": "2026-09-30T09:53:52+07:00",
     "date": "2026-09-30",
     "branch": "โคกสำโรง",
     "amount": 700,
     "method": "เงินสด",
     "note": "โต๊ะคอม",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 700,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634021279959613766",
+    "id": "634021279959613766",
     "createdAt": "2026-09-30T10:03:55+07:00",
     "date": "2026-09-30",
     "branch": "ลพบุรี",
     "amount": 900,
     "method": "โอน",
     "note": "ลูกค้าเปลี่ยนตัว",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 900,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634026354647499466",
+    "id": "634026354647499466",
     "createdAt": "2026-09-30T10:54:20+07:00",
     "date": "2026-09-30",
     "branch": "ลพบุรี",
     "amount": 1750,
     "method": "โอน",
     "note": "ที่คว่ำจาน+โต๊ะคอม+เก้าอี้สนง",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 1750,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634027711488852436",
+    "id": "634027711488852436",
     "createdAt": "2026-09-30T11:07:49+07:00",
     "date": "2026-09-30",
     "branch": "โคกสำโรง",
     "amount": 70,
     "method": "เงินสด",
     "note": "ชั้นพลาสติก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 70,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634030647802855816",
+    "id": "634030647802855816",
     "createdAt": "2026-09-30T11:36:59+07:00",
     "date": "2026-09-30",
     "branch": "ลพบุรี",
     "amount": 790,
     "method": "โอน",
     "note": "โต๊ะ+เครื่องกดน้ำ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 790,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634035488046448966",
+    "id": "634035488046448966",
     "createdAt": "2026-09-30T12:25:04+07:00",
     "date": "2026-09-30",
     "branch": "โคกสำโรง",
     "amount": 390,
     "method": "โอน",
-    "note": "โต๊ะพับ • ฝาก",
-    "photo": ""
+    "note": "โต๊ะพับ",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 390,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634041517459112251",
+    "id": "634041517459112251",
     "createdAt": "2026-09-30T13:24:58+07:00",
     "date": "2026-09-30",
     "branch": "ลพบุรี",
     "amount": 750,
     "method": "เงินสด",
     "note": "โต๊ะน้อย+ราวตากผ้า+ที่แขวนหมวก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 750,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634048490372858322",
+    "id": "634048490372858322",
     "createdAt": "2026-09-30T14:34:14+07:00",
     "date": "2026-09-30",
     "branch": "โคกสำโรง",
     "amount": 800,
     "method": "โอน",
     "note": "ไดโว่",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 800,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634060234792632515",
+    "id": "634060234792632515",
     "createdAt": "2026-09-30T16:30:54+07:00",
     "date": "2026-09-30",
     "branch": "โคกสำโรง",
     "amount": 2350,
     "method": "เงินสด",
     "note": "ตู้รองเท้า+ขั้นลิ้นชักขาว+เตาอบ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 2350,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634063605335327512",
+    "id": "634063605335327512",
     "createdAt": "2026-09-30T17:04:23+07:00",
     "date": "2026-09-30",
     "branch": "ลพบุรี",
     "amount": 399,
     "method": "โอน",
     "note": "โต๊ะพับ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 399,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634082273427194082",
+    "id": "634082273427194082",
     "createdAt": "2026-09-30T20:09:50+07:00",
     "date": "2026-09-30",
     "branch": "ลพบุรี",
     "amount": 450,
     "method": "เงินสด",
     "note": "โต๊ะพับขาว+โต๊ะมินิมอลเล็ก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 450,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634307420780494976",
+    "id": "634307420780494976",
     "createdAt": "2026-10-02T09:26:29+07:00",
     "date": "2026-10-02",
     "branch": "โคกสำโรง",
     "amount": 800,
     "method": "โอน",
     "note": "เครื่องสูบน้ำ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 800,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634317184818741425",
+    "id": "634317184818741425",
     "createdAt": "2026-10-02T11:03:28+07:00",
     "date": "2026-10-02",
     "branch": "ลพบุรี",
     "amount": 2400,
     "method": "โอน",
     "note": "เก้าอี้สนง+กล่องกลม+โต๊ะลิ้นชัก+ลิ้นชักเล็ก+ชั้นโชว์+เก้าอี้บาร์",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 2400,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634317797958877289",
+    "id": "634317797958877289",
     "createdAt": "2026-10-02T11:09:34+07:00",
     "date": "2026-10-02",
     "branch": "โคกสำโรง",
     "amount": 200,
     "method": "โอน",
-    "note": "ชั้นตำหนิขาว • ฝาก",
-    "photo": ""
+    "note": "ชั้นตำหนิขาว",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 200,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634322375252377703",
+    "id": "634322375252377703",
     "createdAt": "2026-10-02T11:55:02+07:00",
     "date": "2026-10-02",
     "branch": "โคกสำโรง",
     "amount": 290,
     "method": "โอน",
     "note": "รถเข็น",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 290,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634324304749658130",
+    "id": "634324304749658130",
     "createdAt": "2026-10-02T12:14:12+07:00",
     "date": "2026-10-02",
     "branch": "ลพบุรี",
     "amount": 100,
     "method": "โอน",
     "note": "ชั้นน้อยๆ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 100,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634339726635041245",
+    "id": "634339726635041245",
     "createdAt": "2026-10-02T14:47:24+07:00",
     "date": "2026-10-02",
     "branch": "โคกสำโรง",
     "amount": 440,
     "method": "ไทยช่วยไทย",
     "note": "ราวผ้า+ที้วางของ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 440
   },
   {
-    "id": "SHEET-634345076118257787",
+    "id": "634345076118257787",
     "createdAt": "2026-10-02T15:40:33+07:00",
     "date": "2026-10-02",
     "branch": "ลพบุรี",
     "amount": 333,
     "method": "ไทยช่วยไทย",
-    "note": "ตู้ไม้ไผ่ • บิล1",
-    "photo": ""
+    "note": "ตู้ไม้ไผ่",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 333
   },
   {
-    "id": "SHEET-634345747877724301",
+    "id": "634345747877724301",
     "createdAt": "2026-10-02T15:47:13+07:00",
     "date": "2026-10-02",
     "branch": "ลพบุรี",
     "amount": 117,
     "method": "ไทยช่วยไทย",
-    "note": "ตู้ไม้ไผ่ • บิล2+บิล1รวม450",
-    "photo": ""
+    "note": "ตู้ไม้ไผ่",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 117
   },
   {
-    "id": "SHEET-634377379791765780",
+    "id": "634377379791765780",
     "createdAt": "2026-10-02T21:01:27+07:00",
     "date": "2026-10-02",
     "branch": "ลพบุรี",
     "amount": 1000,
     "method": "โอน",
     "note": "ปากกากapple",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 1000,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634377802191471100",
+    "id": "634377802191471100",
     "createdAt": "2026-10-02T21:05:39+07:00",
     "date": "2026-10-02",
     "branch": "ลพบุรี",
     "amount": 330,
     "method": "ไทยช่วยไทย",
     "note": "ชั้นต้นไม้+ชั้นไม้เล็ก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 330
   },
   {
-    "id": "SHEET-634377957263016209",
+    "id": "634377957263016209",
     "createdAt": "2026-10-02T21:07:11+07:00",
     "date": "2026-10-02",
     "branch": "ลพบุรี",
     "amount": 510,
     "method": "โอน",
     "note": "ชั้นต้นไม้+fชั้นพลาสติก+เขียง+ชั้นพลาสติดดำเล็ก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 510,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634378096547725944",
+    "id": "634378096547725944",
     "createdAt": "2026-10-02T21:08:35+07:00",
     "date": "2026-10-02",
     "branch": "ลพบุรี",
     "amount": 720,
     "method": "โอน",
     "note": "Fตู้กี้+fชั้นพลาสติก+fชั้นใส่+ชั้นน้ำตาล+ชั้นพลาสติกเล็กขาว+ลิ้นชักน้ำตาล",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 720,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634378142500258270",
+    "id": "634378142500258270",
     "createdAt": "2026-10-02T21:09:02+07:00",
     "date": "2026-10-02",
     "branch": "ลพบุรี",
     "amount": 400,
     "method": "โอน",
     "note": "ชั้นสแตนเลส",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 400,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634378269000991284",
+    "id": "634378269000991284",
     "createdAt": "2026-10-02T21:10:17+07:00",
     "date": "2026-10-02",
     "branch": "ลพบุรี",
     "amount": 440,
     "method": "โอน",
     "note": "ชั้นช่องขาว+ที่เสียบแรง",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 440,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634378472021819481",
+    "id": "634378472021819481",
     "createdAt": "2026-10-02T21:12:18+07:00",
     "date": "2026-10-02",
     "branch": "ลพบุรี",
     "amount": 350,
     "method": "ไทยช่วยไทย",
     "note": "ราวผ้าชำรุด+โต๊ะบาร์",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 350
   },
   {
-    "id": "SHEET-634379484593652019",
+    "id": "634379484593652019",
     "createdAt": "2026-10-02T21:22:22+07:00",
     "date": "2026-10-02",
     "branch": "ลพบุรี",
     "amount": 240,
     "method": "โอน",
     "note": "Fชั้นดำ+โต๊ะน้ำตาล+กล่องตำนิไม่มีฝา",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 240,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634458954776183214",
+    "id": "634458954776183214",
     "createdAt": "2026-10-03T10:31:50+07:00",
     "date": "2026-10-03",
     "branch": "โคกสำโรง",
     "amount": 1100,
     "method": "โอน",
-    "note": "เตียง • ฝาก",
-    "photo": ""
+    "note": "เตียง",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 1100,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634458983482523737",
+    "id": "634458983482523737",
     "createdAt": "2026-10-03T10:32:07+07:00",
     "date": "2026-10-03",
     "branch": "โคกสำโรง",
     "amount": 400,
     "method": "โอน",
-    "note": "โต๊ะหน้าขาว • ฝาก",
-    "photo": ""
+    "note": "โต๊ะหน้าขาว",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 400,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634459030190293437",
+    "id": "634459030190293437",
     "createdAt": "2026-10-03T10:32:35+07:00",
     "date": "2026-10-03",
     "branch": "โคกสำโรง",
     "amount": 1100,
     "method": "โอน",
-    "note": "โต๊ะกลม+โต๊ะกินข้าว • ฝาก",
-    "photo": ""
+    "note": "โต๊ะกลม+โต๊ะกินข้าว",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 1100,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634460664794448319",
+    "id": "634460664794448319",
     "createdAt": "2026-10-03T10:48:49+07:00",
     "date": "2026-10-03",
     "branch": "โคกสำโรง",
     "amount": 400,
     "method": "เงินสด",
     "note": "ตู้กดน้ำ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 400,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634461085818684006",
+    "id": "634461085818684006",
     "createdAt": "2026-10-03T10:53:00+07:00",
     "date": "2026-10-03",
     "branch": "โคกสำโรง",
     "amount": 650,
     "method": "เงินสด",
     "note": "ชั้รลิ้นชักขาว",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 650,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634463152050275005",
+    "id": "634463152050275005",
     "createdAt": "2026-10-03T11:13:32+07:00",
     "date": "2026-10-03",
     "branch": "ลพบุรี",
     "amount": 530,
     "method": "โอน",
     "note": "Fกล่องกลม+กล่องแปรง+กล่องใส่ช่องเล็ก8อัน",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 530,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634465154041380900",
+    "id": "634465154041380900",
     "createdAt": "2026-10-03T11:33:25+07:00",
     "date": "2026-10-03",
     "branch": "ลพบุรี",
     "amount": 150,
     "method": "โอน",
     "note": "Fชั้นแก้ว",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 150,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634473787345076549",
+    "id": "634473787345076549",
     "createdAt": "2026-10-03T12:59:11+07:00",
     "date": "2026-10-03",
     "branch": "ลพบุรี",
     "amount": 2900,
     "method": "เงินสด",
     "note": "โต๊ะนักเรียน+ชั้นเหล็ก+กล่องพลาสติก+ตู้ตำหนิ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 2900,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634474029071729085",
+    "id": "634474029071729085",
     "createdAt": "2026-10-03T13:01:35+07:00",
     "date": "2026-10-03",
     "branch": "ลพบุรี",
     "amount": 150,
     "method": "เงินสด",
     "note": "โต๊ะ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 150,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634480937090679214",
+    "id": "634480937090679214",
     "createdAt": "2026-10-03T14:10:12+07:00",
     "date": "2026-10-03",
     "branch": "โคกสำโรง",
     "amount": 350,
     "method": "ไทยช่วยไทย",
     "note": "ชั้นพลาสติก333+17=",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 350
   },
   {
-    "id": "SHEET-634485286163710114",
+    "id": "634485286163710114",
     "createdAt": "2026-10-03T14:53:24+07:00",
     "date": "2026-10-03",
     "branch": "ลพบุรี",
     "amount": 1700,
-    "method": "โอน",
+    "method": "โอน + ไทยช่วยไทย",
     "note": "ตู้ยาว+ตู้รองเท้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 1367,
+    "thaiAmount": 333
   },
   {
-    "id": "SHEET-634485975120871511",
+    "id": "634485975120871511",
     "createdAt": "2026-10-03T15:00:15+07:00",
     "date": "2026-10-03",
     "branch": "โคกสำโรง",
     "amount": 999,
     "method": "โอน",
     "note": "เตียง",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 999,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634487853833519465",
+    "id": "634487853833519465",
     "createdAt": "2026-10-03T15:18:55+07:00",
     "date": "2026-10-03",
     "branch": "ลพบุรี",
     "amount": 900,
     "method": "ไทยช่วยไทย",
-    "note": "ตู้รองเท้าขาวใหญ่ • 2เครื่อง333+567ฝากเดี๋ยวขับฟอจูนมาเอา",
-    "photo": ""
+    "note": "ตู้รองเท้าขาวใหญ่",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 900
   },
   {
-    "id": "SHEET-634493170180948076",
+    "id": "634493170180948076",
     "createdAt": "2026-10-03T16:11:44+07:00",
     "date": "2026-10-03",
     "branch": "ลพบุรี",
     "amount": 600,
     "method": "โอน",
     "note": "ตู้พลาสติก+ตู้ยา",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 600,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634501903744762064",
+    "id": "634501903744762064",
     "createdAt": "2026-10-03T17:38:29+07:00",
     "date": "2026-10-03",
     "branch": "โคกสำโรง",
     "amount": 350,
     "method": "โอน",
-    "note": "โต๊ะคอม • ฝาก",
-    "photo": ""
+    "note": "โต๊ะคอม",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 350,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634502188605374961",
+    "id": "634502188605374961",
     "createdAt": "2026-10-03T17:41:19+07:00",
     "date": "2026-10-03",
     "branch": "โคกสำโรง",
     "amount": 490,
     "method": "โอน",
-    "note": "ชั้นเหล็ก • ฝาก",
-    "photo": ""
+    "note": "ชั้นเหล็ก",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 490,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634504568319508657",
+    "id": "634504568319508657",
     "createdAt": "2026-10-03T18:04:58+07:00",
     "date": "2026-10-03",
     "branch": "โคกสำโรง",
     "amount": 290,
     "method": "โอน",
-    "note": "ราวผ้า • ฝาก",
-    "photo": ""
+    "note": "ราวผ้า",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 290,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634609466586956157",
+    "id": "634609466586956157",
     "createdAt": "2026-10-04T11:27:02+07:00",
     "date": "2026-10-04",
     "branch": "โคกสำโรง",
     "amount": 750,
     "method": "โอน",
-    "note": "โต๊ะกินข้าว • ฝาก",
-    "photo": ""
+    "note": "โต๊ะกินข้าว",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 750,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634609497238667384",
+    "id": "634609497238667384",
     "createdAt": "2026-10-04T11:27:20+07:00",
     "date": "2026-10-04",
     "branch": "โคกสำโรง",
     "amount": 1200,
     "method": "โอน",
     "note": "ตู้รองเท้า",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 1200,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634609498916389171",
+    "id": "634609498916389171",
     "createdAt": "2026-10-04T11:27:21+07:00",
     "date": "2026-10-04",
     "branch": "ลพบุรี",
     "amount": 850,
     "method": "โอน",
     "note": "ชั้นเหล็ก",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 850,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634609530205897066",
+    "id": "634609530205897066",
     "createdAt": "2026-10-04T11:27:40+07:00",
     "date": "2026-10-04",
     "branch": "โคกสำโรง",
     "amount": 390,
     "method": "เงินสด",
     "note": "โต๊ะเขียนหนังสือ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 390,
+    "transferAmount": 0,
+    "thaiAmount": 0
   },
   {
-    "id": "SHEET-634627537746264596",
+    "id": "634627537746264596",
     "createdAt": "2026-10-04T14:26:33+07:00",
     "date": "2026-10-04",
     "branch": "ลพบุรี",
     "amount": 350,
     "method": "ไทยช่วยไทย",
     "note": "ซิงค์ล้างจาน",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 350
   },
   {
-    "id": "SHEET-634631318642098281",
+    "id": "634631318642098281",
     "createdAt": "2026-10-04T15:04:07+07:00",
     "date": "2026-10-04",
     "branch": "ลพบุรี",
     "amount": 80,
     "method": "ไทยช่วยไทย",
     "note": "ที่เก็บมีด",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 80
   },
   {
-    "id": "SHEET-634634293008138331",
+    "id": "634634293008138331",
     "createdAt": "2026-10-04T15:33:40+07:00",
     "date": "2026-10-04",
     "branch": "ลพบุรี",
     "amount": 250,
     "method": "ไทยช่วยไทย",
     "note": "ชั้นไม้ขึ้นรา+ชั้นดำ",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 250
   },
   {
-    "id": "SHEET-634637374227218727",
+    "id": "634637374227218727",
     "createdAt": "2026-10-04T16:04:16+07:00",
     "date": "2026-10-04",
     "branch": "โคกสำโรง",
     "amount": 300,
     "method": "เงินสด",
     "note": "โต๊ะขาว",
-    "photo": ""
+    "photo": "",
+    "cashAmount": 300,
+    "transferAmount": 0,
+    "thaiAmount": 0
+  },
+  {
+    "id": "634646828809454115",
+    "createdAt": "2026-10-04T17:38:11+07:00",
+    "date": "2026-10-04",
+    "branch": "ลพบุรี",
+    "amount": 290,
+    "method": "ไทยช่วยไทย",
+    "note": "ชั้นไม้",
+    "photo": "",
+    "cashAmount": 0,
+    "transferAmount": 0,
+    "thaiAmount": 290
   }
 ];

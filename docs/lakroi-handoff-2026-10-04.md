@@ -22,10 +22,19 @@
 
 ## Remaining blockers / next steps
 
+### Follow-up: overlapping projects
+
+- User explicitly requested fixing the overlapping project too.
+- Moved the canonical Lakroi API into `lakroi-dashboard/api/data.js`; Admin ID now has only a temporary forwarding import/route. Moved the sole seed data into `lakroi-dashboard/lib/seed.js` and deleted the duplicate root seed file.
+- UI resolves `/api/data` in the standalone project and temporarily retains the old health endpoint for the existing subpath. PWA/manifest paths are relative.
+- `tests/lakroi-project-isolation.mjs` copies only the deployment root to an isolated directory, imports its API and checks the totals and routes without any Admin ID source.
+- Retried `create_git_project` for `lakroi-dashboard`, rootDirectory `lakroi-dashboard`, team `team_EksnkZRZCenoWN6bQu0avk39`. Vercel again returned HTTP 403, `forbidden`, action `create`, resource `project`. No new project exists; this is a Vercel authorization failure, not an automatic approval rejection.
+- After an authorized owner creates the project, deploy the patched revision and configure only Lakroi runtime settings. Verify the dedicated URL and data before retiring the legacy route.
+
 - Apps Script UI was inaccessible in this session: `https://script.google.com/home` redirected to `https://www.google.com/script/start/`, which returned 502 with connection refused, including one reload. No script edits/deployments were made.
 - Locate the existing “หลักร้อย Dashboard” Apps Script project when access works. Read its actual code/deployments before adding another project. Deploy a dedicated authenticated bridge to read and write the source tab, with stable row IDs, idempotent writes and a lock. Do not use the unrelated Admin ID source spreadsheet.
 - Create the dedicated Vercel project using the authorized account, wire dedicated bridge credentials, and migrate the UI/API. Do not claim a split from merely having a nested folder. Do not copy unrelated LINE/Admin ID secrets.
-- Decide a canonical standalone API before migration: the nested API still uses the older Blob-only implementation and must NOT be deployed as-is.
+- The standalone API is now canonical in this branch; do not deploy the older main-branch implementation. Deploy this patched revision after review.
 - Reconcile any older cloud-only bills against the sheet before counting, migrating or deleting them. Preserve records until reconciliation.
 - Enable sales editing only when writes are actually persisted to the sheet. Verify against live sheet totals and real mobile layout before promotion. Retire the old route only after the new deployment is working.
 - This branch is not merged or deployed to production, respecting the user's request to split the project.
