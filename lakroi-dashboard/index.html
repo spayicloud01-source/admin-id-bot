@@ -66,9 +66,46 @@ const $=id=>document.getElementById(id);
 const money=n=>"฿"+Number(n||0).toLocaleString("th-TH",{maximumFractionDigits:0});
 const iso=d=>{const x=new Date(d);return x.toISOString().slice(0,10)};
 const today=iso(new Date());
-function load(){try{bills=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){bills=[]}
-$("goalInput").value=localStorage.getItem(GOAL_KEY)||"15000";render()}
-function save(){localStorage.setItem(KEY,JSON.stringify(bills));render()}
+async function load(){
+  try{bills=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){bills=[]}
+  $("goalInput").value=localStorage.getItem(GOAL_KEY)||"15000";
+  render();
+  try{
+    const r=await fetch("/api/lakroi",{cache:"no-store"});
+    const j=await r.json();
+    if(r.ok&&j.ok){
+      const localBills=bills.slice();
+      if(Array.isArray(j.bills)&&j.bills.length){
+        bills=j.bills;
+        $("goalInput").value=String(j.goal||15000);
+        localStorage.setItem(KEY,JSON.stringify(bills));
+        localStorage.setItem(GOAL_KEY,$("goalInput").value);
+        render();
+      }else if(localBills.length){
+        bills=localBills;
+        await save();
+      }else{
+        bills=[];
+        $("goalInput").value=String(j.goal||15000);
+        render();
+      }
+    }
+  }catch(e){
+    console.warn("shared data unavailable",e);
+  }
+}
+async function save(){
+  localStorage.setItem(KEY,JSON.stringify(bills));
+  localStorage.setItem(GOAL_KEY,$("goalInput").value||"15000");
+  render();
+  try{
+    const r=await fetch("/api/lakroi",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"save",bills,goal:Number($("goalInput").value||15000)})});
+    const j=await r.json();
+    if(!r.ok||!j.ok)throw new Error(j.error||"บันทึกออนไลน์ไม่สำเร็จ");
+  }catch(e){
+    console.warn("shared save failed",e);
+  }
+}
 function render(){
 $("todayLabel").textContent=new Date().toLocaleDateString("th-TH",{day:"numeric",month:"short",year:"numeric"});
 const q=$("search").value.trim().toLowerCase(),bf=$("branchFilter").value;
@@ -94,9 +131,50 @@ function esc(s){return String(s||"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&l
 function openNew(){editId=null;pendingPhoto="";$("modalTitle").textContent="ลงบิลยอดขาย";$("fDate").value=today;$("fBranch").value="ลพบุรี";$("fAmount").value="";$("fMethod").value="เงินสด";$("fNote").value="";$("fPhoto").value="";$("photoPreview").innerHTML="";$("billModal").classList.remove("hidden")}
 function openEdit(id){const x=bills.find(b=>b.id===id);if(!x)return;editId=id;pendingPhoto=x.photo||"";$("modalTitle").textContent="เพิ่ม/เปลี่ยนรูปบิล";$("fDate").value=x.date;$("fBranch").value=x.branch;$("fAmount").value=x.amount;$("fMethod").value=x.method;$("fNote").value=x.note||"";$("fPhoto").value="";$("photoPreview").innerHTML=x.photo?'<img src="'+x.photo+'">':"";$("billModal").classList.remove("hidden")}
 function close(){ $("billModal").classList.add("hidden") }
-$("fPhoto").onchange=e=>{const f=e.target.files&&e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{pendingPhoto=ev.target.result;$("photoPreview").innerHTML='<img src="'+pendingPhoto+'">'};r.readAsDataURL(f)}
-$("saveBill").onclick=()=>{const amount=Number($("fAmount").value||0);if(amount<=0){alert("ใส่ยอดขายก่อน");return}const base={date:$("fDate").value||today,branch:$("fBranch").value,amount,method:$("fMethod").value,note:$("fNote").value.trim(),photo:pendingPhoto};if(editId){const i=bills.findIndex(x=>x.id===editId);if(i>=0)bills[i]={...bills[i],...base}}else{bills.push({id:"B"+Date.now(),createdAt:new Date().toISOString(),...base})}save();close()}
-$("newBill").onclick=openNew;$("closeModal").onclick=close;$("cancelBill").onclick=close;$("search").oninput=render;$("branchFilter").onchange=render;$("saveGoal").onclick=()=>{localStorage.setItem(GOAL_KEY,$("goalInput").value||"15000");render()}
+$("fPhoto").onchange=async e=>{
+  const f=e.target.files&&e.target.files[0];if(!f)return;
+  pendingPhoto=await compressImage(f);
+  $("photoPreview").innerHTML='<img src="'+pendingPhoto+'">';
+}
+function compressImage(file){
+  return new Promise((resolve,reject)=>{
+    const fr=new FileReader();
+    fr.onload=()=>{
+      const img=new Image();
+      img.onload=()=>{
+        const max=1280,scale=Math.min(1,max/Math.max(img.width,img.height));
+        const w=Math.max(1,Math.round(img.width*scale)),h=Math.max(1,Math.round(img.height*scale));
+        const cv=document.createElement("canvas");cv.width=w;cv.height=h;
+        cv.getContext("2d").drawImage(img,0,0,w,h);
+        resolve(cv.toDataURL("image/jpeg",.78));
+      };
+      img.onerror=reject;img.src=fr.result;
+    };
+    fr.onerror=reject;fr.readAsDataURL(file);
+  });
+}
+async function uploadPendingPhoto(billId){
+  if(!pendingPhoto||!pendingPhoto.startsWith("data:image/"))return pendingPhoto;
+  const r=await fetch("/api/lakroi",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"uploadImage",billId,dataUrl:pendingPhoto})});
+  const j=await r.json();
+  if(!r.ok||!j.ok)throw new Error(j.error||"อัปโหลดรูปไม่สำเร็จ");
+  return j.url;
+}
+$("saveBill").onclick=async()=>{
+  const amount=Number($("fAmount").value||0);
+  if(amount<=0){alert("ใส่ยอดขายก่อน");return}
+  $("saveBill").disabled=true;$("saveBill").textContent="กำลังบันทึก…";
+  try{
+    const id=editId||("B"+Date.now());
+    const photo=await uploadPendingPhoto(id);
+    const base={date:$("fDate").value||today,branch:$("fBranch").value,amount,method:$("fMethod").value,note:$("fNote").value.trim(),photo};
+    if(editId){const i=bills.findIndex(x=>x.id===editId);if(i>=0)bills[i]={...bills[i],...base}}
+    else{bills.push({id,createdAt:new Date().toISOString(),...base})}
+    await save();close();
+  }catch(e){alert("บันทึกไม่สำเร็จ: "+(e.message||e))}
+  finally{$("saveBill").disabled=false;$("saveBill").textContent="บันทึกบิล"}
+}
+$("newBill").onclick=openNew;$("closeModal").onclick=close;$("cancelBill").onclick=close;$("search").oninput=render;$("branchFilter").onchange=render;$("saveGoal").onclick=async()=>{localStorage.setItem(GOAL_KEY,$("goalInput").value||"15000");await save()}
 function drawChart(){const c=$("chart"),ctx=c.getContext("2d"),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(iso(d))}const vals=days.map(d=>bills.filter(x=>x.date===d).reduce((a,b)=>a+Number(b.amount||0),0)),max=Math.max(1,...vals);ctx.strokeStyle="#ddd5c8";ctx.lineWidth=1;for(let i=0;i<4;i++){let y=35+i*55;ctx.beginPath();ctx.moveTo(46,y);ctx.lineTo(w-18,y);ctx.stroke()}ctx.strokeStyle="#173c2a";ctx.lineWidth=4;ctx.lineJoin="round";ctx.beginPath();vals.forEach((v,i)=>{const x=50+i*((w-80)/6),y=210-(v/max)*160;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();ctx.fillStyle="#173c2a";vals.forEach((v,i)=>{const x=50+i*((w-80)/6),y=210-(v/max)*160;ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fill();ctx.fillStyle="#7a857e";ctx.font="12px sans-serif";ctx.textAlign="center";ctx.fillText(new Date(days[i]).toLocaleDateString("th-TH",{day:"numeric",month:"short"}),x,238);ctx.fillStyle="#173c2a"})}
 load();
 })();
