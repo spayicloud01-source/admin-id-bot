@@ -18,7 +18,7 @@ canvas{width:100%;height:260px;display:block}.table{display:grid;gap:8px}.row{di
 .modal{position:fixed;inset:0;background:rgba(18,30,24,.48);z-index:50;display:flex;align-items:flex-end;justify-content:center}.modal.hidden{display:none}.sheet{background:#fffdf9;width:100%;max-width:720px;max-height:92vh;overflow:auto;border-radius:24px 24px 0 0;padding:18px 18px 26px}.modalhead{display:flex;justify-content:space-between;align-items:center}.modalhead h3{margin:0}.close{border:0;width:38px;height:38px;border-radius:10px;background:#f0ece3;font-size:22px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.field label{display:block;font-size:11px;color:var(--muted);font-weight:800;margin-bottom:6px}.field input,.field select,.field textarea{width:100%;border:1px solid #d8d3c8;border-radius:12px;padding:11px;background:#fff}.field textarea{min-height:85px;resize:vertical}.full{grid-column:1/-1}.preview{display:flex;gap:10px;flex-wrap:wrap}.preview img{width:82px;height:82px;border-radius:12px;object-fit:cover;border:1px solid var(--line)}.notice{font-size:11px;color:var(--muted);line-height:1.5;margin-top:8px}
 .lockscreen{position:fixed;inset:0;z-index:100;background:linear-gradient(160deg,#173c2a,#274f39);display:grid;place-items:center;padding:20px}.lockbox{width:min(390px,100%);background:#fffdf9;border-radius:24px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.25);text-align:center}.lockbox .logo{margin:0 auto 14px}.lockbox h2{margin:0 0 6px}.lockbox p{font-size:12px;color:var(--muted);margin:0 0 16px}.lockrow{display:flex;gap:8px}.lockrow input{flex:1;min-width:0;text-align:center;font-size:20px;letter-spacing:4px}.lockerror{min-height:18px;font-size:11px;color:var(--red);margin-top:8px}.hidden{display:none!important}
 @media(max-width:880px){.hero,.grid{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}.row{grid-template-columns:76px 1fr 86px}.row .hideM{display:none}.row .actions{grid-column:2/4;display:flex;justify-content:flex-end}}
-@media(max-width:520px){.brand p{display:none}.heroBox h2{font-size:23px}.heroValue{font-size:36px}.cards{grid-template-columns:1fr 1fr}.card b{font-size:22px}.wrap{padding-left:10px;padding-right:10px}.panel{padding:14px}.formgrid{grid-template-columns:1fr}.full{grid-column:1}.row{grid-template-columns:70px 1fr 82px;padding:9px}.thumb{width:44px;height:44px}}
+@media(max-width:520px){.rangePanel .controls{width:100%}.rangePanel .input{flex:1;min-width:0}.rangePanel #customDates{display:grid;grid-template-columns:1fr auto 1fr;width:100%}.rangePanel #customDates .btn{grid-column:1/-1}.brand p{display:none}.heroBox h2{font-size:23px}.heroValue{font-size:36px}.cards{grid-template-columns:1fr 1fr}.card b{font-size:22px}.wrap{padding-left:10px;padding-right:10px}.panel{padding:14px}.formgrid{grid-template-columns:1fr}.full{grid-column:1}.row{grid-template-columns:70px 1fr 82px;padding:9px}.thumb{width:44px;height:44px}}
 </style>
 </head>
 <body>
@@ -27,6 +27,24 @@ canvas{width:100%;height:260px;display:block}.table{display:grid;gap:8px}.row{di
 <section class="hero">
 <div class="heroBox"><h2>ยอดขายวันนี้</h2><p>รวมทุกสาขาที่บันทึกในระบบ</p><div class="heroValue" id="todaySales">฿0</div><div class="heroSub" id="todayBills">0 บิลวันนี้</div></div>
 <div class="sideBox"><h3>เป้าหมายวันนี้</h3><div class="goalbar"><i id="goalFill"></i></div><div class="goalrow"><span id="goalText">฿0 / ฿15,000</span><b id="goalPct">0%</b></div><div class="controls" style="margin-top:14px"><input id="goalInput" class="input" type="number" value="15000" min="0" style="width:150px"><button class="btn gold" id="saveGoal">ตั้งเป้า</button></div></div>
+</section>
+<section class="panel rangePanel" style="margin-top:14px">
+<div class="panelhead"><h3>ช่วงยอดขาย</h3><span class="muted" id="rangeLabel">ทั้งหมด</span></div>
+<div class="controls">
+<select id="datePreset" class="input">
+<option value="today">วันนี้</option>
+<option value="7d">7 วันล่าสุด</option>
+<option value="month">เดือนนี้</option>
+<option value="custom">กำหนดเอง</option>
+<option value="all" selected>ทั้งหมด</option>
+</select>
+<div id="customDates" class="controls hidden">
+<input id="dateFrom" class="input" type="date">
+<span class="muted" style="align-self:center">ถึง</span>
+<input id="dateTo" class="input" type="date">
+<button class="btn gold" id="applyDates">ใช้ช่วงนี้</button>
+</div>
+</div>
 </section>
 <section class="cards">
 <div class="card"><span>ยอดขายทั้งหมด</span><b id="allSales">฿0</b><small>ตามช่วงที่เลือก</small></div>
@@ -73,6 +91,22 @@ const money=n=>"฿"+Number(n||0).toLocaleString("th-TH",{maximumFractionDigits:
 const iso=d=>{const x=new Date(d);return x.toISOString().slice(0,10)};
 const bangkokDate=d=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit"}).format(d||new Date());
 const today=bangkokDate(new Date());
+function shiftDate(dateStr,days){const d=new Date(dateStr+"T12:00:00+07:00");d.setDate(d.getDate()+days);return bangkokDate(d)}
+function monthStart(dateStr){return dateStr.slice(0,7)+"-01"}
+function getRange(){
+  const p=$("datePreset")?.value||"all";
+  if(p==="today")return {from:today,to:today,label:"วันนี้"};
+  if(p==="7d")return {from:shiftDate(today,-6),to:today,label:"7 วันล่าสุด"};
+  if(p==="month")return {from:monthStart(today),to:today,label:"เดือนนี้"};
+  if(p==="custom"){
+    const from=$("dateFrom").value||today,to=$("dateTo").value||today;
+    return {from:from<=to?from:to,to:from<=to?to:from,label:formatRange(from<=to?from:to,from<=to?to:from)};
+  }
+  return {from:"",to:"",label:"ทั้งหมด"};
+}
+function formatThaiDate(s){if(!s)return"";return new Date(s+"T12:00:00+07:00").toLocaleDateString("th-TH",{day:"numeric",month:"short",year:"2-digit"})}
+function formatRange(a,b){return a===b?formatThaiDate(a):formatThaiDate(a)+" – "+formatThaiDate(b)}
+function inRange(x,r){return (!r.from||x.date>=r.from)&&(!r.to||x.date<=r.to)}
 async function load(){
   try{bills=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){bills=[]}
   $("goalInput").value=localStorage.getItem(GOAL_KEY)||"15000";
@@ -118,14 +152,15 @@ async function save(){
 }
 function render(){
 $("todayLabel").textContent=new Date().toLocaleDateString("th-TH",{day:"numeric",month:"short",year:"numeric"});
-const q=$("search").value.trim().toLowerCase(),bf=$("branchFilter").value;
-const filtered=bills.filter(x=>(!bf||x.branch===bf)&&(!q||String(x.note||"").toLowerCase().includes(q)||String(x.id).includes(q)||String(x.branch).toLowerCase().includes(q)));
+const q=$("search").value.trim().toLowerCase(),bf=$("branchFilter").value,r=getRange();
+$("rangeLabel").textContent=r.label;
+const filtered=bills.filter(x=>inRange(x,r)&&(!bf||x.branch===bf)&&(!q||String(x.note||"").toLowerCase().includes(q)||String(x.id).includes(q)||String(x.branch).toLowerCase().includes(q)));
 const todayRows=bills.filter(x=>x.date===today),todayTotal=todayRows.reduce((a,b)=>a+Number(b.amount||0),0);
 $("todaySales").textContent=money(todayTotal);$("todayBills").textContent=todayRows.length+" บิลวันนี้";
 const total=filtered.reduce((a,b)=>a+Number(b.amount||0),0),cash=filtered.filter(x=>x.method==="เงินสด").reduce((a,b)=>a+Number(b.amount||0),0);
 $("allSales").textContent=money(total);$("billCount").textContent=filtered.length;$("avgBill").textContent=money(filtered.length?total/filtered.length:0);$("cashSales").textContent=money(cash);$("otherSales").textContent=money(total-cash);
 const goal=Number($("goalInput").value||15000),pct=goal?Math.min(100,Math.round(todayTotal/goal*100)):0;$("goalFill").style.width=pct+"%";$("goalText").textContent=money(todayTotal)+" / "+money(goal);$("goalPct").textContent=pct+"%";
-renderBranches(filtered);renderBills(filtered);drawChart();
+renderBranches(filtered);renderBills(filtered);drawChart(filtered,r);
 }
 function renderBranches(rows){
 const names=["ลพบุรี","โคกสำโรง","อื่นๆ"],box=$("branchSummary");let out="";
@@ -186,8 +221,37 @@ $("saveBill").onclick=async()=>{
 }
 $("pinBtn").onclick=async()=>{const pin=$("pinInput").value.trim();if(!/^\d{6}$/.test(pin)){showLock("กรอกรหัส 6 หลัก");return}APP_PIN=pin;localStorage.setItem("lakroi_dashboard_pin",pin);$("pinError").textContent="กำลังตรวจ…";await load()};
 $("pinInput").onkeydown=e=>{if(e.key==="Enter")$("pinBtn").click()};
+$("dateFrom").value=shiftDate(today,-6);$("dateTo").value=today;
+$("datePreset").onchange=()=>{$("customDates").classList.toggle("hidden",$("datePreset").value!=="custom");render()};
+$("applyDates").onclick=render;$("dateFrom").onchange=()=>{if($("datePreset").value==="custom")render()};$("dateTo").onchange=()=>{if($("datePreset").value==="custom")render()};
 $("newBill").onclick=openNew;$("closeModal").onclick=close;$("cancelBill").onclick=close;$("search").oninput=render;$("branchFilter").onchange=render;$("saveGoal").onclick=async()=>{localStorage.setItem(GOAL_KEY,$("goalInput").value||"15000");await save()}
-function drawChart(){const c=$("chart"),ctx=c.getContext("2d"),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(bangkokDate(d))}const vals=days.map(d=>bills.filter(x=>x.date===d).reduce((a,b)=>a+Number(b.amount||0),0)),max=Math.max(1,...vals);ctx.strokeStyle="#ddd5c8";ctx.lineWidth=1;for(let i=0;i<4;i++){let y=35+i*55;ctx.beginPath();ctx.moveTo(46,y);ctx.lineTo(w-18,y);ctx.stroke()}ctx.strokeStyle="#173c2a";ctx.lineWidth=4;ctx.lineJoin="round";ctx.beginPath();vals.forEach((v,i)=>{const x=50+i*((w-80)/6),y=210-(v/max)*160;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();ctx.fillStyle="#173c2a";vals.forEach((v,i)=>{const x=50+i*((w-80)/6),y=210-(v/max)*160;ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fill();ctx.fillStyle="#7a857e";ctx.font="12px sans-serif";ctx.textAlign="center";ctx.fillText(new Date(days[i]).toLocaleDateString("th-TH",{day:"numeric",month:"short"}),x,238);ctx.fillStyle="#173c2a"})}
+function drawChart(rows,r){
+  const c=$("chart"),ctx=c.getContext("2d"),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);
+  let from=r.from,to=r.to;
+  if(!from||!to){
+    const ds=rows.map(x=>x.date).filter(Boolean).sort();
+    to=ds.length?ds[ds.length-1]:today;from=ds.length?ds[0]:shiftDate(today,-6);
+  }
+  const allDays=[];let cur=from,guard=0;
+  while(cur<=to&&guard<370){allDays.push(cur);cur=shiftDate(cur,1);guard++}
+  let days=allDays;
+  if(days.length>31){
+    const step=Math.ceil(days.length/31);days=days.filter((_,i)=>i%step===0||i===allDays.length-1);
+  }
+  const vals=days.map((d,i)=>{
+    const next=i<days.length-1?days[i+1]:shiftDate(d,1);
+    return rows.filter(x=>x.date>=d&&x.date<next).reduce((a,b)=>a+Number(b.amount||0),0);
+  });
+  const max=Math.max(1,...vals);
+  ctx.strokeStyle="#ddd5c8";ctx.lineWidth=1;
+  for(let i=0;i<4;i++){let y=35+i*55;ctx.beginPath();ctx.moveTo(46,y);ctx.lineTo(w-18,y);ctx.stroke()}
+  if(!days.length)return;
+  ctx.strokeStyle="#173c2a";ctx.lineWidth=4;ctx.lineJoin="round";ctx.beginPath();
+  vals.forEach((v,i)=>{const x=50+i*((w-80)/Math.max(1,days.length-1)),y=210-(v/max)*160;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();
+  const labelEvery=Math.max(1,Math.ceil(days.length/7));
+  ctx.fillStyle="#173c2a";
+  vals.forEach((v,i)=>{const x=50+i*((w-80)/Math.max(1,days.length-1)),y=210-(v/max)*160;ctx.beginPath();ctx.arc(x,y,days.length>20?3:5,0,Math.PI*2);ctx.fill();if(i%labelEvery===0||i===days.length-1){ctx.fillStyle="#7a857e";ctx.font="12px sans-serif";ctx.textAlign="center";ctx.fillText(new Date(days[i]+"T12:00:00+07:00").toLocaleDateString("th-TH",{day:"numeric",month:"short"}),x,238);ctx.fillStyle="#173c2a"}});
+}
 load();
 })();
 </script>
