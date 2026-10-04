@@ -65,7 +65,8 @@ let bills=[],editId=null,pendingPhoto="";
 const $=id=>document.getElementById(id);
 const money=n=>"฿"+Number(n||0).toLocaleString("th-TH",{maximumFractionDigits:0});
 const iso=d=>{const x=new Date(d);return x.toISOString().slice(0,10)};
-const today=iso(new Date());
+const bangkokDate=d=>new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Bangkok",year:"numeric",month:"2-digit",day:"2-digit"}).format(d||new Date());
+const today=bangkokDate(new Date());
 async function load(){
   try{bills=JSON.parse(localStorage.getItem(KEY)||"[]")}catch(e){bills=[]}
   $("goalInput").value=localStorage.getItem(GOAL_KEY)||"15000";
@@ -175,7 +176,7 @@ $("saveBill").onclick=async()=>{
   finally{$("saveBill").disabled=false;$("saveBill").textContent="บันทึกบิล"}
 }
 $("newBill").onclick=openNew;$("closeModal").onclick=close;$("cancelBill").onclick=close;$("search").oninput=render;$("branchFilter").onchange=render;$("saveGoal").onclick=async()=>{localStorage.setItem(GOAL_KEY,$("goalInput").value||"15000");await save()}
-function drawChart(){const c=$("chart"),ctx=c.getContext("2d"),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(iso(d))}const vals=days.map(d=>bills.filter(x=>x.date===d).reduce((a,b)=>a+Number(b.amount||0),0)),max=Math.max(1,...vals);ctx.strokeStyle="#ddd5c8";ctx.lineWidth=1;for(let i=0;i<4;i++){let y=35+i*55;ctx.beginPath();ctx.moveTo(46,y);ctx.lineTo(w-18,y);ctx.stroke()}ctx.strokeStyle="#173c2a";ctx.lineWidth=4;ctx.lineJoin="round";ctx.beginPath();vals.forEach((v,i)=>{const x=50+i*((w-80)/6),y=210-(v/max)*160;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();ctx.fillStyle="#173c2a";vals.forEach((v,i)=>{const x=50+i*((w-80)/6),y=210-(v/max)*160;ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fill();ctx.fillStyle="#7a857e";ctx.font="12px sans-serif";ctx.textAlign="center";ctx.fillText(new Date(days[i]).toLocaleDateString("th-TH",{day:"numeric",month:"short"}),x,238);ctx.fillStyle="#173c2a"})}
+function drawChart(){const c=$("chart"),ctx=c.getContext("2d"),w=c.width,h=c.height;ctx.clearRect(0,0,w,h);const days=[];for(let i=6;i>=0;i--){const d=new Date();d.setDate(d.getDate()-i);days.push(bangkokDate(d))}const vals=days.map(d=>bills.filter(x=>x.date===d).reduce((a,b)=>a+Number(b.amount||0),0)),max=Math.max(1,...vals);ctx.strokeStyle="#ddd5c8";ctx.lineWidth=1;for(let i=0;i<4;i++){let y=35+i*55;ctx.beginPath();ctx.moveTo(46,y);ctx.lineTo(w-18,y);ctx.stroke()}ctx.strokeStyle="#173c2a";ctx.lineWidth=4;ctx.lineJoin="round";ctx.beginPath();vals.forEach((v,i)=>{const x=50+i*((w-80)/6),y=210-(v/max)*160;if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y)});ctx.stroke();ctx.fillStyle="#173c2a";vals.forEach((v,i)=>{const x=50+i*((w-80)/6),y=210-(v/max)*160;ctx.beginPath();ctx.arc(x,y,5,0,Math.PI*2);ctx.fill();ctx.fillStyle="#7a857e";ctx.font="12px sans-serif";ctx.textAlign="center";ctx.fillText(new Date(days[i]).toLocaleDateString("th-TH",{day:"numeric",month:"short"}),x,238);ctx.fillStyle="#173c2a"})}
 load();
 })();
 </script>
