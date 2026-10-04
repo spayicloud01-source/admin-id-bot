@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#173c2a">
-<link rel="manifest" href="/lakroi-dashboard/manifest.webmanifest">
+<link rel="manifest" href="/manifest.webmanifest">
 <title>หลักร้อยเฟอร์นิเจอร์ — Dashboard</title>
 <style>
 :root{--green:#173c2a;--green2:#24583f;--cream:#f6f0e5;--paper:#fffdf9;--gold:#c9a55b;--ink:#203027;--muted:#7a857e;--line:#e8e1d3;--red:#b7473e;--shadow:0 10px 28px rgba(42,56,48,.08)}
@@ -78,7 +78,7 @@ async function load(){
   $("goalInput").value=localStorage.getItem(GOAL_KEY)||"15000";
   if(!APP_PIN){showLock();return}
   try{
-    const r=await fetch("/api/health?lakroi=1",{cache:"no-store",headers:apiHeaders()});
+    const r=await fetch("/api/data",{cache:"no-store",headers:apiHeaders()});
     const j=await r.json();
     if(r.status===401){localStorage.removeItem("lakroi_dashboard_pin");APP_PIN="";showLock("รหัสไม่ถูกต้อง");return}
     if(r.ok&&j.ok){
@@ -109,7 +109,7 @@ async function save(){
   localStorage.setItem(GOAL_KEY,$("goalInput").value||"15000");
   render();
   try{
-    const r=await fetch("/api/health?lakroi=1",{method:"POST",headers:apiHeaders({"content-type":"application/json"}),body:JSON.stringify({action:"save",bills,goal:Number($("goalInput").value||15000)})});
+    const r=await fetch("/api/data",{method:"POST",headers:apiHeaders({"content-type":"application/json"}),body:JSON.stringify({action:"save",bills,goal:Number($("goalInput").value||15000)})});
     const j=await r.json();
     if(!r.ok||!j.ok)throw new Error(j.error||"บันทึกออนไลน์ไม่สำเร็จ");
   }catch(e){
@@ -165,7 +165,7 @@ function compressImage(file){
 }
 async function uploadPendingPhoto(billId){
   if(!pendingPhoto||!pendingPhoto.startsWith("data:image/"))return pendingPhoto;
-  const r=await fetch("/api/health?lakroi=1",{method:"POST",headers:apiHeaders({"content-type":"application/json"}),body:JSON.stringify({action:"uploadImage",billId,dataUrl:pendingPhoto})});
+  const r=await fetch("/api/data",{method:"POST",headers:apiHeaders({"content-type":"application/json"}),body:JSON.stringify({action:"uploadImage",billId,dataUrl:pendingPhoto})});
   const j=await r.json();
   if(!r.ok||!j.ok)throw new Error(j.error||"อัปโหลดรูปไม่สำเร็จ");
   return j.url;
