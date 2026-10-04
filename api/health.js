@@ -51,39 +51,30 @@ async function lakroiSeedState() {
   return state;
 }
 async function lakroiReadState() {
+  // Sales rows are grounded in the latest synced Google Sheet snapshot.
+  // Cloud is used only to preserve dashboard metadata such as goal/photos.
+  let cloud = { bills: [], goal: 15000, updatedAt: null };
   try {
     const r = await fetch(lakroiBlobUrl("lakroi/data.json") + "?t=" + Date.now(), { cache: "no-store" });
-    if (r.status === 404) return lakroiSeedState();
-    if (!r.ok) throw new Error("Blob read failed " + r.status);
-    const j = await r.json();
-    if (!Array.isArray(j.bills) || j.bills.length === 0) return lakroiSeedState();
-    const seed = Array.isArray(LAKROI_SEED_BILLS) ? LAKROI_SEED_BILLS : [];
-    const byId = new Map(seed.map((x) => [String(x.id || ""), x]));
-    for (const x of j.bills) {
-      if (!x || !x.id) continue;
-      byId.set(String(x.id), { ...(byId.get(String(x.id)) || {}), ...x });
-    }
-    const mergedBills = Array.from(byId.values()).filter((x) => x && x.id && x.date);
-    if (mergedBills.length !== j.bills.length) {
-      const mergedState = {
-        bills: mergedBills,
-        goal: Number(j.goal || 15000),
-        updatedAt: new Date().toISOString(),
-        seededFrom: "Google Sheet + Cloud",
-      };
-      await lakroiPut("lakroi/data.json", JSON.stringify(mergedState), "application/json; charset=utf-8");
-      return mergedState;
-    }
-    return {
-      bills: mergedBills,
-      goal: Number(j.goal || 15000),
-      updatedAt: j.updatedAt || null,
-      seededFrom: j.seededFrom || null,
-    };
-  } catch (e) {
-    if (String(e?.message || e).includes("404")) return lakroiSeedState();
-    throw e;
+    if (r.ok) cloud = await r.json();
+  } catch {}
+  const seed = Array.isArray(LAKROI_SEED_BILLS) ? LAKROI_SEED_BILLS : [];
+  const cloudById = new Map((Array.isArray(cloud.bills) ? cloud.bills : []).map((x) => [String(x.id || ""), x]));
+  const bills = seed.map((x) => {
+    const old = cloudById.get(String(x.id || ""));
+    return old ? { ...x, photo: String(old.photo || x.photo || "") } : x;
+  });
+  const state = {
+    bills,
+    goal: Number(cloud.goal || 15000),
+    updatedAt: new Date().toISOString(),
+    seededFrom: "หลักร้อยเฟอร์ฯ - ยอดขายและลงของ / บิลขาย",
+  };
+  // Heal old cloud states that contained duplicate/dashboard-only sales rows.
+  if (!Array.isArray(cloud.bills) || cloud.bills.length !== bills.length) {
+    try { await lakroiPut("lakroi/data.json", JSON.stringify(state), "application/json; charset=utf-8"); } catch {}
   }
+  return state;
 }
 async function handleLakroi(req, res) {
   try {
