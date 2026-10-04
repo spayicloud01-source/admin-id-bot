@@ -1,6 +1,7 @@
 // release-sync: customer-id-ocr
 const HEALTH_SCHEMA_VERSION = 3;
 import { callSheetsBridge, getBridgeRoutingStatus } from "../lib/sheetsBridge.js";
+import { LAKROI_SEED_BILLS } from "../lib/lakroiSeed.js";
 
 const EXPECTED_BRIDGE_VERSION = "2026.10.03-131";
 const EXPECTED_ACTIVE_SOURCES = 2;
@@ -39,19 +40,31 @@ async function lakroiPut(pathname, body, contentType) {
   if (!r.ok) throw new Error((data.error && data.error.message) || text || ("Blob HTTP " + r.status));
   return data;
 }
+async function lakroiSeedState() {
+  const state = {
+    bills: Array.isArray(LAKROI_SEED_BILLS) ? LAKROI_SEED_BILLS : [],
+    goal: 15000,
+    updatedAt: new Date().toISOString(),
+    seededFrom: "หลักร้อยเฟอร์ฯ - ยอดขายและลงของ / บิลขาย",
+  };
+  await lakroiPut("lakroi/data.json", JSON.stringify(state), "application/json; charset=utf-8");
+  return state;
+}
 async function lakroiReadState() {
   try {
     const r = await fetch(lakroiBlobUrl("lakroi/data.json") + "?t=" + Date.now(), { cache: "no-store" });
-    if (r.status === 404) return { bills: [], goal: 15000, updatedAt: null };
+    if (r.status === 404) return lakroiSeedState();
     if (!r.ok) throw new Error("Blob read failed " + r.status);
     const j = await r.json();
+    if (!Array.isArray(j.bills) || j.bills.length === 0) return lakroiSeedState();
     return {
-      bills: Array.isArray(j.bills) ? j.bills : [],
+      bills: j.bills,
       goal: Number(j.goal || 15000),
       updatedAt: j.updatedAt || null,
+      seededFrom: j.seededFrom || null,
     };
   } catch (e) {
-    if (String(e?.message || e).includes("404")) return { bills: [], goal: 15000, updatedAt: null };
+    if (String(e?.message || e).includes("404")) return lakroiSeedState();
     throw e;
   }
 }
@@ -59,10 +72,6 @@ async function handleLakroi(req, res) {
   try {
     res.setHeader("Cache-Control", "no-store");
     if (req.method === "GET") {
-      if (String(req.query?.probe || "") === "1") {
-        const p = await lakroiPut("lakroi/probe.txt", "ok " + new Date().toISOString(), "text/plain; charset=utf-8");
-        return res.status(200).json({ ok: true, probe: true, url: p.url || lakroiBlobUrl("lakroi/probe.txt") });
-      }
       const state = await lakroiReadState();
       return res.status(200).json({ ok: true, ...state });
     }
