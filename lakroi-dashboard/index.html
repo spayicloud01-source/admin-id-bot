@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#173c2a">
-<link rel="manifest" href="/manifest.webmanifest">
+<link rel="manifest" href="/lakroi-dashboard/manifest.webmanifest">
 <title>หลักร้อยเฟอร์นิเจอร์ — Dashboard</title>
 <style>
 :root{--green:#173c2a;--green2:#24583f;--cream:#f6f0e5;--paper:#fffdf9;--gold:#c9a55b;--ink:#203027;--muted:#7a857e;--line:#e8e1d3;--red:#b7473e;--shadow:0 10px 28px rgba(42,56,48,.08)}
@@ -16,7 +16,7 @@ button,input,select,textarea{font:inherit}.top{position:sticky;top:0;z-index:20;
 canvas{width:100%;height:260px;display:block}.table{display:grid;gap:8px}.row{display:grid;grid-template-columns:95px 1fr 110px 100px 94px;gap:8px;align-items:center;padding:11px;border:1px solid #eee7db;border-radius:13px;background:#fff}.row.head{background:#f5f1e8;font-size:11px;color:var(--muted);font-weight:800}.row div{min-width:0}.name{font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.muted{font-size:11px;color:var(--muted)}.amount{font-weight:900}.thumb{width:50px;height:50px;border-radius:10px;background:#eee8dc;object-fit:cover}.empty{padding:28px 12px;text-align:center;color:var(--muted);border:1px dashed #d9d1c3;border-radius:14px}
 .fab{position:fixed;right:18px;bottom:18px;border:0;border-radius:18px;background:linear-gradient(145deg,#173c2a,#2b6749);color:#fff;padding:14px 17px;font-weight:900;box-shadow:0 10px 30px rgba(23,60,42,.32);z-index:15}
 .modal{position:fixed;inset:0;background:rgba(18,30,24,.48);z-index:50;display:flex;align-items:flex-end;justify-content:center}.modal.hidden{display:none}.sheet{background:#fffdf9;width:100%;max-width:720px;max-height:92vh;overflow:auto;border-radius:24px 24px 0 0;padding:18px 18px 26px}.modalhead{display:flex;justify-content:space-between;align-items:center}.modalhead h3{margin:0}.close{border:0;width:38px;height:38px;border-radius:10px;background:#f0ece3;font-size:22px}.formgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.field label{display:block;font-size:11px;color:var(--muted);font-weight:800;margin-bottom:6px}.field input,.field select,.field textarea{width:100%;border:1px solid #d8d3c8;border-radius:12px;padding:11px;background:#fff}.field textarea{min-height:85px;resize:vertical}.full{grid-column:1/-1}.preview{display:flex;gap:10px;flex-wrap:wrap}.preview img{width:82px;height:82px;border-radius:12px;object-fit:cover;border:1px solid var(--line)}.notice{font-size:11px;color:var(--muted);line-height:1.5;margin-top:8px}
-@media(max-width:880px){.hero,.grid{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}.row{grid-template-columns:76px 1fr 86px}.row .hideM{display:none}}
+@media(max-width:880px){.hero,.grid{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}.row{grid-template-columns:76px 1fr 86px}.row .hideM{display:none}.row .actions{grid-column:2/4;display:flex;justify-content:flex-end}}
 @media(max-width:520px){.brand p{display:none}.heroBox h2{font-size:23px}.heroValue{font-size:36px}.cards{grid-template-columns:1fr 1fr}.card b{font-size:22px}.wrap{padding-left:10px;padding-right:10px}.panel{padding:14px}.formgrid{grid-template-columns:1fr}.full{grid-column:1}.row{grid-template-columns:70px 1fr 82px;padding:9px}.thumb{width:44px;height:44px}}
 </style>
 </head>
@@ -86,7 +86,7 @@ names.forEach(n=>{const rr=rows.filter(x=>x.branch===n),s=rr.reduce((a,b)=>a+Num
 function renderBills(rows){
 const box=$("billTable");if(!rows.length){box.innerHTML='<div class="empty">ยังไม่มีบิล กด “ลงบิลยอดขาย” เพื่อเริ่มบันทึก</div>';return}
 let out='<div class="row head"><div>รูป</div><div>รายการ</div><div>ยอด</div><div class="hideM">สาขา</div><div class="hideM">จัดการ</div></div>';
-rows.slice().sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt)).forEach(x=>{out+=`<div class="row"><div>${x.photo?'<img class="thumb" src="'+x.photo+'">':'<div class="thumb"></div>'}</div><div><div class="name">${esc(x.note||"บิลขาย")}</div><div class="muted">${esc(x.date)} • ${esc(x.method)}</div></div><div class="amount">${money(x.amount)}</div><div class="hideM"><div class="name">${esc(x.branch)}</div></div><div class="hideM controls"><button class="btn soft" data-photo="${x.id}">${x.photo?"เปลี่ยนรูป":"เพิ่มรูป"}</button><button class="btn red" data-del="${x.id}">ลบ</button></div></div>`});box.innerHTML=out;
+rows.slice().sort((a,b)=>(b.date+b.createdAt).localeCompare(a.date+a.createdAt)).forEach(x=>{out+=`<div class="row"><div>${x.photo?'<img class="thumb" src="'+x.photo+'">':'<div class="thumb"></div>'}</div><div><div class="name">${esc(x.note||"บิลขาย")}</div><div class="muted">${esc(x.date)} • ${esc(x.method)}</div></div><div class="amount">${money(x.amount)}</div><div class="hideM"><div class="name">${esc(x.branch)}</div></div><div class="actions controls"><button class="btn soft" data-photo="${x.id}">${x.photo?"เปลี่ยนรูป":"เพิ่มรูป"}</button><button class="btn red" data-del="${x.id}">ลบ</button></div></div>`});box.innerHTML=out;
 box.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>{if(confirm("ลบบิลนี้?")){bills=bills.filter(x=>x.id!==b.dataset.del);save()}});
 box.querySelectorAll("[data-photo]").forEach(b=>b.onclick=()=>openEdit(b.dataset.photo));
 }
