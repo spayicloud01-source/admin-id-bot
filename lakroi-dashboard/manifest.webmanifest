@@ -1,1 +1,1 @@
-{"name":"หลักร้อยเฟอร์นิเจอร์ Dashboard","short_name":"หลักร้อย","start_url":"/","scope":"/","display":"standalone","background_color":"#f6f0e5","theme_color":"#173c2a","icons":[{"src":"/icon.svg","sizes":"any","type":"image/svg+xml"}]}
+{"name":"หลักร้อยเฟอร์นิเจอร์ Dashboard","short_name":"หลักร้อย","start_url":"/lakroi-dashboard/","scope":"/lakroi-dashboard/","display":"standalone","background_color":"#f6f0e5","theme_color":"#173c2a","icons":[{"src":"/lakroi-dashboard/icon.svg","sizes":"any","type":"image/svg+xml"}]}
