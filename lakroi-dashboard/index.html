@@ -22,7 +22,7 @@ canvas{width:100%;height:260px;display:block}.table{display:grid;gap:8px}.row{di
 </style>
 </head>
 <body>
-<header class="top"><div class="topin"><div class="brand"><div class="logo">HR</div><div><h1>หลักร้อยเฟอร์นิเจอร์</h1><p>Dashboard ยอดขายและบิลหน้าร้าน</p></div></div><div class="pill" id="todayLabel"></div></div></header>
+<header class="top"><div class="topin"><div class="brand"><div class="logo">HR</div><div><h1>หลักร้อยเฟอร์นิเจอร์</h1><p>Dashboard ยอดขายและบิลหน้าร้าน</p></div></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;justify-content:flex-end"><div class="pill" id="syncLabel">กำลังเชื่อมข้อมูล…</div><div class="pill" id="todayLabel"></div></div></div></header>
 <main class="wrap">
 <section class="hero">
 <div class="heroBox"><h2>ยอดขายวันนี้</h2><p>รวมทุกสาขาที่บันทึกในระบบ</p><div class="heroValue" id="todaySales">฿0</div><div class="heroSub" id="todayBills">0 บิลวันนี้</div></div>
@@ -117,6 +117,7 @@ async function load(){
     if(r.status===401){localStorage.removeItem("lakroi_dashboard_pin");APP_PIN="";showLock("รหัสไม่ถูกต้อง");return}
     if(r.ok&&j.ok){
       hideLock();
+      $("syncLabel").textContent="อัปเดตล่าสุด "+new Date().toLocaleTimeString("th-TH",{hour:"2-digit",minute:"2-digit",second:"2-digit"});
       render();
       const localBills=bills.slice();
       if(Array.isArray(j.bills)&&j.bills.length){
@@ -135,6 +136,7 @@ async function load(){
       }
     }
   }catch(e){
+    $("syncLabel").textContent="เชื่อมข้อมูลไม่สำเร็จ";
     console.warn("shared data unavailable",e);
   }
 }
@@ -253,6 +255,7 @@ function drawChart(rows,r){
   vals.forEach((v,i)=>{const x=50+i*((w-80)/Math.max(1,days.length-1)),y=210-(v/max)*160;ctx.beginPath();ctx.arc(x,y,days.length>20?3:5,0,Math.PI*2);ctx.fill();if(i%labelEvery===0||i===days.length-1){ctx.fillStyle="#7a857e";ctx.font="12px sans-serif";ctx.textAlign="center";ctx.fillText(new Date(days[i]+"T12:00:00+07:00").toLocaleDateString("th-TH",{day:"numeric",month:"short"}),x,238);ctx.fillStyle="#173c2a"}});
 }
 load();
+setInterval(()=>{ if(APP_PIN && $("billModal").classList.contains("hidden")) load(); },10000);
 })();
 </script>
 </body>
