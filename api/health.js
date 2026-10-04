@@ -57,8 +57,25 @@ async function lakroiReadState() {
     if (!r.ok) throw new Error("Blob read failed " + r.status);
     const j = await r.json();
     if (!Array.isArray(j.bills) || j.bills.length === 0) return lakroiSeedState();
+    const seed = Array.isArray(LAKROI_SEED_BILLS) ? LAKROI_SEED_BILLS : [];
+    const byId = new Map(seed.map((x) => [String(x.id || ""), x]));
+    for (const x of j.bills) {
+      if (!x || !x.id) continue;
+      byId.set(String(x.id), { ...(byId.get(String(x.id)) || {}), ...x });
+    }
+    const mergedBills = Array.from(byId.values()).filter((x) => x && x.id && x.date);
+    if (mergedBills.length !== j.bills.length) {
+      const mergedState = {
+        bills: mergedBills,
+        goal: Number(j.goal || 15000),
+        updatedAt: new Date().toISOString(),
+        seededFrom: "Google Sheet + Cloud",
+      };
+      await lakroiPut("lakroi/data.json", JSON.stringify(mergedState), "application/json; charset=utf-8");
+      return mergedState;
+    }
     return {
-      bills: j.bills,
+      bills: mergedBills,
       goal: Number(j.goal || 15000),
       updatedAt: j.updatedAt || null,
       seededFrom: j.seededFrom || null,
@@ -141,14 +158,6 @@ function normalizeSelfTestForActiveSources(selfTest) {
 }
 
 export default async function handler(req, res) {
-  if (String(req.query?.lakroi_sheet_probe || "") === "1") {
-    try {
-      const u="https://docs.google.com/spreadsheets/d/1m8HfLnsrtf3TGFPeJOAfSfSZlBTQyZ6mN4WU_QrIruA/gviz/tq?tqx=out:csv&sheet="+encodeURIComponent("บิลขาย");
-      const r=await fetch(u,{redirect:"manual",cache:"no-store"});
-      const t=await r.text();
-      return res.status(200).json({ok:r.ok,status:r.status,type:r.headers.get("content-type"),location:r.headers.get("location"),bytes:t.length,head:t.slice(0,80)});
-    } catch(e){return res.status(200).json({ok:false,error:String(e?.message||e)})}
-  }
   if (String(req.query?.lakroi || "") === "1") return handleLakroi(req, res);
   const deep = String(req.query?.deep || "") === "1";
 
