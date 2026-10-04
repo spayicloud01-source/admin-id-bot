@@ -141,6 +141,14 @@ function normalizeSelfTestForActiveSources(selfTest) {
 }
 
 export default async function handler(req, res) {
+  if (String(req.query?.lakroi_sheet_probe || "") === "1") {
+    try {
+      const u="https://docs.google.com/spreadsheets/d/1m8HfLnsrtf3TGFPeJOAfSfSZlBTQyZ6mN4WU_QrIruA/gviz/tq?tqx=out:csv&sheet="+encodeURIComponent("บิลขาย");
+      const r=await fetch(u,{redirect:"manual",cache:"no-store"});
+      const t=await r.text();
+      return res.status(200).json({ok:r.ok,status:r.status,type:r.headers.get("content-type"),location:r.headers.get("location"),bytes:t.length,head:t.slice(0,80)});
+    } catch(e){return res.status(200).json({ok:false,error:String(e?.message||e)})}
+  }
   if (String(req.query?.lakroi || "") === "1") return handleLakroi(req, res);
   const deep = String(req.query?.deep || "") === "1";
 
