@@ -71,7 +71,7 @@ async function load(){
   $("goalInput").value=localStorage.getItem(GOAL_KEY)||"15000";
   render();
   try{
-    const r=await fetch("/api/lakroi",{cache:"no-store"});
+    const r=await fetch("/api/health?lakroi=1",{cache:"no-store"});
     const j=await r.json();
     if(r.ok&&j.ok){
       const localBills=bills.slice();
@@ -99,7 +99,7 @@ async function save(){
   localStorage.setItem(GOAL_KEY,$("goalInput").value||"15000");
   render();
   try{
-    const r=await fetch("/api/lakroi",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"save",bills,goal:Number($("goalInput").value||15000)})});
+    const r=await fetch("/api/health?lakroi=1",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"save",bills,goal:Number($("goalInput").value||15000)})});
     const j=await r.json();
     if(!r.ok||!j.ok)throw new Error(j.error||"บันทึกออนไลน์ไม่สำเร็จ");
   }catch(e){
@@ -155,7 +155,7 @@ function compressImage(file){
 }
 async function uploadPendingPhoto(billId){
   if(!pendingPhoto||!pendingPhoto.startsWith("data:image/"))return pendingPhoto;
-  const r=await fetch("/api/lakroi",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"uploadImage",billId,dataUrl:pendingPhoto})});
+  const r=await fetch("/api/health?lakroi=1",{method:"POST",headers:{"content-type":"application/json"},body:JSON.stringify({action:"uploadImage",billId,dataUrl:pendingPhoto})});
   const j=await r.json();
   if(!r.ok||!j.ok)throw new Error(j.error||"อัปโหลดรูปไม่สำเร็จ");
   return j.url;
