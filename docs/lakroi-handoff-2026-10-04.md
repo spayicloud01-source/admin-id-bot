@@ -58,3 +58,12 @@
 - Read README for setup and remaining cutover gates, especially cross-project
   LINE/app append concurrency. No sales mutations or migration were run against
   the source sheet. No production promotion or removal of the legacy route.
+
+## Verified continuation — 5 October, 13:45 Bangkok
+
+- GitHub PR #14 head verified at ef3226271b4be9a4640d97b1fd29eb80743e4a41 before this documentation update; draft and unmerged.
+- Earlier this morning, added LakroiBridge.gs to the existing Apps Script project (kept original files). Clipboard readback matched the submitted 8,321-character source. Explicit Save completed with cloud_done and doPost in the function selector. No script properties or deployments were created. The deployment dialog was only opened; final deployment was not submitted.
+- The previous browser session stopped because automatic approval review could not complete due to usage limit; it was not a safety rejection.
+- At 13:45 Bangkok the browser session had expired. Google sign-in returned 502 Bad Gateway / Connection refused, including one reload. Stop retries; no new script edits or deployment were possible this afternoon.
+- Vercel list again shows only admin-id-bot. Prior create_git_project attempts returned 403 create/project. A browser fallback for Vercel requires user permission under the browser plugin-failure guidance; it has not yet been requested or attempted.
+- Next: regain Apps Script access, verify saved source, set dedicated bridge secret, obtain confirmation for the new owner-executed Web App accepting server requests, deploy initially with writes disabled. Create the dedicated Vercel project through an authorized route, set only Lakroi variables, reconcile legacy Cloud bills, inspect LINE append concurrency, then test and enable real writes. Do not remove the old route or claim live cutover before verification.
