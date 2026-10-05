@@ -1,3 +1,4 @@
+import { bridgeConfigured, callBridge } from "../lib/bridge.js";
 import { LAKROI_SEED_BILLS, LAKROI_SEED_SYNCED_AT } from "../lib/seed.js";
 
 // Dedicated Lakroi API. No Admin ID or LINE dependencies.
@@ -66,13 +67,29 @@ export default async function handleLakroi(req, res) {
     if (!expectedPin || suppliedPin !== expectedPin) {
       return res.status(401).json({ ok: false, error: "Unauthorized" });
     }
+    if (Boolean(process.env.LAKROI_BRIDGE_URL) !== Boolean(process.env.LAKROI_BRIDGE_SECRET)) {
+      throw new Error("ตั้งค่าตัวเชื่อมชีตไม่ครบ");
+    }
     if (req.method === "GET") {
-      const state = await lakroiReadState();
+      const state = bridgeConfigured() ? await lakroiLiveState() : await lakroiReadState();
       return res.status(200).json({ ok: true, ...state });
     }
     if (req.method !== "POST") return res.status(405).json({ ok: false, error: "Method not allowed" });
     const body = req.body && typeof req.body === "object" ? req.body : JSON.parse(req.body || "{}");
     const action = String(body.action || "save");
+    if (bridgeConfigured() && ["createBill", "setPhoto", "setGoal"].includes(action)) {
+      if (action === "setPhoto") {
+        const photo = new URL(String(body.data?.url || ""));
+        if (photo.origin !== new URL(lakroiBlobUrl("lakroi/bills/")).origin || !photo.pathname.startsWith("/lakroi/bills/")) {
+          return res.status(400).json({ok:false,error:"ที่อยู่รูปไม่ถูกต้อง"});
+        }
+      }
+      const result = await callBridge(action, body.data || {});
+      return res.status(200).json(result);
+    }
+    if (bridgeConfigured() && action === "save") {
+      return res.status(409).json({ok:false,error:"กรุณารีเฟรชเว็บ ใช้การบันทึกทีละรายการแทนการเขียนทับทั้งชุด"});
+    }
     if (action === "uploadImage") {
       const dataUrl = String(body.dataUrl || "");
       const m = dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
@@ -118,6 +135,37 @@ export default async function handleLakroi(req, res) {
     }
     return res.status(400).json({ ok: false, error: "Unknown action" });
   } catch (error) {
-    return res.status(500).json({ ok: false, error: String(error?.message || error) });
+    return res.status(error.status || 500).json({ ok: false, error: String(error?.message || error) });
   }
+}
+
+// Read legacy cloud records for reconciliation only. Never migrate or overwrite them on GET.
+async function lakroiLiveState() {
+  const live = await callBridge("list");
+  if (live.sourceMode !== "live" || live.spreadsheetId !== "1m8HfLnsrtf3TGFPeJOAfSfSZlBTQyZ6mN4WU_QrIruA" || live.sheetId !== 68391922 || !Array.isArray(live.bills)) {
+    throw new Error("ตัวเชื่อมส่งข้อมูลผิดแหล่ง");
+  }
+  let cloud = {bills:[]}, cloudReadable = !lakroiStoreId();
+  if (lakroiStoreId()) {
+    try {
+      const response = await fetch(lakroiBlobUrl("lakroi/data.json") + "?t=" + Date.now(), {cache:"no-store"});
+      if (response.ok) { cloud = await response.json(); cloudReadable = Array.isArray(cloud.bills); }
+      else cloudReadable = response.status === 404;
+    } catch {}
+  }
+  const fingerprint = b => JSON.stringify([b.date,b.createdAt,b.branch,b.note,b.amount,b.cashAmount,b.transferAmount,b.thaiAmount]);
+  const seeds = new Map(LAKROI_SEED_BILLS.map(b => [b.id,b]));
+  const cloudBills = Array.isArray(cloud.bills) ? cloud.bills : [];
+  const unmatched = [];
+  for (const old of cloudBills) {
+    let match = live.bills.find(b => b.id === old.id);
+    const seed = seeds.get(old.id);
+    if (!match && seed && fingerprint(old) === fingerprint(seed)) {
+      const candidates = live.bills.filter(b => fingerprint(b) === fingerprint(seed));
+      if(candidates.length === 1) match = candidates[0];
+    }
+    if (!match || fingerprint(old) !== fingerprint(match)) { unmatched.push(old.id); continue; }
+    if (!match.photo && /^https:\/\//.test(old.photo || "")) match.photo = old.photo;
+  }
+  return {...live,reconciliation:{cloudReadable,unmatchedCount:unmatched.length,unmatchedIds:unmatched},salesWritable:live.salesWritable === true && cloudReadable && unmatched.length === 0};
 }

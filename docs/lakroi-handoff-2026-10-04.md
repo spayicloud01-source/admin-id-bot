@@ -38,3 +38,23 @@
 - Reconcile any older cloud-only bills against the sheet before counting, migrating or deleting them. Preserve records until reconciliation.
 - Enable sales editing only when writes are actually persisted to the sheet. Verify against live sheet totals and real mobile layout before promotion. Retire the old route only after the new deployment is working.
 - This branch is not merged or deployed to production, respecting the user's request to split the project.
+
+## Continuation — 5 October 2026 morning
+
+- Browser sign-in restored. Existing Lakroi Apps Script identified:
+  `https://script.google.com/home/projects/1VgBkxc9UhOGYvZqFfbwP7IpoS6EUAR05jnS2QFqBgHQYf8pkVZg2ZQoN/edit`.
+- Read the entire original `รหัส.gs`. It has an owner-only HTML app, append-only
+  bill creation with idempotency/ScriptLock, and private Drive photo functions.
+  Deployment manager reports **no deployments**, active or archived.
+- Latest connector read A1:N160 still has 127 bills, ฿79,600 total and ฿19,169 cash.
+- Vercel project list still contains only admin-id-bot. Latest create attempt in
+  this conversation returned 403 create/project. Do not claim a dedicated deployment.
+- Added a separate signed POST bridge source under the Lakroi root, a server-side
+  bridge client, live-source validation, cloud reconciliation reporting, and UI
+  per-bill create/photo/goal operations. Snapshot safety remains intact.
+- New tests exercise auth expiry/signature rejection, duplicate retries/conflicts,
+  invalid dates/money, lock release, row-sort-safe legacy IDs, source verification,
+  and no silent fallback from failed live reads to snapshots.
+- Read README for setup and remaining cutover gates, especially cross-project
+  LINE/app append concurrency. No sales mutations or migration were run against
+  the source sheet. No production promotion or removal of the legacy route.
