@@ -13,7 +13,7 @@ Current data is still a verified sheet snapshot, not live Sheets. Sales mutation
 
 The old Admin ID health route temporarily delegates to this API so the existing URL remains usable during cutover. The UI detects the old subpath only for that transition. Once the dedicated project is deployed and verified, remove that delegation and legacy path detection, then retire the old page route. Do not remove them before the new URL works.
 
-Creation attempted on 2026-10-04: Vercel returned `403 forbidden`, action `create`, resource `project`. The connected account lacks project-creation permission. No new Vercel project or production cutover was created by this patch.
+Dedicated Vercel project `lakroi-dashboard` now exists as project `prj_c8x8R6YHn6FHX2wnUzoSbQ2fz0CB` with root directory `lakroi-dashboard` and production branch `fix/lakroi-snapshot-safety`. Lakroi-only PIN and Blob settings are configured. This documentation update intentionally triggers the first deployment of the dedicated project. Live Google Sheets bridge variables are still withheld until the Apps Script Web App is deployed and verified.
 
 ## Live bridge patch — 5 October 2026
 
