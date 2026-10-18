@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { callSheetsBridge } from "../../lib/sheetsBridge.js";
 import { sessionFromRequest, createWebSession } from "../../lib/webAuth.js";
+import { PWA_PNG_ICONS } from "../../lib/pwaIcons.js";
 
 let cachedSheets = null;
 let cachedAt = 0;
@@ -56,6 +57,14 @@ async function redeemPrivateLink(req, res) {
 }
 
 export default async function handler(req, res) {
+  // The PWA installer needs public icons, not another serverless function.
+  // No auth data, customer information, or session token is served by this route.
+  const iconSize = String(req.query?.icon || "");
+  if (req.method === "GET" && (iconSize === "192" || iconSize === "512")) {
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=604800");
+    return res.status(200).send(Buffer.from(PWA_PNG_ICONS[Number(iconSize)], "base64"));
+  }
   if (req.method === "POST") return redeemPrivateLink(req, res);
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET, POST");
