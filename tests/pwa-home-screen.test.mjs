@@ -58,8 +58,8 @@ try{
     assert.equal(image.slice(0,8).toString("hex"),"89504e470d0a1a0a");
     assert.equal(image.readUInt32BE(16),size);
     assert.equal(image.readUInt32BE(20),size);
-    const length=image.readUInt32BE(33);
-    const raw=inflateSync(image.subarray(41,41+length));
+    const length=image.readUInt32BE(51);
+    const raw=inflateSync(image.subarray(59,59+length));
     assert.equal(raw.length,size*(1+Math.ceil(size/8)),"icon PNG inflation validates");
   }
   const html=readFileSync(new URL("../index.html",import.meta.url),"utf8");
