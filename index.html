@@ -681,6 +681,16 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       .then(function(){btn.textContent=one?"ส่งข้อความนี้":"ตรวจและส่งทุกคน";syncButtons();});
   }
 
+  var PRIVATE_ACCESS="";
+  try{
+    var fragment=new URLSearchParams(String(location.hash||"").replace(/^#/,""));
+    PRIVATE_ACCESS=fragment.get("access")||"";
+    if(PRIVATE_ACCESS){
+      // Fragment-only private link: remove the secret from the address bar.
+      history.replaceState(null,"",location.pathname+location.search);
+    }
+  }catch(e){PRIVATE_ACCESS="";}
+
   try{
     var qs=new URLSearchParams(location.search);
     var incoming=qs.get("token")||"";
@@ -805,9 +815,34 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   };
   window.loadConfig=loadConfig;
 
-  if(!TOKEN) showLogin();
-  else { showApp(); loadDashboardCache(); }
-  loadConfig();
+  if(PRIVATE_ACCESS){
+    byId("sys").textContent="กำลังเปิดเว็บส่วนตัว…";
+    fetch("/api/web/private-access",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({access:PRIVATE_ACCESS}),
+      cache:"no-store",
+      credentials:"same-origin"
+    }).then(function(r){
+      return r.json().then(function(j){return {status:r.status,ok:r.ok,data:j};});
+    }).then(function(x){
+      PRIVATE_ACCESS="";
+      if(!x.ok||!x.data||!x.data.ok||!x.data.token)
+        throw new Error(x.status===401?"ลิงก์ส่วนตัวไม่ถูกต้อง":"ไม่สามารถเปิดเว็บส่วนตัวได้");
+      TOKEN=x.data.token;
+      try{localStorage.setItem(WEB_TOKEN_KEY,TOKEN);}catch(e){}
+      try{sessionStorage.setItem(WEB_TOKEN_KEY,TOKEN);}catch(e){}
+      showApp();loadDashboardCache();loadConfig();
+    }).catch(function(e){
+      PRIVATE_ACCESS="";
+      clearAuth();
+      byId("sys").textContent=String(e&&e.message||"เข้าเว็บไม่สำเร็จ");
+    });
+  }else{
+    if(!TOKEN)showLogin();
+    else{showApp();loadDashboardCache();}
+    loadConfig();
+  }
 })();
 </script>
 </body></html>
