@@ -3,6 +3,12 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1220">
 <title>Admin ID — หลังบ้าน</title>
+<meta name="application-name" content="Admin ID">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Admin ID">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="/api/web/config?icon=192">
+<meta name="referrer" content="no-referrer">
 <style>
 :root{--bg:#f4f7fb;--card:#fff;--ink:#111827;--muted:#6b7280;--line:#e5e7eb;--nav:#0b1220;--blue:#2563eb;--green:#16a34a;--orange:#ea580c;--red:#dc2626;--shadow:0 8px 28px rgba(15,23,42,.08)}
 *{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Thai",sans-serif;background:var(--bg);color:var(--ink)}button,select,input{font:inherit}
@@ -92,7 +98,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 </style>
 </head>
 <body>
-<header class="top"><div class="topin"><div class="brand"><div class="logo">ID</div><div><h1>Admin ID — หลังบ้าน</h1><p>LINE OA → Vercel → Apps Script → Google Sheets</p></div></div><div class="status"><span id="dot" class="dot"></span><span id="sys">กำลังตรวจระบบ…</span></div></div></header>
+<header class="top"><div class="topin"><div class="brand"><div class="logo">ID</div><div><h1>Admin ID — หลังบ้าน</h1><p>LINE OA → Vercel → Apps Script → Google Sheets</p></div></div><div class="status"><span id="dot" class="dot"></span><span id="sys">กำลังตรวจระบบ…</span><button id="installBtn" type="button" style="display:none;margin-left:8px;border:1px solid #fff;border-radius:9px;padding:7px 10px;background:#fff;color:#10412f;font-weight:800;cursor:pointer">ติดตั้งแอป</button><button id="logoutBtn" type="button" style="display:none;margin-left:8px;border:1px solid #8896ae;border-radius:9px;padding:7px 10px;background:#162238;color:#fff;cursor:pointer">ออกจากระบบ</button></div></div></header>
 <main class="wrap">
 <section id="login" class="login hidden"><h2>ต้องยืนยันสิทธิ์เจ้าของก่อน</h2><p>เปิด LINE OA Admin ID แล้วพิมพ์คำสั่งด้านล่าง ระบบจะตรวจว่าบัญชี LINE เป็น “เจ้าของ” และส่งลิงก์เข้าเว็บกลับมา</p><span class="cmd">เข้าเว็บ</span></section>
 
@@ -201,7 +207,18 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   var DASHBOARD_CACHE_OWNER = "";
 
   function byId(id){ return document.getElementById(id); }
-  function authHeaders(){ var h={}; if(TOKEN){ h.Authorization="Bearer "+TOKEN; } return h; }
+  var WEB_TOKEN_KEY="adminIdWebToken";
+  function clearAuth(){
+    TOKEN="";
+    try{sessionStorage.removeItem(WEB_TOKEN_KEY);}catch(e){}
+    try{localStorage.removeItem(WEB_TOKEN_KEY);}catch(e){}
+    showLogin();
+  }
+  function authHeaders(){
+    var h={};
+    if(TOKEN)h.Authorization="Bearer "+TOKEN;
+    return h;
+  }
   function saveDashboardCache(owner){
     try{
       localStorage.setItem("adminIdDashboardCache",JSON.stringify({
@@ -257,10 +274,12 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     byId("login").classList.remove("hidden");
     byId("dot").className="dot";
     byId("sys").textContent="รอยืนยันผ่าน LINE";
+    byId("logoutBtn").style.display="none";
   }
   function showApp(){
     byId("login").classList.add("hidden");
     byId("app").classList.remove("hidden");
+    byId("logoutBtn").style.display="";
   }
   function escapeHtml(s){
     return String(s==null?"":s).replace(/[&<>"']/g,function(c){
@@ -375,7 +394,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     fetch("/api/web/summary?mode="+encodeURIComponent(mode),{headers:authHeaders(),cache:"no-store"})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){} location.reload();return;}
+        if(x.r.status===401){clearAuth();return;}
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"โหลดข้อมูลไม่ได้");
         var items=x.j.items||[];
         var countIds={today:"todayCount",upcoming:"upcomingCount",overdue:"overdueCount",deleted:"deletedCount",pending_lock:"pendingLockCount",sold:"soldCount",fraud:"fraudCount",installment:"installmentCount"};
@@ -460,7 +479,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     return fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify(payload)})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}location.reload();return;}
+        if(x.r.status===401){clearAuth();return;}
         if(!x.r.ok||!x.j.ok)throw new Error(x.j.error||x.j.message||"ดำเนินการไม่สำเร็จ");
         renderToolResult(boxId,x.j);return x.j;
       }).catch(function(e){if(byId(boxId))byId(boxId).innerHTML='<div class="warning">ผิดพลาด: '+escapeHtml(String((e&&e.message)||e))+'</div>';})
@@ -469,7 +488,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 
   function loadConfig(){
     checkHealth().then(function(){
-      if(!TOKEN){ showLogin(); return; }
+      if(!TOKEN){showLogin();return;}
 
       // Re-opening the dashboard should not rescan every source workbook.
       // A recent client cache is enough for sheet selectors; due counts refresh separately.
@@ -486,8 +505,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         return r.json().then(function(j){ return {r:r,j:j}; });
       }).then(function(x){
         if(x.r.status===401||x.r.status===403){
-          try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}
-          TOKEN=""; showLogin(); return;
+          clearAuth();return;
         }
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"โหลดข้อมูลไม่ได้");
         ITEMS=x.j.sheets||[];
@@ -569,7 +587,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({action:"record_payment",queue:q,amount:amount})})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}location.reload();return;}
+        if(x.r.status===401){clearAuth();return;}
         if(!x.r.ok||!x.j.ok)throw new Error(x.j.error||"บันทึกไม่ได้");
         box.textContent=(x.j.message||"ส่งเข้าคิวตรวจสอบแล้ว")+(x.j.rowNo?(" • คิวตรวจสอบ #"+x.j.rowNo):"");
         box.classList.remove("hidden");
@@ -629,7 +647,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({action:"getCalculatedSummary",query:q,resolveRecipient:true})})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}location.reload();return;}
+        if(x.r.status===401){clearAuth();return;}
         if(!x.r.ok||!x.j.ok)throw new Error(x.j.error||"ค้นหาไม่สำเร็จ");
         if(x.j.needsSelection)throw new Error("พบคิวซ้ำมากกว่า 1 รายการ กรุณาตรวจเลขคิว");
         if(!x.j.summary||!x.j.summary.customer)throw new Error("ไม่พบคิว "+q+" ใน V6/10-69 หรือ v3/10-69");
@@ -661,7 +679,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({targets:one?[]:SELECTED_TARGETS.map(function(x){return {source:x.source,sheet:x.sheet};}),field:field,queue:q,customMessage:customMessage,recipientToken:one?ONE_RECIPIENT_TOKEN:""})})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){} location.reload();return;}
+        if(x.r.status===401){clearAuth();return;}
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"ส่งไม่สำเร็จ");
         box.innerHTML='<div style="display:flex;align-items:center;gap:9px;font-weight:800;font-size:14px"><span style="display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#16a34a;color:#fff;font-size:16px">✓</span><span>'+escapeHtml(x.j.message||"ส่งสำเร็จ")+'</span></div>'+(x.j.failed?'<div style="margin-top:6px">ไม่สำเร็จ '+escapeHtml(x.j.failed)+' ราย</div>':'');
         box.classList.remove("hidden");
@@ -669,12 +687,100 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       .then(function(){btn.textContent=one?"ส่งข้อความนี้":"ตรวจและส่งทุกคน";syncButtons();});
   }
 
+  function enablePrivateAppInstall(){
+    // Register only after the owner link has been successfully redeemed.
+    // This guarantees the install manifest receives the signed scoped cookie.
+    if (!byId("adminPwaManifest")) {
+      var link=document.createElement("link");
+      link.id="adminPwaManifest";
+      link.rel="manifest";
+      link.href="/api/web/config?pwa_manifest=1";
+      link.crossOrigin="use-credentials";
+      document.head.appendChild(link);
+    }
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(function(e){console.warn("PWA registration",e&&e.message);});
+    }
+    if(!window.matchMedia("(display-mode: standalone)").matches && !navigator.standalone)
+      byId("installBtn").style.display="";
+  }
+  var deferredInstall=null;
+  window.addEventListener("beforeinstallprompt",function(event){
+    event.preventDefault();
+    deferredInstall=event;
+    if(TOKEN)byId("installBtn").style.display="";
+  });
+  window.addEventListener("appinstalled",function(){
+    deferredInstall=null;
+    byId("installBtn").style.display="none";
+  });
+  byId("installBtn").addEventListener("click",function(){
+    if(deferredInstall){
+      var prompt=deferredInstall;
+      deferredInstall=null;
+      prompt.prompt();
+      Promise.resolve(prompt.userChoice).catch(function(){});
+      return;
+    }
+    alert("ใน Chrome กดเมนู ⋮ แล้วเลือก 'ติดตั้งแอป' หรือ 'เพิ่มไปยังหน้าจอหลัก'\nหากมีไอคอนเก่า ให้ลบไอคอนนั้นก่อนติดตั้งใหม่");
+  });
+
+  var PRIVATE_ACCESS="";
+  try{
+    var fragment=new URLSearchParams(String(location.hash||"").replace(/^#/,""));
+    PRIVATE_ACCESS=fragment.get("access")||"";
+    if(PRIVATE_ACCESS){
+      // Fragment-only private link: remove the secret from the address bar.
+      history.replaceState(null,"",location.pathname+location.search);
+    }
+  }catch(e){PRIVATE_ACCESS="";}
+
   try{
     var qs=new URLSearchParams(location.search);
-    var incoming=qs.get("token");
-    if(incoming){ try{sessionStorage.setItem("adminIdWebToken",incoming);}catch(e){} }
-    try{TOKEN=sessionStorage.getItem("adminIdWebToken")||"";}catch(e){TOKEN=incoming||"";}
+    var incoming=qs.get("token")||"";
+    // Keep signed links out of the browser address bar and referrer.
+    if(incoming){
+      qs.delete("token");
+      history.replaceState(null,"",location.pathname+(qs.toString()?"?"+qs.toString():"")+location.hash);
+      TOKEN=incoming;
+      try{sessionStorage.setItem(WEB_TOKEN_KEY,incoming);}catch(e){}
+      try{localStorage.setItem(WEB_TOKEN_KEY,incoming);}catch(e){}
+    }
+    if(!TOKEN){
+      try{TOKEN=sessionStorage.getItem(WEB_TOKEN_KEY)||"";}catch(e){}
+      if(!TOKEN){try{TOKEN=localStorage.getItem(WEB_TOKEN_KEY)||"";}catch(e){}}
+    }
+    // There is no automatic 4-hour logout; the API validates the signed token.
   }catch(e){ TOKEN=""; }
+
+  // Sign-out only affects this browser/app; it does not log out other devices.
+  byId("logoutBtn").addEventListener("click",function(){
+    if(!confirm("ออกจากระบบบนอุปกรณ์นี้ใช่หรือไม่?"))return;
+    fetch("/api/web/config",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      credentials:"same-origin",
+      cache:"no-store",
+      body:JSON.stringify({action:"logout"})
+    }).catch(function(){});
+    clearAuth();
+  });
+
+  function restorePrivateAppSession(){
+    return fetch("/api/web/config?restore=1",{
+      method:"GET",credentials:"same-origin",cache:"no-store"
+    }).then(function(r){
+      if(!r.ok)return null;
+      return r.json();
+    }).then(function(data){
+      if(!data||!data.ok||!data.token)return false;
+      TOKEN=data.token;
+      try{localStorage.setItem(WEB_TOKEN_KEY,TOKEN);}catch(e){}
+      try{sessionStorage.setItem(WEB_TOKEN_KEY,TOKEN);}catch(e){}
+      enablePrivateAppInstall();
+      return true;
+    }).catch(function(){return false;});
+  }
 
   byId("source").addEventListener("change",fillSheets);
   byId("sheet").addEventListener("change",function(){byId("use").disabled=!byId("sheet").value;syncButtons();});
@@ -775,9 +881,47 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   };
   window.loadConfig=loadConfig;
 
-  if(!TOKEN) showLogin();
-  else { showApp(); loadDashboardCache(); }
-  loadConfig();
+  if(PRIVATE_ACCESS){
+    byId("sys").textContent="กำลังเปิดเว็บส่วนตัว…";
+    fetch("/api/web/config",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({access:PRIVATE_ACCESS}),
+      cache:"no-store",
+      credentials:"same-origin"
+    }).then(function(r){
+      return r.json().then(function(j){return {status:r.status,ok:r.ok,data:j};});
+    }).then(function(x){
+      PRIVATE_ACCESS="";
+      if(!x.ok||!x.data||!x.data.ok||!x.data.token)
+        throw new Error(x.status===401?"ลิงก์ส่วนตัวไม่ถูกต้อง":"ไม่สามารถเปิดเว็บส่วนตัวได้");
+      TOKEN=x.data.token;
+      try{localStorage.setItem(WEB_TOKEN_KEY,TOKEN);}catch(e){}
+      try{sessionStorage.setItem(WEB_TOKEN_KEY,TOKEN);}catch(e){}
+      enablePrivateAppInstall();
+      showApp();loadDashboardCache();loadConfig();
+    }).catch(function(e){
+      PRIVATE_ACCESS="";
+      clearAuth();
+      byId("sys").textContent=String(e&&e.message||"เข้าเว็บไม่สำเร็จ");
+    });
+  }else if(TOKEN){
+    showApp();loadDashboardCache();
+    enablePrivateAppInstall();
+    loadConfig();
+  }else{
+    // Installed Chrome app may have its own localStorage. Try the signed
+    // HttpOnly private owner cookie before showing "ต้องยืนยัน".
+    byId("sys").textContent="กำลังเปิด Admin ID…";
+    restorePrivateAppSession().then(function(restored){
+      if(restored){
+        showApp();loadDashboardCache();loadConfig();
+      }else{
+        showLogin();
+        byId("sys").textContent="ยังไม่พบสิทธิ์ของแอปนี้ — เปิดจากลิงก์ส่วนตัวใน Chrome อีกครั้ง";
+      }
+    });
+  }
 })();
 </script>
 </body></html>
