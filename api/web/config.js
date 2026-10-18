@@ -7,6 +7,23 @@ let cachedSheets = null;
 let cachedAt = 0;
 const CONFIG_CACHE_MS = 5 * 60 * 1000;
 
+function privateOwnerSessionFromCookie(req) {
+  // Signed, HttpOnly scoped cookie issued only after private link owner check.
+  const cookie = String(req.headers?.cookie || "").split(";").map(x => x.trim())
+    .find(x => x.startsWith("adminIdPwaSession="));
+  if (!cookie) return null;
+  let token, session;
+  try {
+    token = decodeURIComponent(cookie.slice("adminIdPwaSession=".length));
+    session = verifyWebSession(token);
+  } catch (_) { return null; }
+  const privateKey = String(process.env.ADMIN_ID_PRIVATE_LINK_KEY || "");
+  const privateOwner = String(process.env.ADMIN_ID_PRIVATE_OWNER_LINE_ID || "");
+  if (!session || session.via !== "private-link" || session.sub !== privateOwner ||
+      !/^U[0-9a-f]{32}$/i.test(privateOwner) || privateKey.length < 48) return null;
+  return { token, session };
+}
+
 async function redeemPrivateLink(req, res) {
   res.setHeader("Cache-Control", "no-store, private");
   res.setHeader("Referrer-Policy", "no-referrer");
@@ -61,6 +78,22 @@ async function redeemPrivateLink(req, res) {
 }
 
 export default async function handler(req, res) {
+  // Home-screen applications can have storage isolated from Chrome.
+  // Rehydrate using the same signed private cookie, without a LINE prompt.
+  if (req.method === "GET" && String(req.query?.restore || "") === "1") {
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Cookie");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    const owner = privateOwnerSessionFromCookie(req);
+    if (!owner) return res.status(401).json({ ok: false, error: "ไม่มีสิทธิ์เข้าแอปส่วนตัวบนอุปกรณ์นี้" });
+    return res.status(200).json({ ok: true, token: owner.token });
+  }
+  if (req.method === "POST" && String(req.body?.action || "") === "logout") {
+    // Only remove THIS device's owner cookie; other devices stay signed in.
+    res.setHeader("Set-Cookie", "adminIdPwaSession=; Path=/api/web/config; Max-Age=0; HttpOnly; Secure; SameSite=Strict");
+    res.setHeader("Cache-Control", "no-store, private");
+    return res.status(200).json({ ok: true });
+  }
   if (req.method === "GET" && String(req.query?.pwa_manifest || "") === "1") {
     // A home-screen icon needs a repeatable launch URL. Only a browser with
     // a signed, private owner cookie may receive the private fragment.
@@ -69,17 +102,9 @@ export default async function handler(req, res) {
     res.setHeader("Cache-Control", "private, no-store");
     res.setHeader("Vary", "Cookie");
     res.setHeader("Referrer-Policy", "no-referrer");
-    const cookie = String(req.headers?.cookie || "").split(";").map(x=>x.trim()).find(x=>x.startsWith("adminIdPwaSession="));
-    let session = null;
-    try {
-      session = cookie ? verifyWebSession(decodeURIComponent(cookie.split("=").slice(1).join("="))) : null;
-    } catch (_) {}
-    const privateKey = String(process.env.ADMIN_ID_PRIVATE_LINK_KEY || "");
-    const privateOwner = String(process.env.ADMIN_ID_PRIVATE_OWNER_LINE_ID || "");
-    const authorized = session?.via === "private-link" && session.sub === privateOwner &&
-      /^U[0-9a-f]{32}$/i.test(privateOwner) && privateKey.length >= 48;
-    if (!authorized) return res.status(403).json({ ok: false, error: "Install from the private owner link in Chrome first" });
-    const startUrl = "/?app=1#access=" + encodeURIComponent(privateKey);
+    const owner = privateOwnerSessionFromCookie(req);
+    if (!owner) return res.status(403).json({ ok: false, error: "Install from the private owner link in Chrome first" });
+    const startUrl = "/?app=1#access=" + encodeURIComponent(String(process.env.ADMIN_ID_PRIVATE_LINK_KEY));
     return res.status(200).send(JSON.stringify({
       id: "/admin-id-owner",
       name: "Admin ID — หลังบ้าน",
