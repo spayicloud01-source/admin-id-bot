@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import { callSheetsBridge } from "../../lib/sheetsBridge.js";
-import { sessionFromRequest, createWebSession } from "../../lib/webAuth.js";
+import { sessionFromRequest, createWebSession, verifyWebSession } from "../../lib/webAuth.js";
 import { PWA_PNG_ICONS } from "../../lib/pwaIcons.js";
 
 let cachedSheets = null;
@@ -49,6 +49,10 @@ async function redeemPrivateLink(req, res) {
       role: "เจ้าของ",
       via: "private-link",
     });
+    // A scoped HttpOnly cookie lets Chrome fetch a personalised install manifest
+    // with the one-tap fragment in its start_url. It is never public or cached.
+    res.setHeader("Set-Cookie", "adminIdPwaSession=" + encodeURIComponent(token) +
+      "; Path=/api/web/config; Max-Age=34560000; HttpOnly; Secure; SameSite=Strict");
     return res.status(200).json({ ok: true, token });
   } catch (error) {
     console.error("Private owner access failed", { name: error?.name });
@@ -57,6 +61,43 @@ async function redeemPrivateLink(req, res) {
 }
 
 export default async function handler(req, res) {
+  if (req.method === "GET" && String(req.query?.pwa_manifest || "") === "1") {
+    // A home-screen icon needs a repeatable launch URL. Only a browser with
+    // a signed, private owner cookie may receive the private fragment.
+    // The fragment will be consumed and removed on the first app launch.
+    res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+    res.setHeader("Cache-Control", "private, no-store");
+    res.setHeader("Vary", "Cookie");
+    res.setHeader("Referrer-Policy", "no-referrer");
+    const cookie = String(req.headers?.cookie || "").split(";").map(x=>x.trim()).find(x=>x.startsWith("adminIdPwaSession="));
+    let session = null;
+    try {
+      session = cookie ? verifyWebSession(decodeURIComponent(cookie.split("=").slice(1).join("="))) : null;
+    } catch (_) {}
+    const privateKey = String(process.env.ADMIN_ID_PRIVATE_LINK_KEY || "");
+    const privateOwner = String(process.env.ADMIN_ID_PRIVATE_OWNER_LINE_ID || "");
+    const authorized = session?.via === "private-link" && session.sub === privateOwner &&
+      /^U[0-9a-f]{32}$/i.test(privateOwner) && privateKey.length >= 48;
+    if (!authorized) return res.status(403).json({ ok: false, error: "Install from the private owner link in Chrome first" });
+    const startUrl = "/?app=1#access=" + encodeURIComponent(privateKey);
+    return res.status(200).send(JSON.stringify({
+      id: "/admin-id-owner",
+      name: "Admin ID — หลังบ้าน",
+      short_name: "Admin ID",
+      description: "ระบบหลังบ้าน Admin ID สำหรับเจ้าของ",
+      lang: "th",
+      start_url: startUrl,
+      scope: "/",
+      display: "standalone",
+      background_color: "#0f4030",
+      theme_color: "#0f4030",
+      prefer_related_applications: false,
+      icons: [
+        {src:"/api/web/config?icon=192",sizes:"192x192",type:"image/png",purpose:"any"},
+        {src:"/api/web/config?icon=512",sizes:"512x512",type:"image/png",purpose:"any maskable"}
+      ]
+    }));
+  }
   // The PWA installer needs public icons, not another serverless function.
   // No auth data, customer information, or session token is served by this route.
   const iconSize = String(req.query?.icon || "");
