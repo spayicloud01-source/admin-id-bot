@@ -43,7 +43,7 @@ try{
     await handler({method:"GET",query:{},headers:{authorization:"Bearer "+u.token}},r);
     return r;
   }));
-  results.forEach(r=>assert.equal(r.code,200,"parallel sessions remain valid"));
+  results.forEach(r=>assert.equal(r.code,200,"parallel sessions remain valid "+JSON.stringify(r.body)));
 
   // Browser sign-out is local: removes this device's token only
   users[0].token="";
