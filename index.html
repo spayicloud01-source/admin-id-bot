@@ -201,7 +201,30 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   var DASHBOARD_CACHE_OWNER = "";
 
   function byId(id){ return document.getElementById(id); }
-  function authHeaders(){ var h={}; if(TOKEN){ h.Authorization="Bearer "+TOKEN; } return h; }
+  var WEB_TOKEN_KEY="adminIdWebToken", WEB_SESSION_MS=4*60*60*1000;
+  function tokenExpiry(token){
+    try{
+      var p=JSON.parse(atob(String(token||"").split(".")[0].replace(/-/g,"+").replace(/_/g,"/")));
+      var iat=Number(p.iat);
+      return Number.isSafeInteger(iat)&&iat>0 ? iat*1000+WEB_SESSION_MS : 0;
+    }catch(e){return 0;}
+  }
+  function tokenIsCurrent(token){
+    var expiry=tokenExpiry(token);
+    return !!expiry && Date.now()<expiry;
+  }
+  function clearAuth(){
+    TOKEN="";
+    try{sessionStorage.removeItem(WEB_TOKEN_KEY);}catch(e){}
+    try{localStorage.removeItem(WEB_TOKEN_KEY);}catch(e){}
+    showLogin();
+  }
+  function authHeaders(){
+    var h={};
+    if(TOKEN&&!tokenIsCurrent(TOKEN)){clearAuth();return h;}
+    if(TOKEN)h.Authorization="Bearer "+TOKEN;
+    return h;
+  }
   function saveDashboardCache(owner){
     try{
       localStorage.setItem("adminIdDashboardCache",JSON.stringify({
@@ -375,7 +398,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     fetch("/api/web/summary?mode="+encodeURIComponent(mode),{headers:authHeaders(),cache:"no-store"})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){} location.reload();return;}
+        if(x.r.status===401){clearAuth();return;}
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"โหลดข้อมูลไม่ได้");
         var items=x.j.items||[];
         var countIds={today:"todayCount",upcoming:"upcomingCount",overdue:"overdueCount",deleted:"deletedCount",pending_lock:"pendingLockCount",sold:"soldCount",fraud:"fraudCount",installment:"installmentCount"};
@@ -460,7 +483,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     return fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify(payload)})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}location.reload();return;}
+        if(x.r.status===401){clearAuth();return;}
         if(!x.r.ok||!x.j.ok)throw new Error(x.j.error||x.j.message||"ดำเนินการไม่สำเร็จ");
         renderToolResult(boxId,x.j);return x.j;
       }).catch(function(e){if(byId(boxId))byId(boxId).innerHTML='<div class="warning">ผิดพลาด: '+escapeHtml(String((e&&e.message)||e))+'</div>';})
@@ -469,7 +492,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 
   function loadConfig(){
     checkHealth().then(function(){
-      if(!TOKEN){ showLogin(); return; }
+      if(!TOKEN || !tokenIsCurrent(TOKEN)){clearAuth();return;}
 
       // Re-opening the dashboard should not rescan every source workbook.
       // A recent client cache is enough for sheet selectors; due counts refresh separately.
@@ -486,8 +509,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         return r.json().then(function(j){ return {r:r,j:j}; });
       }).then(function(x){
         if(x.r.status===401||x.r.status===403){
-          try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}
-          TOKEN=""; showLogin(); return;
+          clearAuth();return;
         }
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"โหลดข้อมูลไม่ได้");
         ITEMS=x.j.sheets||[];
@@ -569,7 +591,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({action:"record_payment",queue:q,amount:amount})})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}location.reload();return;}
+        if(x.r.status===401){clearAuth();return;}
         if(!x.r.ok||!x.j.ok)throw new Error(x.j.error||"บันทึกไม่ได้");
         box.textContent=(x.j.message||"ส่งเข้าคิวตรวจสอบแล้ว")+(x.j.rowNo?(" • คิวตรวจสอบ #"+x.j.rowNo):"");
         box.classList.remove("hidden");
@@ -629,7 +651,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({action:"getCalculatedSummary",query:q,resolveRecipient:true})})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}location.reload();return;}
+        if(x.r.status===401){clearAuth();return;}
         if(!x.r.ok||!x.j.ok)throw new Error(x.j.error||"ค้นหาไม่สำเร็จ");
         if(x.j.needsSelection)throw new Error("พบคิวซ้ำมากกว่า 1 รายการ กรุณาตรวจเลขคิว");
         if(!x.j.summary||!x.j.summary.customer)throw new Error("ไม่พบคิว "+q+" ใน V6/10-69 หรือ v3/10-69");
@@ -661,7 +683,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({targets:one?[]:SELECTED_TARGETS.map(function(x){return {source:x.source,sheet:x.sheet};}),field:field,queue:q,customMessage:customMessage,recipientToken:one?ONE_RECIPIENT_TOKEN:""})})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){} location.reload();return;}
+        if(x.r.status===401){clearAuth();return;}
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"ส่งไม่สำเร็จ");
         box.innerHTML='<div style="display:flex;align-items:center;gap:9px;font-weight:800;font-size:14px"><span style="display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#16a34a;color:#fff;font-size:16px">✓</span><span>'+escapeHtml(x.j.message||"ส่งสำเร็จ")+'</span></div>'+(x.j.failed?'<div style="margin-top:6px">ไม่สำเร็จ '+escapeHtml(x.j.failed)+' ราย</div>':'');
         box.classList.remove("hidden");
@@ -671,10 +693,32 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 
   try{
     var qs=new URLSearchParams(location.search);
-    var incoming=qs.get("token");
-    if(incoming){ try{sessionStorage.setItem("adminIdWebToken",incoming);}catch(e){} }
-    try{TOKEN=sessionStorage.getItem("adminIdWebToken")||"";}catch(e){TOKEN=incoming||"";}
+    var incoming=qs.get("token")||"";
+    // Keep signed links out of the browser address bar and referrer.
+    if(incoming){
+      qs.delete("token");
+      history.replaceState(null,"",location.pathname+(qs.toString()?"?"+qs.toString():"")+location.hash);
+      if(tokenIsCurrent(incoming)){
+        TOKEN=incoming;
+        try{sessionStorage.setItem(WEB_TOKEN_KEY,incoming);}catch(e){}
+        try{localStorage.setItem(WEB_TOKEN_KEY,incoming);}catch(e){}
+      }
+    }
+    if(!TOKEN){
+      try{TOKEN=sessionStorage.getItem(WEB_TOKEN_KEY)||"";}catch(e){}
+      if(!TOKEN){try{TOKEN=localStorage.getItem(WEB_TOKEN_KEY)||"";}catch(e){}}
+    }
+    if(TOKEN&&!tokenIsCurrent(TOKEN)){
+      TOKEN="";
+      try{sessionStorage.removeItem(WEB_TOKEN_KEY);}catch(e){}
+      try{localStorage.removeItem(WEB_TOKEN_KEY);}catch(e){}
+    }
   }catch(e){ TOKEN=""; }
+
+  // Browser sleeps can delay timers; re-check on returning to the tab.
+  function expireOldSession(){if(TOKEN&&!tokenIsCurrent(TOKEN))clearAuth();}
+  setInterval(expireOldSession,30000);
+  document.addEventListener("visibilitychange",function(){if(!document.hidden)expireOldSession();});
 
   byId("source").addEventListener("change",fillSheets);
   byId("sheet").addEventListener("change",function(){byId("use").disabled=!byId("sheet").value;syncButtons();});
