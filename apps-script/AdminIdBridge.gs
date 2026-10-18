@@ -201,6 +201,10 @@ function doPost(e) {
         result = requestCustomerBinding_(body); break;
       case 'getCustomerSelf':
         result = getCustomerSelf_(body); break;
+      case 'recordCustomerLineStatus':
+        result = recordCustomerLineStatus_(body); break;
+      case 'listBlockedCustomerLines':
+        result = listBlockedCustomerLines_(body); break;
       case 'cancelCustomerBindings':
         result = cancelCustomerBindings_(body); break;
       case 'listPendingCustomerBindings':
@@ -1170,13 +1174,13 @@ function resolveCustomerNotificationRecipient_(body) {
     return { ok: true, allowed: true, found: false, message: 'ยังไม่มีข้อมูลลูกค้าที่ผูก LINE' };
   }
 
-  const rows = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
+  const rows = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, customerLineStatusWidth_()).getDisplayValues();
   const matches = [];
   const seen = {};
 
   for (let i = 0; i < rows.length; i++) {
     const r = rows[i];
-    if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
+    if (String(r[7] || '').trim() !== 'ใช้งาน' || isBlockedCustomerLineRow_(r)) continue;
     if (normalizeGeneral_(r[6]) !== queueKey) continue;
 
     const source = String(r[4] || '').trim();
@@ -1267,7 +1271,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
 
   const lineSheet = customerLineSheet_();
   if (lineSheet.getLastRow() < 2) return { ok: true, allowed: true, items: [] };
-  const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
+  const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, customerLineStatusWidth_()).getDisplayValues();
   const notifySheet = backendSpreadsheet_().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
   if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
   const type = 'เจ้าของ-' + notificationFieldLabel_(field);
@@ -1291,7 +1295,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
   const firstNewRowNo = notifySheet.getLastRow() + 1;
   for (let i = 0; i < bindings.length; i++) {
     const r = bindings[i];
-    if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
+    if (String(r[7] || '').trim() !== 'ใช้งาน' || isBlockedCustomerLineRow_(r)) continue;
     if (String(r[4] || '').trim() !== source || String(r[5] || '').trim() !== sheet) continue;
     if (queueFilter && normalizeGeneral_(r[6]) !== queueFilter) continue;
     if (queueFilters.length && queueFilters.indexOf(normalizeGeneral_(r[6])) === -1) continue;
@@ -1430,7 +1434,7 @@ function getCustomerReminderBatchLocked_(body) {
   const todayText = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
   const todayParts = todayText.split('-').map(Number);
   const todaySerial = Math.floor(Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]) / 86400000);
-  const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
+  const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, customerLineStatusWidth_()).getDisplayValues();
 
   const existing = notifySheet.getLastRow() >= 2
     ? notifySheet.getRange(2, 1, notifySheet.getLastRow() - 1, 11).getValues()
@@ -1461,7 +1465,7 @@ function getCustomerReminderBatchLocked_(body) {
   const firstNewRowNo = notifySheet.getLastRow() + 1;
   for (let i = 0; i < bindings.length; i++) {
     const r = bindings[i];
-    if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
+    if (String(r[7] || '').trim() !== 'ใช้งาน' || isBlockedCustomerLineRow_(r)) continue;
     if (!isTrue_(r[10])) continue;
 
     const source = String(r[4] || '').trim();
@@ -2281,6 +2285,137 @@ function customerLineSheet_() {
   const sh = backendSpreadsheet_().getSheetByName(CONFIG.CUSTOMER_LINE_SHEET);
   if (!sh) throw new Error('ไม่พบชีต ' + CONFIG.CUSTOMER_LINE_SHEET);
   return sh;
+}
+
+// LINE follow/unfollow is transport reachability, NOT identity/binding approval.
+// Columns N:P are additive; columns A:M and all financial records are preserved.
+function customerLineStatusWidth_() {
+  return Math.min(16, customerLineSheet_().getMaxColumns());
+}
+function isBlockedCustomerLineRow_(row) {
+  return String((row || [])[13] || '').trim() === 'บล็อก';
+}
+function ensureCustomerLineStatusColumns_(sh) {
+  if (sh.getMaxColumns() < 16) sh.insertColumnsAfter(sh.getMaxColumns(), 16 - sh.getMaxColumns());
+  const headers = ['สถานะ LINE OA', 'วันที่สถานะเปลี่ยน', 'Webhook Event ID'];
+  const existing = sh.getRange(1, 14, 1, 3).getDisplayValues()[0];
+  if (existing.some(function(v, i) { return v && v !== headers[i]; })) {
+    throw new Error('LINE status column header conflict; no changes made');
+  }
+  if (existing.some(function(v, i) { return v !== headers[i]; })) {
+    sh.getRange(1, 14, 1, 3).setValues([headers]);
+    sh.getRange(2, 15, Math.max(1, sh.getMaxRows() - 1), 1).setNumberFormat('dd/MM/yyyy HH:mm:ss');
+  }
+}
+function recordCustomerLineStatus_(body) {
+  const id = String(body.lineUserId || '').trim();
+  const type = String(body.eventType || '').trim();
+  const eventId = String(body.webhookEventId || '').trim().slice(0, 100);
+  const timestamp = Number(body.eventTimestamp);
+  if (!/^U[0-9a-f]{32}$/i.test(id) || ['follow', 'unfollow'].indexOf(type) < 0 ||
+      !Number.isFinite(timestamp) || timestamp < 1262304000000 ||
+      timestamp > Date.now() + 86400000) {
+    return { ok: false, error: 'Invalid LINE relationship event' };
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sh = customerLineSheet_();
+    if (sh.getLastRow() < 2) return { ok: true, matched: false, changed: false, items: [] };
+    const last = sh.getLastRow();
+    // The existing LINE ID is in column B, and original binding status is column H.
+    const original = sh.getRange(2, 1, last - 1, 13).getValues();
+    const matched = [];
+    for (let i = 0; i < original.length; i++) {
+      const row = original[i];
+      if (String(row[1] || '').trim() !== id ||
+          String(row[7] || '').trim() !== 'ใช้งาน') continue;
+      matched.push({ rowNo: i + 2, row: row });
+    }
+    if (!matched.length) return { ok: true, matched: false, changed: false, items: [] };
+    ensureCustomerLineStatusColumns_(sh);
+    const cells = sh.getRange(2, 14, last - 1, 3).getValues();
+    const nextStatus = type === 'unfollow' ? 'บล็อก' : 'ปกติ';
+    const changedRows = [];
+    const items = [];
+    matched.forEach(function(m) {
+      const current = cells[m.rowNo - 2];
+      const existingAt = current[1] instanceof Date ? current[1].getTime() : new Date(current[1] || 0).getTime();
+      // LINE redelivery and delayed events must not overwrite newer status.
+      if ((eventId && String(current[2] || '').trim() === eventId) ||
+          (Number.isFinite(existingAt) && existingAt > timestamp)) return;
+      if (String(current[0] || '').trim() === nextStatus) return;
+      changedRows.push(m.rowNo);
+      items.push({
+        queue: String(m.row[6] || '').trim(),
+        name: String(m.row[2] || '').trim(),
+        source: String(m.row[4] || '').trim(),
+        sheet: String(m.row[5] || '').trim()
+      });
+    });
+    changedRows.forEach(function(rowNo) {
+      sh.getRange(rowNo, 14, 1, 3).setValues([[nextStatus, new Date(timestamp), eventId]]);
+    });
+    // Cancel pending LINE delivery, but do not alter payment/closeout ledgers.
+    let canceledPending = 0;
+    if (changedRows.length && type === 'unfollow') {
+      const notificationSheet = backendSpreadsheet_().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
+      if (notificationSheet && notificationSheet.getLastRow() >= 2) {
+        const rows = notificationSheet.getRange(2, 1, notificationSheet.getLastRow() - 1, 11).getValues();
+        rows.forEach(function(row, i) {
+          if (String(row[4] || '').trim() !== id ||
+              String(row[8] || '').trim() !== 'รอส่ง') return;
+          notificationSheet.getRange(i + 2, 9, 1, 2)
+            .setValues([['ระงับ-บล็อก LINE', 'LINE unfollow; ไม่ส่งข้อความ']]);
+          canceledPending++;
+        });
+      }
+    }
+    return {
+      ok: true,
+      matched: true,
+      changed: changedRows.length > 0,
+      status: nextStatus,
+      items: items,
+      updated: changedRows.length,
+      canceledPending: canceledPending,
+      ownerLineUserIds: changedRows.length ? getReminderOwnerLineIds_() : []
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+function listBlockedCustomerLines_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    sourceType: 'user',
+    groupId: '',
+    permission: 'ดูรายงาน',
+    allowSystemControl: true
+  });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, allowed: false, items: [] };
+  }
+  const sh = customerLineSheet_();
+  if (sh.getMaxColumns() < 14 || sh.getLastRow() < 2) {
+    return { ok: true, allowed: true, items: [] };
+  }
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, customerLineStatusWidth_()).getValues();
+  const items = [];
+  for (let i = rows.length - 1; i >= 0 && items.length < 20; i--) {
+    const row = rows[i];
+    if (String(row[7] || '').trim() !== 'ใช้งาน' || !isBlockedCustomerLineRow_(row)) continue;
+    const changedAt = row[14] instanceof Date
+      ? Utilities.formatDate(row[14], 'Asia/Bangkok', 'dd/MM/yyyy HH:mm') : '';
+    items.push({
+      queue: String(row[6] || '').trim(),
+      name: String(row[2] || '').trim(),
+      source: String(row[4] || '').trim(),
+      sheet: String(row[5] || '').trim(),
+      changedAt: changedAt
+    });
+  }
+  return { ok: true, allowed: true, items: items, count: items.length };
 }
 
 function customerBindingOwnerIds_() {
