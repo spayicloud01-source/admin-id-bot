@@ -753,12 +753,34 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     // There is no automatic 4-hour logout; the API validates the signed token.
   }catch(e){ TOKEN=""; }
 
-  // Remain signed in on this browser until the owner explicitly signs out.
+  // Sign-out only affects this browser/app; it does not log out other devices.
   byId("logoutBtn").addEventListener("click",function(){
-    if(confirm("ออกจากระบบบนเบราว์เซอร์นี้ใช่หรือไม่?")){
-      clearAuth();
-    }
+    if(!confirm("ออกจากระบบบนอุปกรณ์นี้ใช่หรือไม่?"))return;
+    fetch("/api/web/config",{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      credentials:"same-origin",
+      cache:"no-store",
+      body:JSON.stringify({action:"logout"})
+    }).catch(function(){});
+    clearAuth();
   });
+
+  function restorePrivateAppSession(){
+    return fetch("/api/web/config?restore=1",{
+      method:"GET",credentials:"same-origin",cache:"no-store"
+    }).then(function(r){
+      if(!r.ok)return null;
+      return r.json();
+    }).then(function(data){
+      if(!data||!data.ok||!data.token)return false;
+      TOKEN=data.token;
+      try{localStorage.setItem(WEB_TOKEN_KEY,TOKEN);}catch(e){}
+      try{sessionStorage.setItem(WEB_TOKEN_KEY,TOKEN);}catch(e){}
+      enablePrivateAppInstall();
+      return true;
+    }).catch(function(){return false;});
+  }
 
   byId("source").addEventListener("change",fillSheets);
   byId("sheet").addEventListener("change",function(){byId("use").disabled=!byId("sheet").value;syncButtons();});
@@ -883,10 +905,22 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       clearAuth();
       byId("sys").textContent=String(e&&e.message||"เข้าเว็บไม่สำเร็จ");
     });
-  }else{
-    if(!TOKEN)showLogin();
-    else{showApp();loadDashboardCache();}
+  }else if(TOKEN){
+    showApp();loadDashboardCache();
+    enablePrivateAppInstall();
     loadConfig();
+  }else{
+    // Installed Chrome app may have its own localStorage. Try the signed
+    // HttpOnly private owner cookie before showing "ต้องยืนยัน".
+    byId("sys").textContent="กำลังเปิด Admin ID…";
+    restorePrivateAppSession().then(function(restored){
+      if(restored){
+        showApp();loadDashboardCache();loadConfig();
+      }else{
+        showLogin();
+        byId("sys").textContent="ยังไม่พบสิทธิ์ของแอปนี้ — เปิดจากลิงก์ส่วนตัวใน Chrome อีกครั้ง";
+      }
+    });
   }
 })();
 </script>
