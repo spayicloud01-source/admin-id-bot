@@ -69,6 +69,30 @@ try{
   const sw=readFileSync(new URL("../sw.js",import.meta.url),"utf8");
   assert.ok(!sw.includes("caches.open"),"service worker does not cache private data");
   assert.equal(calls,1,"manifest and icons do not hit GAS again");
+
+  // Standalone app has no localStorage token, but shares a signed secure
+  // cookie with Chrome on the same origin. It can rehydrate without LINE.
+  x=res();
+  await handler({method:"GET",query:{restore:"1"},headers:{}},x);
+  assert.equal(x.code,401,"no session cookie must not auto-login");
+  x=res();
+  await handler({method:"GET",query:{restore:"1"},headers:{cookie:cookie.split(";")[0]}},x);
+  assert.equal(x.code,200,"signed cookie rehydrates standalone app");
+  assert.equal(x.body?.ok,true);
+  assert.equal(typeof x.body?.token,"string","restored owner token is returned");
+  assert.match(x.headers["cache-control"],/no-store/);
+  const restoredToken=x.body.token;
+  // Different untrusted cookie cannot impersonate owner.
+  x=res();
+  await handler({method:"GET",query:{restore:"1"},headers:{cookie:"adminIdPwaSession=invalid"}},x);
+  assert.equal(x.code,401);
+  x=res();
+  await handler({method:"POST",body:{action:"logout"},headers:{cookie:cookie.split(";")[0]}},x);
+  assert.equal(x.code,200);
+  assert.match(x.headers["set-cookie"],/Max-Age=0/);
+  // Existing other device sessions do not change on local logout.
+  assert.ok(restoredToken.includes("."),"other device session not globally revoked");
+  assert.equal(calls,1,"restore and logout do not call GAS");
   console.log("pwa-home-screen: 26+ assertions passed (mock GAS, no real messages or customer writes)");
 }finally{
   global.fetch=oldFetch;
