@@ -92,7 +92,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 </style>
 </head>
 <body>
-<header class="top"><div class="topin"><div class="brand"><div class="logo">ID</div><div><h1>Admin ID — หลังบ้าน</h1><p>LINE OA → Vercel → Apps Script → Google Sheets</p></div></div><div class="status"><span id="dot" class="dot"></span><span id="sys">กำลังตรวจระบบ…</span></div></div></header>
+<header class="top"><div class="topin"><div class="brand"><div class="logo">ID</div><div><h1>Admin ID — หลังบ้าน</h1><p>LINE OA → Vercel → Apps Script → Google Sheets</p></div></div><div class="status"><span id="dot" class="dot"></span><span id="sys">กำลังตรวจระบบ…</span><button id="logoutBtn" type="button" style="display:none;margin-left:8px;border:1px solid #8896ae;border-radius:9px;padding:7px 10px;background:#162238;color:#fff;cursor:pointer">ออกจากระบบ</button></div></div></header>
 <main class="wrap">
 <section id="login" class="login hidden"><h2>ต้องยืนยันสิทธิ์เจ้าของก่อน</h2><p>เปิด LINE OA Admin ID แล้วพิมพ์คำสั่งด้านล่าง ระบบจะตรวจว่าบัญชี LINE เป็น “เจ้าของ” และส่งลิงก์เข้าเว็บกลับมา</p><span class="cmd">เข้าเว็บ</span></section>
 
@@ -201,18 +201,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   var DASHBOARD_CACHE_OWNER = "";
 
   function byId(id){ return document.getElementById(id); }
-  var WEB_TOKEN_KEY="adminIdWebToken", WEB_SESSION_MS=4*60*60*1000;
-  function tokenExpiry(token){
-    try{
-      var p=JSON.parse(atob(String(token||"").split(".")[0].replace(/-/g,"+").replace(/_/g,"/")));
-      var iat=Number(p.iat);
-      return Number.isSafeInteger(iat)&&iat>0 ? iat*1000+WEB_SESSION_MS : 0;
-    }catch(e){return 0;}
-  }
-  function tokenIsCurrent(token){
-    var expiry=tokenExpiry(token);
-    return !!expiry && Date.now()<expiry;
-  }
+  var WEB_TOKEN_KEY="adminIdWebToken";
   function clearAuth(){
     TOKEN="";
     try{sessionStorage.removeItem(WEB_TOKEN_KEY);}catch(e){}
@@ -221,7 +210,6 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   }
   function authHeaders(){
     var h={};
-    if(TOKEN&&!tokenIsCurrent(TOKEN)){clearAuth();return h;}
     if(TOKEN)h.Authorization="Bearer "+TOKEN;
     return h;
   }
@@ -280,10 +268,12 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     byId("login").classList.remove("hidden");
     byId("dot").className="dot";
     byId("sys").textContent="รอยืนยันผ่าน LINE";
+    byId("logoutBtn").style.display="none";
   }
   function showApp(){
     byId("login").classList.add("hidden");
     byId("app").classList.remove("hidden");
+    byId("logoutBtn").style.display="";
   }
   function escapeHtml(s){
     return String(s==null?"":s).replace(/[&<>"']/g,function(c){
@@ -492,7 +482,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 
   function loadConfig(){
     checkHealth().then(function(){
-      if(!TOKEN || !tokenIsCurrent(TOKEN)){clearAuth();return;}
+      if(!TOKEN){showLogin();return;}
 
       // Re-opening the dashboard should not rescan every source workbook.
       // A recent client cache is enough for sheet selectors; due counts refresh separately.
@@ -698,27 +688,23 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     if(incoming){
       qs.delete("token");
       history.replaceState(null,"",location.pathname+(qs.toString()?"?"+qs.toString():"")+location.hash);
-      if(tokenIsCurrent(incoming)){
-        TOKEN=incoming;
-        try{sessionStorage.setItem(WEB_TOKEN_KEY,incoming);}catch(e){}
-        try{localStorage.setItem(WEB_TOKEN_KEY,incoming);}catch(e){}
-      }
+      TOKEN=incoming;
+      try{sessionStorage.setItem(WEB_TOKEN_KEY,incoming);}catch(e){}
+      try{localStorage.setItem(WEB_TOKEN_KEY,incoming);}catch(e){}
     }
     if(!TOKEN){
       try{TOKEN=sessionStorage.getItem(WEB_TOKEN_KEY)||"";}catch(e){}
       if(!TOKEN){try{TOKEN=localStorage.getItem(WEB_TOKEN_KEY)||"";}catch(e){}}
     }
-    if(TOKEN&&!tokenIsCurrent(TOKEN)){
-      TOKEN="";
-      try{sessionStorage.removeItem(WEB_TOKEN_KEY);}catch(e){}
-      try{localStorage.removeItem(WEB_TOKEN_KEY);}catch(e){}
-    }
+    // There is no automatic 4-hour logout; the API validates the signed token.
   }catch(e){ TOKEN=""; }
 
-  // Browser sleeps can delay timers; re-check on returning to the tab.
-  function expireOldSession(){if(TOKEN&&!tokenIsCurrent(TOKEN))clearAuth();}
-  setInterval(expireOldSession,30000);
-  document.addEventListener("visibilitychange",function(){if(!document.hidden)expireOldSession();});
+  // Remain signed in on this browser until the owner explicitly signs out.
+  byId("logoutBtn").addEventListener("click",function(){
+    if(confirm("ออกจากระบบบนเบราว์เซอร์นี้ใช่หรือไม่?")){
+      clearAuth();
+    }
+  });
 
   byId("source").addEventListener("change",fillSheets);
   byId("sheet").addEventListener("change",function(){byId("use").disabled=!byId("sheet").value;syncButtons();});
