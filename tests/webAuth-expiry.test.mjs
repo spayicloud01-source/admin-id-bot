@@ -3,37 +3,46 @@ import { createWebSession, verifyWebSession, sessionFromRequest } from "../lib/w
 
 const originalDateNow = Date.now;
 const originalSecret = process.env.SHEETS_BRIDGE_SECRET;
+const originalNotBefore = process.env.WEB_SESSION_NOT_BEFORE;
 process.env.SHEETS_BRIDGE_SECRET = "test-only-web-auth-secret";
+delete process.env.WEB_SESSION_NOT_BEFORE;
 const issuedAt = 1_792_332_000_000;
 const userId = "U" + "a".repeat(32);
 try {
   Date.now = () => issuedAt;
-  const token = createWebSession({ lineUserId: userId, staffName: "เจ้าของ", role: "เจ้าของ" });
-  assert.equal(verifyWebSession(token)?.sub, userId);
-  assert.equal(sessionFromRequest({headers:{authorization:"Bearer "+token}})?.sub, userId);
-
-  Date.now = () => issuedAt + 4*60*60*1000 - 1000;
-  assert.equal(verifyWebSession(token)?.sub, userId, "valid until final second");
+  const token = createWebSession({lineUserId:userId, staffName:"เจ้าของ", role:"เจ้าของ"});
+  assert.equal(verifyWebSession(token)?.sub,userId, "owner session valid");
+  assert.equal(sessionFromRequest({headers:{authorization:"Bearer "+token}})?.sub,userId);
 
   Date.now = () => issuedAt + 4*60*60*1000;
-  assert.equal(verifyWebSession(token), null, "expires at exactly 4 hours");
+  assert.equal(verifyWebSession(token)?.sub,userId,"session remains valid after 4h");
 
-  Date.now = () => issuedAt + 4*60*60*1000 + 1;
-  assert.equal(verifyWebSession(token), null, "expired link never reactivates");
+  Date.now = () => issuedAt + 7*24*60*60*1000;
+  assert.equal(verifyWebSession(token)?.sub,userId,"session remains valid after 7 days");
 
-  const forged = token.slice(0,-1) + (token.endsWith("A")?"B":"A");
-  assert.equal(verifyWebSession(forged), null, "tampered signature rejected");
+  Date.now = () => issuedAt + 365*24*60*60*1000;
+  assert.equal(verifyWebSession(token)?.sub,userId,"session remains valid after a year");
 
-  Date.now = () => issuedAt - 122_000;
-  assert.equal(verifyWebSession(token), null, "issued >120s in future rejected");
+  const forged = token.slice(0,-1)+(token.endsWith("A")?"B":"A");
+  assert.equal(verifyWebSession(forged),null,"tampered signature rejected");
 
-  assert.equal(verifyWebSession(""), null);
-  assert.equal(verifyWebSession("a.b"), null);
-  assert.throws(() => createWebSession({lineUserId:userId,role:"เจ้าหน้าที่"}), /Owner session required/);
+  Date.now = () => issuedAt - 122000;
+  assert.equal(verifyWebSession(token),null,"future issued token rejected");
 
-  console.log("webAuth-expiry: 9 checks passed");
+  Date.now = () => issuedAt + 400000;
+  process.env.WEB_SESSION_NOT_BEFORE = String(Math.floor(issuedAt/1000)+1);
+  assert.equal(verifyWebSession(token),null,"owner can revoke sessions through server cutoff");
+  delete process.env.WEB_SESSION_NOT_BEFORE;
+  assert.equal(verifyWebSession(token)?.sub,userId,"valid without emergency cutoff");
+
+  assert.equal(verifyWebSession(""),null);
+  assert.equal(verifyWebSession("a.b"),null);
+  assert.throws(()=>createWebSession({lineUserId:userId,role:"เจ้าหน้าที่"}),/Owner session required/);
+  console.log("owner-persistent-session: 12 assertions passed (no LINE sends or Sheets writes)");
 } finally {
   Date.now = originalDateNow;
-  if (originalSecret === undefined) delete process.env.SHEETS_BRIDGE_SECRET;
+  if(originalSecret === undefined) delete process.env.SHEETS_BRIDGE_SECRET;
   else process.env.SHEETS_BRIDGE_SECRET = originalSecret;
+  if(originalNotBefore === undefined) delete process.env.WEB_SESSION_NOT_BEFORE;
+  else process.env.WEB_SESSION_NOT_BEFORE = originalNotBefore;
 }
