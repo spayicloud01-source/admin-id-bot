@@ -817,7 +817,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 
   if(PRIVATE_ACCESS){
     byId("sys").textContent="กำลังเปิดเว็บส่วนตัว…";
-    fetch("/api/web/private-access",{
+    fetch("/api/web/config",{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({access:PRIVATE_ACCESS}),
