@@ -4,7 +4,7 @@ import handler from "../api/web/config.js";
 
 // Simulates Chrome, an installed home-screen PWA, and another computer.
 // Each has independent storage. Signing out one does not revoke the others.
-const envKeys=["SHEETS_BRIDGE_SECRET","ADMIN_ID_PRIVATE_LINK_KEY","ADMIN_ID_PRIVATE_OWNER_LINE_ID","GOOGLE_APPS_SCRIPT_CUSTOMER_URL","GOOGLE_APPS_SCRIPT_CUSTOMER_SECRET"];
+const envKeys=["SHEETS_BRIDGE_SECRET","ADMIN_ID_PRIVATE_LINK_KEY","ADMIN_ID_PRIVATE_OWNER_LINE_ID","GOOGLE_APPS_SCRIPT_CUSTOMER_URL","GOOGLE_APPS_SCRIPT_CUSTOMER_SECRET","GOOGLE_APPS_SCRIPT_NOTIFY_URL"];
 const before=Object.fromEntries(envKeys.map(k=>[k,process.env[k]]));
 const oldFetch=global.fetch, oldNow=Date.now;
 const owner="U"+"c".repeat(32);
@@ -18,6 +18,7 @@ try{
   process.env.ADMIN_ID_PRIVATE_OWNER_LINE_ID=owner;
   process.env.GOOGLE_APPS_SCRIPT_CUSTOMER_URL="https://fake-backend.test/exec";
   process.env.GOOGLE_APPS_SCRIPT_CUSTOMER_SECRET="mock-secret";
+  process.env.GOOGLE_APPS_SCRIPT_NOTIFY_URL="https://fake-backend.test/notify";
   const users=[];
   let backendCalls=0;
   global.fetch=async (_url,opts)=>{
