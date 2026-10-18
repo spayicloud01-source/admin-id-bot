@@ -1,5 +1,6 @@
 export const maxDuration = 60;
 import crypto from "node:crypto";
+import { lineRelationshipEvent, formatLineRelationshipAlert, formatBlockedCustomerLines } from "../../lib/lineStatusTracking.js";
 import { notifyCustomerSlip, serveSlipImage, slipImageToken, verifyResendSlipToken } from "../../lib/customerSlipAlerts.js";
 import { syncStaffPaymentMenu } from "../../lib/staffRichMenu.js";
 import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.js";
@@ -802,6 +803,25 @@ async function handleSlipResendPostback(event) {
 async function handleEvent(event) {
   if (await handleSlipResendPostback(event)) return;
 
+  // Preview opt-in only; does not run until Customer GAS also supports the action.
+  const relationship = lineRelationshipEvent(event);
+  if (relationship && process.env.LINE_RELATIONSHIP_TRACKING_ENABLED === "true") {
+    const result = await callSheetsBridge(relationship);
+    if (result?.changed &&
+        process.env.LINE_RELATIONSHIP_OWNER_ALERTS_ENABLED === "true") {
+      const message = formatLineRelationshipAlert(result, relationship.eventType);
+      const ownerIds = Array.isArray(result.ownerLineUserIds)
+        ? [...new Set(result.ownerLineUserIds.filter(Boolean))].slice(0, 10) : [];
+      if (message && ownerIds.length) {
+        await Promise.allSettled(ownerIds.map((id) =>
+          pushMessage(id, [{ type: "text", text: message }])
+        ));
+      }
+    }
+  }
+  // Unfollow has no replyToken. Never try to message a blocked customer.
+  if (event.type === "unfollow") return;
+
   if (event.type === "follow") {
     await replyMessage(event.replyToken, [{
       type: "text",
@@ -815,6 +835,27 @@ async function handleEvent(event) {
   }
 
   if (event.type !== "message") return;
+
+  if (process.env.LINE_RELATIONSHIP_TRACKING_ENABLED === "true" &&
+      event.source?.type === "user" &&
+      event.message?.type === "text" &&
+      /^ลูกค้าบล็อก(?:ไลน์| LINE)?$/.test(String(event.message.text || "").trim())) {
+    const lineUserId = String(event.source?.userId || "");
+    const access = await callSheetsBridge({
+      action: "checkAccess", lineUserId, sourceType: "user",
+      groupId: "", permission: "ดูรายงาน", allowSystemControl: true,
+    });
+    if (!access?.allowed || access.role !== "เจ้าของ") {
+      await replyMessage(event.replyToken, [{type:"text",text:"คำสั่งนี้สำหรับเจ้าของระบบเท่านั้น"}]);
+      return;
+    }
+    const result = await callSheetsBridge({action:"listBlockedCustomerLines",lineUserId});
+    await replyMessage(event.replyToken, [{
+      type:"text",
+      text: result?.allowed ? formatBlockedCustomerLines(result.items) : "ไม่สามารถอ่านรายชื่อที่บล็อก LINE ได้",
+    }]);
+    return;
+  }
 
   if (process.env.CUSTOMER_TAKEOVER_PAUSE_ENABLED === "true" && event.source?.type === "user" && event.source?.userId) {
     const incomingText = event.message?.type === "text"
