@@ -3,6 +3,12 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1220">
 <title>Admin ID — หลังบ้าน</title>
+<meta name="application-name" content="Admin ID">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Admin ID">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="apple-touch-icon" href="/api/web/config?icon=192">
+<meta name="referrer" content="no-referrer">
 <style>
 :root{--bg:#f4f7fb;--card:#fff;--ink:#111827;--muted:#6b7280;--line:#e5e7eb;--nav:#0b1220;--blue:#2563eb;--green:#16a34a;--orange:#ea580c;--red:#dc2626;--shadow:0 8px 28px rgba(15,23,42,.08)}
 *{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Thai",sans-serif;background:var(--bg);color:var(--ink)}button,select,input{font:inherit}
@@ -92,7 +98,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 </style>
 </head>
 <body>
-<header class="top"><div class="topin"><div class="brand"><div class="logo">ID</div><div><h1>Admin ID — หลังบ้าน</h1><p>LINE OA → Vercel → Apps Script → Google Sheets</p></div></div><div class="status"><span id="dot" class="dot"></span><span id="sys">กำลังตรวจระบบ…</span><button id="logoutBtn" type="button" style="display:none;margin-left:8px;border:1px solid #8896ae;border-radius:9px;padding:7px 10px;background:#162238;color:#fff;cursor:pointer">ออกจากระบบ</button></div></div></header>
+<header class="top"><div class="topin"><div class="brand"><div class="logo">ID</div><div><h1>Admin ID — หลังบ้าน</h1><p>LINE OA → Vercel → Apps Script → Google Sheets</p></div></div><div class="status"><span id="dot" class="dot"></span><span id="sys">กำลังตรวจระบบ…</span><button id="installBtn" type="button" style="display:none;margin-left:8px;border:1px solid #fff;border-radius:9px;padding:7px 10px;background:#fff;color:#10412f;font-weight:800;cursor:pointer">ติดตั้งแอป</button><button id="logoutBtn" type="button" style="display:none;margin-left:8px;border:1px solid #8896ae;border-radius:9px;padding:7px 10px;background:#162238;color:#fff;cursor:pointer">ออกจากระบบ</button></div></div></header>
 <main class="wrap">
 <section id="login" class="login hidden"><h2>ต้องยืนยันสิทธิ์เจ้าของก่อน</h2><p>เปิด LINE OA Admin ID แล้วพิมพ์คำสั่งด้านล่าง ระบบจะตรวจว่าบัญชี LINE เป็น “เจ้าของ” และส่งลิงก์เข้าเว็บกลับมา</p><span class="cmd">เข้าเว็บ</span></section>
 
@@ -681,6 +687,44 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       .then(function(){btn.textContent=one?"ส่งข้อความนี้":"ตรวจและส่งทุกคน";syncButtons();});
   }
 
+  function enablePrivateAppInstall(){
+    // Register only after the owner link has been successfully redeemed.
+    // This guarantees the install manifest receives the signed scoped cookie.
+    if (!byId("adminPwaManifest")) {
+      var link=document.createElement("link");
+      link.id="adminPwaManifest";
+      link.rel="manifest";
+      link.href="/api/web/config?pwa_manifest=1";
+      link.crossOrigin="use-credentials";
+      document.head.appendChild(link);
+    }
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/sw.js").catch(function(e){console.warn("PWA registration",e&&e.message);});
+    }
+    if(!window.matchMedia("(display-mode: standalone)").matches && !navigator.standalone)
+      byId("installBtn").style.display="";
+  }
+  var deferredInstall=null;
+  window.addEventListener("beforeinstallprompt",function(event){
+    event.preventDefault();
+    deferredInstall=event;
+    if(TOKEN)byId("installBtn").style.display="";
+  });
+  window.addEventListener("appinstalled",function(){
+    deferredInstall=null;
+    byId("installBtn").style.display="none";
+  });
+  byId("installBtn").addEventListener("click",function(){
+    if(deferredInstall){
+      var prompt=deferredInstall;
+      deferredInstall=null;
+      prompt.prompt();
+      Promise.resolve(prompt.userChoice).catch(function(){});
+      return;
+    }
+    alert("ใน Chrome กดเมนู ⋮ แล้วเลือก 'ติดตั้งแอป' หรือ 'เพิ่มไปยังหน้าจอหลัก'\nหากมีไอคอนเก่า ให้ลบไอคอนนั้นก่อนติดตั้งใหม่");
+  });
+
   var PRIVATE_ACCESS="";
   try{
     var fragment=new URLSearchParams(String(location.hash||"").replace(/^#/,""));
@@ -832,6 +876,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       TOKEN=x.data.token;
       try{localStorage.setItem(WEB_TOKEN_KEY,TOKEN);}catch(e){}
       try{sessionStorage.setItem(WEB_TOKEN_KEY,TOKEN);}catch(e){}
+      enablePrivateAppInstall();
       showApp();loadDashboardCache();loadConfig();
     }).catch(function(e){
       PRIVATE_ACCESS="";
