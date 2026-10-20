@@ -1114,7 +1114,9 @@ async function handleEvent(event) {
         const self = await callSheetsBridge({ action: "getCustomerSelf", lineUserId, field: "status" });
         if (!self?.bound) {
           await logCustomerOutcome(lineUserId, text, "ยังไม่ผูกบัญชี", "ไม่มีสิทธิ์");
-          await replyMessage(event.replyToken, [{ type: "text", text: "ได้รับข้อมูลแล้ว กำลังรอตรวจสอบ กรุณารอสักครู่นะครับ" }]);
+          if (process.env.ADMIN_ID_PENDING_ACK_ENABLED === "true") {
+            await replyMessage(event.replyToken, [{ type: "text", text: "ได้รับข้อมูลแล้ว กำลังรอตรวจสอบ กรุณารอสักครู่นะครับ" }]);
+          }
           return;
         }
         await logCustomerOutcome(lineUserId, text, "ลูกค้ายืนยันรับทราบเงื่อนไข", "สำเร็จ");
@@ -1367,12 +1369,14 @@ async function handleEvent(event) {
         query: "", source: sourceType, result: access.message || registration?.message || "ไม่มีสิทธิ์",
         actionName: "checkAccess", status: "ไม่มีสิทธิ์", note: ""
       });
-      await replyMessage(event.replyToken, [
-        {
-          type: "text",
-          text: "ได้รับข้อมูลแล้ว กำลังรอตรวจสอบ กรุณารอสักครู่นะครับ",
-        },
-      ]);
+      if (process.env.ADMIN_ID_PENDING_ACK_ENABLED === "true") {
+        await replyMessage(event.replyToken, [
+          {
+            type: "text",
+            text: "ได้รับข้อมูลแล้ว กำลังรอตรวจสอบ กรุณารอสักครู่นะครับ",
+          },
+        ]);
+      }
       return;
     }
 
