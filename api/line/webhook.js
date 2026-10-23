@@ -4,9 +4,21 @@ import { notifyCustomerSlip, serveSlipImage, slipImageToken, verifyResendSlipTok
 import { syncStaffPaymentMenu } from "../../lib/staffRichMenu.js";
 import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.js";
 import { parseCommand, formatCustomerInfo, formatHistory } from "../../lib/commands.js";
+import { parseCloseoutCommand, isCloseoutRoleAllowed } from "../../lib/closeoutCommand.js";
 import { linkVerifiedCustomerMenu } from "../../lib/customerRichMenu.js";
 import { paymentQrUrl } from "../../lib/paymentQr.js";
 import { createWebSession } from "../../lib/webAuth.js";
+import {
+  formatCustomerAgentReport,
+  formatSystemAgentReport,
+  runCustomerAgentAudit,
+  runSystemAgentAudit,
+} from "../../lib/systemAgent.js";
+import {
+  tryAdminManualBindingEvent,
+  tryEnqueueFailedAutoBind,
+} from "../../lib/manualBindingIntegration.js";
+import { parseCustomerBindingInput } from "../../lib/customerBindingParser.js";
 
 function getRawBody(req) {
   return new Promise((resolve, reject) => {
@@ -166,10 +178,44 @@ async function logCustomerOutcome(lineUserId, command, result, status, note = ""
   });
 }
 
-const customerMenuCheckedUsers = new Set();
+const customerMenuCheckedUsers = new Map();
 
-async function safeLinkCustomerMenu(lineUserId) {
-  if (!lineUserId || customerMenuCheckedUsers.has(lineUserId)) return;
+export async function claimWebhookEvents(events) {
+  const unique = [];
+  const seen = new Set();
+  for (const event of Array.isArray(events) ? events : []) {
+    const id = String(event?.webhookEventId || "").trim();
+    if (id && seen.has(id)) continue;
+    if (id) seen.add(id);
+    unique.push(event);
+  }
+
+  const ids = unique.map((event) => String(event?.webhookEventId || "").trim()).filter(Boolean);
+  if (!ids.length) return unique;
+  try {
+    const result = await callSheetsBridge({ action: "claimWebhookEvents", eventIds: ids });
+    if (!Array.isArray(result?.claimed)) return unique;
+    const claimed = new Set(result.claimed.map(String));
+    return unique.filter((event) => {
+      const id = String(event?.webhookEventId || "").trim();
+      return !id || claimed.has(id);
+    });
+  } catch (error) {
+    // Availability wins if the bridge is temporarily unavailable. LINE reply
+    // tokens and downstream request IDs still provide their normal safeguards.
+    console.warn("Webhook event claim unavailable", error?.message || error);
+    return unique;
+  }
+}
+
+function customerMenuState(customer = {}) {
+  return [customer.dueDate, customer.status, customer.paymentStatus, customer.daysDelta]
+    .map((value) => String(value ?? "").trim())
+    .join("|");
+}
+
+async function safeLinkCustomerMenu(lineUserId, customer = null) {
+  if (!lineUserId) return;
   try {
     // A person can be in both sheets. Never replace an owner's or staff member's menu.
     const staff = await callSheetsBridge({
@@ -179,9 +225,16 @@ async function safeLinkCustomerMenu(lineUserId) {
     // A disabled or permission-limited staff account also returns allowed=false.
     // Only a LINE ID absent from the staff sheet may receive the customer menu.
     if (!staff.allowed && staff.message === "บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID") {
-      await linkVerifiedCustomerMenu(lineUserId);
+      let menuCustomer = customer;
+      if (!menuCustomer?.dueDate) {
+        const self = await callSheetsBridge({ action: "getCustomerSelf", lineUserId, field: "status" });
+        menuCustomer = self?.items?.[0] || menuCustomer || {};
+      }
+      const state = customerMenuState(menuCustomer);
+      if (customerMenuCheckedUsers.get(lineUserId) === state) return;
+      await linkVerifiedCustomerMenu(lineUserId, menuCustomer || {});
+      customerMenuCheckedUsers.set(lineUserId, state);
     }
-    customerMenuCheckedUsers.add(lineUserId);
   } catch (error) {
     console.warn("Could not link customer rich menu", error);
   }
@@ -289,15 +342,6 @@ const CUSTOMER_SELF_ACTIONS = [
   ["ติดต่อแอดมิน", "ติดต่อแอดมิน"],
 ];
 
-function customerSelfQuickReply() {
-  return {
-    items: CUSTOMER_SELF_ACTIONS.map(([label, text]) => ({
-      type: "action",
-      action: { type: "message", label, text },
-    })),
-  };
-}
-
 function customerPersistentButtons() {
   const buttons = CUSTOMER_SELF_ACTIONS.map(([label, text]) => ({
     type: "button",
@@ -342,7 +386,6 @@ function customerResultMessage(text, title = "ข้อมูลล่าสุ�
       },
       footer: customerPersistentFooter(),
     },
-    quickReply: customerSelfQuickReply(),
   };
 }
 
@@ -381,6 +424,12 @@ function customerFieldForText(value) {
 function customerPaymentMessage(result, field) {
   const item = Array.isArray(result?.items) ? result.items[0] : null;
   if (!result?.bound || !item) return { type: "text", text: formatCustomerSelfResult(result, field) };
+  if (item.inactive === true) {
+    return {
+      type: "text",
+      text: `คิว ${item.queue || "นี้"} อยู่สถานะ ${item.status || "ปิดยอด"}\nไม่มีรายการต้องชำระ`,
+    };
+  }
   const isClose = field === "close";
   const total = isClose
     ? Number(item.calculatedClose || 0)
@@ -431,7 +480,6 @@ function customerPaymentMessage(result, field) {
         ...customerPersistentButtons(),
       ] },
     },
-    quickReply: customerSelfQuickReply(),
   };
 }
 
@@ -532,7 +580,6 @@ function customerWelcomeMessage(overview) {
         },
         footer: customerPersistentFooter(),
       },
-      quickReply: customerSelfQuickReply(),
     };
   }
   return customerResultMessage([
@@ -575,6 +622,9 @@ function formatCustomerSelfResult(result, field) {
 
   const blocks = items.slice(0, 5).map((x) => {
     const head = (x.name || "ลูกค้า") + (x.queue ? " | คิว " + x.queue : "");
+    if (x.inactive === true && ["payment", "close", "outstanding", "discount", "fee", "due"].includes(field)) {
+      return [head, "สถานะ: " + (x.status || "ปิดยอด"), "ไม่มีรายการต้องชำระ"].join("\n");
+    }
     if (field === "payment") {
       return [head, "ค่าเช่า: " + formatMoney(x.accumulatedFee) + " บาท", Number(x.paidForCycle || 0) > 0 ? "รับชำระแล้ว: " + formatMoney(x.paidForCycle) + " บาท" : null, "ค่าปรับ: " + formatMoney(x.lateFee) + " บาท", "รวมยอดชำระวันนี้: " + formatMoney(x.paymentTotal) + " บาท", "วันครบกำหนด: " + (x.dueDate || "-")].filter(Boolean).join("\n");
     }
@@ -800,6 +850,40 @@ async function handleSlipResendPostback(event) {
 }
 
 async function handleEvent(event) {
+
+  // CUSTOMER_CHAT_SILENCE_20261020
+  // Do not send any automated customer chat responses. Human OA replies remain available.
+  if (event.source?.type === "user" &&
+      event.source?.userId &&
+      (event.type === "follow" || event.type === "message" || event.type === "postback") &&
+      process.env.LINE_CUSTOMER_AUTO_REPLY_ENABLED !== "true") {
+    let staffAllowed = false;
+    try {
+      const staff = await callSheetsBridge({
+        action: "checkAccess",
+        lineUserId: event.source.userId,
+        sourceType: "user",
+        groupId: "",
+        permission: "",
+        allowSystemControl: true
+      });
+      staffAllowed = staff?.allowed === true && !!String(staff?.role || "").trim();
+    } catch (error) {
+      // Fail closed: unknown permission must never trigger a customer auto-response.
+      console.warn("Customer chat silence: access lookup unavailable", error?.message);
+    }
+    if (!staffAllowed) {
+      // Keep forwarding customer slips to authorized staff, but send NO customer ack.
+      if (event.type === "message" && event.message?.type === "image") {
+        try {
+          await notifyCustomerSlip(event);
+        } catch (error) {
+          console.warn("Customer slip forwarding failed during chat silence", error?.message);
+        }
+      }
+      return;
+    }
+  }
   if (await handleSlipResendPostback(event)) return;
 
   if (event.type === "follow") {
@@ -1006,7 +1090,21 @@ async function handleEvent(event) {
       return;
     }
 
+    // This handler runs only after the original LINE request HMAC has passed.
+    // Customer GAS independently re-checks staff rights and the source identity.
+    const manualBinding = await tryAdminManualBindingEvent({
+      event,
+      signatureVerified: true,
+      bridge: (action, payload) => callSheetsBridge({ action, ...payload }),
+      replyStaff: (message) => replyMessage(event.replyToken, [{ type: "text", text: message }]),
+      replyStaffFlex: (flex) => replyMessage(event.replyToken, [flex]),
+      pushCustomer: (userId, message) => pushMessage(userId, [{ type: "text", text: message }]),
+    });
+    if (manualBinding.handled) return;
+
     let command = parseCommand(text);
+    const closeoutInput = parseCloseoutCommand(text);
+    if (closeoutInput?.matched) command = closeoutInput.command;
 
     // A bare "queue amount" message is unambiguous payment input.
     // Convert it before customer binding so "310-4 1200" can never become a name-binding attempt.
@@ -1028,9 +1126,7 @@ async function handleEvent(event) {
     if (sourceType === "user" && lineUserId && !command) {
       const customerField = customerFieldForText(text);
 
-      const explicitBindingMatch = text.match(/^ผูกบัญชี\s+(\S+)\s+(.+\S)$/);
-      const plainBindingMatch = text.match(/^(?:คิว\s*)?(\d{3,}(?:-\d+)*)\s+(.+\S)$/);
-      const bindingMatch = explicitBindingMatch || plainBindingMatch;
+      const bindingInput = parseCustomerBindingInput(text.replace(/^คิว\s*/u, ""));
 
       if (text === "ผูกบัญชี") {
         await logCustomerOutcome(lineUserId, "ผูกบัญชี", "ข้อมูลไม่ครบ", "รูปแบบไม่ถูกต้อง", "กรุณาระบุคิวและชื่อเต็ม");
@@ -1041,7 +1137,7 @@ async function handleEvent(event) {
         return;
       }
 
-      if (!bindingMatch && (/^ผูกบัญชี\s/.test(text) || /^(?:คิว\s*)?\d{3,}(?:-\d+)*$/.test(text))) {
+      if (!bindingInput && (/^ผูกบัญชี\s*/.test(text) || /^(?:คิว\s*)?\d{2,5}(?:-\d+)*$/.test(text))) {
         await logCustomerOutcome(lineUserId, "ผูกบัญชี", "ข้อมูลไม่ครบหรือรูปแบบไม่ถูกต้อง", "รูปแบบไม่ถูกต้อง");
         await replyMessage(event.replyToken, [{
           type: "text", text: "กรุณาแจ้ง คิว + ชื่อ + นามสกุล\nตัวอย่าง: 610-21 สมชาย ใจดี"
@@ -1049,10 +1145,10 @@ async function handleEvent(event) {
         return;
       }
 
-      if (bindingMatch) {
+      if (bindingInput) {
         auditAction = "ผูกบัญชี";
-        const queue = bindingMatch[1];
-        const fullName = bindingMatch[2].trim();
+        const queue = bindingInput.queue;
+        const fullName = bindingInput.name;
 
         await startLoading(lineUserId, 60);
         const progressPromise = showCustomerProgress(lineUserId);
@@ -1095,13 +1191,31 @@ async function handleEvent(event) {
           String(overview.queue || "").trim() === queue &&
           String(overview.name || "").trim().replace(/\s+/g, " ") === fullName.replace(/\s+/g, " ")
           ? overview : null;
+        if (!confirmed && result?.ok && !result?.locked && !result?.alreadyBound &&
+            !result?.rejectedNewIdentity && !result?.suspended) {
+          const pending = await tryEnqueueFailedAutoBind({
+            event,
+            signatureVerified: true,
+            autoAttempted: true,
+            autoSucceeded: false,
+            bridge: (action, payload) => callSheetsBridge({ action, ...payload }),
+            replyCustomer: (message) => replyMessage(event.replyToken, [{ type: "text", text: message }]),
+            notifyStaff: async (message, recipients) => {
+              await Promise.all((recipients || []).map((id) =>
+                pushMessage(id, [{ type: "text", text: message }]).catch(() => null)
+              ));
+            },
+          });
+          if (pending.handled) return;
+        }
+
         await replyMessage(event.replyToken, confirmed && verifiedOverview
           ? [customerWelcomeMessage(verifiedOverview), customerTermsImageMessage(), customerTermsAckMessage()]
           : [
               { type: "text", text: replyText },
               ...(confirmed ? [customerWelcomeMessage(), customerTermsImageMessage(), customerTermsAckMessage()] : []),
             ]);
-        if (confirmed) await safeLinkCustomerMenu(lineUserId);
+        if (confirmed) await safeLinkCustomerMenu(lineUserId, verifiedOverview || overview || {});
         return;
       }
 
@@ -1114,12 +1228,12 @@ async function handleEvent(event) {
         const self = await callSheetsBridge({ action: "getCustomerSelf", lineUserId, field: "status" });
         if (!self?.bound) {
           await logCustomerOutcome(lineUserId, text, "ยังไม่ผูกบัญชี", "ไม่มีสิทธิ์");
-          await replyMessage(event.replyToken, [{ type: "text", text: "ได้รับข้อมูลแล้ว กำลังรอตรวจสอบ กรุณารอสักครู่นะครับ" }]);
+          /* pending acknowledgment temporarily suppressed */
           return;
         }
         await logCustomerOutcome(lineUserId, text, "ลูกค้ายืนยันรับทราบเงื่อนไข", "สำเร็จ");
         await replyMessage(event.replyToken, [customerResultMessage("บันทึกการยืนยันรับทราบเงื่อนไขเรียบร้อยแล้ว\nกรุณาชำระให้ตรงตามวันและยอดที่ระบบแจ้ง", "ยืนยันเรียบร้อย")]);
-        await safeLinkCustomerMenu(lineUserId);
+        await safeLinkCustomerMenu(lineUserId, self?.items?.[0] || {});
         return;
       }
 
@@ -1244,7 +1358,7 @@ async function handleEvent(event) {
 
           // Migrate existing verified customers too, after delivering the result.
           // The staff guard and per-instance cache keep staff menus untouched.
-          if (result.bound) await safeLinkCustomerMenu(lineUserId);
+          if (result.bound) await safeLinkCustomerMenu(lineUserId, result?.items?.[0] || {});
           return;
         } catch (error) {
           console.warn("Customer self-service failed", { field, error: String(error?.message || error) });
@@ -1289,7 +1403,7 @@ async function handleEvent(event) {
         if (self?.bound) {
           await logCustomerOutcome(lineUserId, text, "ไม่พบตัวเลือกลูกค้า", "ไม่เข้าใจคำสั่ง");
           await replyMessage(event.replyToken, [customerResultMessage("หากมีข้อสงสัยเพิ่มเติมนอกจากตัวเลือก กรุณากด “ติดต่อแอดมิน”", "เลือกบริการที่ต้องการ")]);
-          await safeLinkCustomerMenu(lineUserId);
+          await safeLinkCustomerMenu(lineUserId, self?.items?.[0] || {});
           return;
         }
       } catch (error) {
@@ -1367,12 +1481,12 @@ async function handleEvent(event) {
         query: "", source: sourceType, result: access.message || registration?.message || "ไม่มีสิทธิ์",
         actionName: "checkAccess", status: "ไม่มีสิทธิ์", note: ""
       });
-      await replyMessage(event.replyToken, [
-        {
-          type: "text",
-          text: "ได้รับข้อมูลแล้ว กำลังรอตรวจสอบ กรุณารอสักครู่นะครับ",
-        },
-      ]);
+      /* pending acknowledgment temporarily suppressed */
+      return;
+    }
+
+    if (command?.action === "queueClose" && !isCloseoutRoleAllowed(access.role)) {
+      await replyMessage(event.replyToken, [{ type: "text", text: "คำสั่งปิดยอดใช้ได้เฉพาะแอดมินและเจ้าของเท่านั้น" }]);
       return;
     }
 
@@ -1528,7 +1642,6 @@ async function handleEvent(event) {
           await pushMessage(item.lineUserId, [{
             type: "text",
             text: item.message,
-            quickReply: customerSelfQuickReply(),
           }]);
           await callSheetsBridge({ action: "markCustomerReminderSent", rowNo: item.rowNo, sent: true });
           return true;
@@ -1634,6 +1747,10 @@ async function handleEvent(event) {
             "• ประวัติ <คำค้น>",
             "• ดูโน้ต <คำค้น>",
             "• โน้ต <คำค้น> <ข้อความ>",
+            "• รับยอด <คิว> <ยอดรวม> [ปรับ<ยอด>]",
+            "• ตัดต้น <คิว> <ยอดรวม> [ปรับ<ยอด>]",
+            "• ปิดยอด <คิว> <ยอดรวม> [ปรับ<ยอด>]",
+            "• <คิว> ชำระยอด <ยอดรวม> ตัดต้น<ยอด> [ปรับ<ยอด>]",
             "• สรุปยอด <คำค้น>",
             "• สิทธิ์ส่วนลด <คำค้น>",
             "• ยอดปิด <คำค้น>",
@@ -1658,10 +1775,25 @@ async function handleEvent(event) {
         await replyMessage(event.replyToken, [{ type: "text", text: "กรุณากดรับชำระในแชทส่วนตัวกับบอต" }]);
         return;
       }
+      if (command.invalidCombined) {
+        await replyMessage(event.replyToken, [{ type: "text", text: "ยอดรวมต้องมากกว่ายอดที่แยก และทุกยอดต้องมากกว่า 0" }]);
+        return;
+      }
+      if (command.action === "queueClose" && (!command.query || !Number.isFinite(command.amount) || command.amount <= 0)) {
+        await replyMessage(event.replyToken, [{ type: "text", text: "ปิดยอด\nพิมพ์: ปิดยอด <คิว> <ยอดรวม> [ปรับ<ยอด>]\nตัวอย่าง: ปิดยอด 610-4 5500 ปรับ100\nยอด 5,500 คือยอดรับรวม" }]);
+        return;
+      }
       if (command.action === "queuePayment" && (!command.query || !Number.isFinite(command.amount) || command.amount <= 0)) {
+        const paymentHelp = command.paymentKind === "fine"
+          ? "ค่าปรับ\nพิมพ์: รับค่าปรับ <คิว> <ยอด> [วัน/เดือน/ปี]\nตัวอย่าง: รับค่าปรับ 610-4 100"
+          : command.paymentKind === "principal"
+            ? "ตัดต้น\nพิมพ์: ตัดต้น <คิว> <ยอดรวม> [ปรับ<ยอด>]\nตัวอย่าง: ตัดต้น 610-4 1100 ปรับ100\nยอด 1,100 คือยอดรับรวม"
+            : command.prefix === "รับยอด"
+              ? "รับยอด\nพิมพ์: รับยอด <คิว> <ยอดรวม> [ปรับ<ยอด>]\nตัวอย่าง: รับยอด 610-4 900 ปรับ100\nยอด 900 คือยอดรับรวม"
+              : "รับชำระ\nพิมพ์: <เลขคิว> <ยอดชำระจริง>\nตัวอย่าง: 310-4 1200";
         await replyMessage(event.replyToken, [{
           type: "text",
-          text: command.paymentKind === "fine" ? "พิมพ์: รับค่าปรับ <คิว> <ยอด> [วัน/เดือน/ปี]\nตัวอย่าง: รับค่าปรับ 310-3 100 29/9/2569\nหากไม่ระบุวันที่ จะใช้วันนี้" : "รับชำระ\nพิมพ์: <เลขคิว> <ยอดชำระจริง>\nตัวอย่าง: 310-4 1200\nระบบจะเลือกคิวที่ตรงเป๊ะก่อน หากยังซ้ำจึงค่อยให้ระบุเพิ่มเติม\nรายการจะเข้าคิวตรวจสอบก่อน ยังไม่แก้ยอดในชีตต้นทาง",
+          text: paymentHelp,
         }]);
         return;
       }
@@ -1730,7 +1862,98 @@ async function handleEvent(event) {
       if (command.switchKey) payload.switchKey = command.switchKey;
 
       let result;
-      if (command.action === "queuePayment") {
+      let financialExactCustomer = null; // FINANCIAL_AUTO_COMMANDS_V1
+      if (["agentSystemAudit", "agentCustomerAudit", "agentHelp"].includes(command.action) && access.role !== "เจ้าของ") {
+        result = { ok: false, message: "AI ผู้ช่วยระบบใช้ได้เฉพาะเจ้าของเท่านั้น" };
+      } else if (command.action === "agentSystemAudit") {
+        result = await runSystemAgentAudit({
+          lineUserId,
+          sourceType,
+          groupId,
+          staffName: access.staffName || "",
+          role: access.role || "",
+        });
+      } else if (command.action === "agentCustomerAudit") {
+        result = await runCustomerAgentAudit(command.query, {
+          lineUserId,
+          sourceType,
+          groupId,
+          staffName: access.staffName || "",
+          role: access.role || "",
+        });
+      } else if (command.action === "agentHelp") {
+        result = { ok: true, help: true };
+      } else if (command.action === "prepareRollbackReviewQueue") {
+        const rowNos = (String(command.query || "").match(/\d+/g) || [])
+          .map(Number)
+          .filter((value, index, values) => Number.isInteger(value) && value >= 2 && values.indexOf(value) === index)
+          .slice(0, 3);
+        if (!rowNos.length) {
+          result = { ok: true, prepared: false, message: "พิมพ์: ยกเลิกรายการ <เลขรายการ>" };
+        } else {
+          const details = await Promise.all(rowNos.map((rowNo) => callSheetsBridge({
+            action: "getReviewQueueItem",
+            query: String(rowNo),
+            lineUserId,
+            sourceType,
+            groupId,
+          })));
+          const items = details.map((entry) => entry?.item).filter(Boolean);
+          result = items.length === rowNos.length
+            ? { ok: true, prepared: true, rowNos, items }
+            : { ok: true, prepared: false, message: "พบเลขรายการไม่ครบ จึงยังไม่ยกเลิก" };
+        }
+      } else if (command.action === "latestRollbackHelp") {
+        result = await callSheetsBridge({
+          action: "getLatestReversibleReview",
+          lineUserId,
+          sourceType,
+          groupId,
+        });
+      } else if (command.action === "confirmRollbackReviewQueue") {
+        result = await callSheetsBridge({
+          action: "rollbackReviewGroup",
+          query: String(command.query || ""),
+          lineUserId,
+          sourceType,
+          groupId,
+        });
+      } else if (command.action === "queueClose") {
+        const targetQueue = String(command.query || "").trim().toLowerCase().replace(/\s+/g, "");
+        let lookupFailed = false;
+        let exactMatches = [];
+        try {
+          const found = await callSheetsBridge({ action: "searchCustomer", query: command.query, lineUserId, sourceType, groupId, paymentLookup: true });
+          exactMatches = (Array.isArray(found?.matches) ? found.matches : []).filter((match) =>
+            [["v6", "v6/10-69"], ["v1/v3", "v3/10-69"]].some(([sourceName, sheetName]) =>
+              String(match?.source || "").trim().toLowerCase() === sourceName &&
+              String(match?.sheet || "").trim().toLowerCase() === sheetName
+            ) && String(match?.queue || "").trim().toLowerCase().replace(/\s+/g, "") === targetQueue
+          );
+        } catch (error) {
+          lookupFailed = true;
+          console.warn("Closeout lookup failed", error?.message);
+        }
+        if (lookupFailed) {
+          result = { ok: true, queued: false, message: "ยังตรวจคิวจากชีตที่อนุญาตได้ไม่ครบ กรุณาลองใหม่ภายหลัง" };
+        } else if (exactMatches.length === 0) {
+          result = { ok: true, queued: false, message: "ไม่พบคิวในแถบ V6/10-69 หรือ v3/10-69" };
+        } else if (exactMatches.length > 1) {
+          result = { ok: true, queued: false, message: "พบคิวซ้ำ กรุณาระบุแหล่งข้อมูลก่อนปิดยอด", needsSelection: true, matches: exactMatches };
+        } else {
+          const exact = exactMatches[0];
+          financialExactCustomer = exact;
+          result = await callSheetsBridge({
+            ...payload,
+            requestId: (event.message?.id || event.webhookEventId) ? "LINE:" + String(event.message?.id || event.webhookEventId).trim() : "",
+            query: String(exact.source).trim() + ":" + String(exact.queue).trim(),
+            exactCustomer: {
+              source: String(exact.source || "").trim(), sheet: String(exact.sheet || "").trim(),
+              row: Number(exact.row || 0), queue: String(exact.queue || "").trim(), name: String(exact.name || "").trim(),
+            },
+          });
+        }
+      } else if (command.action === "queuePayment") {
         const rawPaymentQuery = String(command.query || "").trim();
         let requestedPaymentSource = "";
         let paymentQueue = rawPaymentQuery;
@@ -1747,32 +1970,38 @@ async function handleEvent(event) {
           ? allScopes.filter(([sourceName]) => sourceName.toLowerCase() === requestedPaymentSource)
           : allScopes;
         const targetQueue = paymentQueue.toLowerCase().replace(/\s+/g, "");
-        const foundByScope = await Promise.all(scopes.map(async ([sourceName, sheetName]) => {
-          try {
-            const found = await callSheetsBridge({
-              action: "searchCustomer",
-              query: sourceName + ":" + paymentQueue,
-              lineUserId,
-              sourceType,
-              groupId,
-              paymentLookup: true,
-            });
-            return {
-              failed: false,
-              matches: (Array.isArray(found?.matches) ? found.matches : []).filter((m) =>
-                String(m?.source || "").trim().toLowerCase() === sourceName.toLowerCase() &&
-                String(m?.sheet || "").trim().toLowerCase() === sheetName.toLowerCase() &&
-                String(m?.queue || "").trim().toLowerCase().replace(/\s+/g, "") === targetQueue
-              ),
-            };
-          } catch (error) {
-            console.warn("Scoped payment lookup failed", sourceName, sheetName, error?.message);
-            return { failed: true, matches: [] };
-          }
-        }));
-        const exactMatches = foundByScope.flatMap((scope) => scope.matches);
+        const allowedScopeKeys = new Set(scopes.map(([sourceName, sheetName]) =>
+          sourceName.toLowerCase() + "|" + sheetName.toLowerCase()
+        ));
+        let lookupFailed = false;
+        let exactMatches = [];
+        try {
+          // One unqualified GAS search checks both allowed customer tabs in one
+          // invocation. The old fan-out launched two GAS executions at once;
+          // when either was slow, Vercel retries could create an invocation pile-up.
+          const found = await callSheetsBridge({
+            action: "searchCustomer",
+            query: requestedPaymentSource
+              ? requestedPaymentSource + ":" + paymentQueue
+              : paymentQueue,
+            lineUserId,
+            sourceType,
+            groupId,
+            paymentLookup: true,
+          });
+          exactMatches = (Array.isArray(found?.matches) ? found.matches : []).filter((m) =>
+            allowedScopeKeys.has(
+              String(m?.source || "").trim().toLowerCase() + "|" +
+              String(m?.sheet || "").trim().toLowerCase()
+            ) &&
+            String(m?.queue || "").trim().toLowerCase().replace(/\s+/g, "") === targetQueue
+          );
+        } catch (error) {
+          lookupFailed = true;
+          console.warn("Payment lookup failed", error?.message);
+        }
 
-        if (foundByScope.some((scope) => scope.failed)) {
+        if (lookupFailed) {
           result = {
             ok: true,
             queued: false,
@@ -1784,6 +2013,7 @@ async function handleEvent(event) {
           result = { ok: true, queued: false, needsSelection: true, matches: exactMatches };
         } else {
           const exact = exactMatches[0];
+          financialExactCustomer = exact;
           const identity = String(exact.appleId || exact.phone || exact.name || "").trim();
           if (!identity) {
             result = { ok: true, queued: false, message: "พบคิว แต่ข้อมูลลูกค้าไม่ครบ" };
@@ -1815,9 +2045,391 @@ async function handleEvent(event) {
         result = await callSheetsBridge(payload);
       }
 
+      if (command.autoApprove && result?.queued && result?.rowNo) {
+        const approveRow = async (rowNo) => callSheetsBridge({
+          action: "resolveReviewQueue",
+          query: String(rowNo),
+          decision: "ผ่าน",
+          lineUserId,
+          sourceType,
+          groupId,
+          staffName: access.staffName || "",
+          role: access.role || "",
+        });
+        const firstQueued = result;
+        const firstApproval = await approveRow(firstQueued.rowNo);
+
+        if (firstApproval?.resolved && firstApproval?.decision === "ผ่าน" && firstApproval?.sourceWritten) {
+          if (command.successKind === "combinedFine") {
+            const fineRequestId = (event.message?.id || event.webhookEventId)
+              ? "LINE:" + String(event.message?.id || event.webhookEventId).trim() + ":fine"
+              : "";
+            const exact = financialExactCustomer || {};
+            const fineQueued = await callSheetsBridge({
+              ...payload,
+              action: "queuePayment",
+              amount: command.fineAmount,
+              paymentKind: "fine",
+              requestId: fineRequestId,
+              query: String(exact.source || "").trim() + ":" + String(exact.queue || command.query || "").trim(),
+              exactCustomer: {
+                source: String(exact.source || "").trim(),
+                sheet: String(exact.sheet || "").trim(),
+                row: Number(exact.row || 0),
+                queue: String(exact.queue || command.query || "").trim(),
+                name: String(exact.name || "").trim(),
+              },
+            });
+            const fineApproval = fineQueued?.queued && fineQueued?.rowNo
+              ? await approveRow(fineQueued.rowNo)
+              : null;
+
+            if (fineApproval?.resolved && fineApproval?.decision === "ผ่าน" && fineApproval?.sourceWritten) {
+              result = {
+                ...fineApproval,
+                autoApproved: true,
+                combinedFine: true,
+                baseKind: command.baseKind || "payment",
+                baseRowNo: firstQueued.rowNo,
+                fineRowNo: fineQueued.rowNo,
+                baseAmount: command.amount,
+                baseSourceWrite: firstApproval.sourceWrite || {},
+                fineAmount: command.fineAmount,
+                totalAmount: command.totalAmount,
+                name: fineApproval.name || firstApproval.name,
+                queue: fineApproval.queue || firstApproval.queue,
+              };
+            } else {
+              if (fineQueued?.queued && fineQueued?.rowNo) {
+                await callSheetsBridge({
+                  action: "cancelReviewQueue",
+                  query: String(fineQueued.rowNo),
+                  lineUserId,
+                  sourceType,
+                  groupId,
+                }).catch(() => null);
+              }
+              const rollback = await callSheetsBridge({
+                action: "rollbackReviewQueue",
+                query: String(firstQueued.rowNo),
+                lineUserId,
+                sourceType,
+                groupId,
+              }).catch(() => null);
+              result = {
+                ok: true,
+                queued: false,
+                autoApproved: false,
+                message: "รายการพร้อมค่าปรับไม่สำเร็จ และ" + (rollback?.rolledBack ? "ย้อนยอดส่วนแรกคืนแล้ว" : "ต้องตรวจสอบการย้อนยอดส่วนแรก") +
+                  " — " + (fineApproval?.message || fineQueued?.message || "บันทึกค่าปรับไม่สำเร็จ"),
+              };
+            }
+          } else if (command.successKind === "combined") {
+            const principalRequestId = (event.message?.id || event.webhookEventId)
+              ? "LINE:" + String(event.message?.id || event.webhookEventId).trim() + ":principal"
+              : "";
+            const exact = financialExactCustomer || {};
+            const principalQueued = await callSheetsBridge({
+              ...payload,
+              action: "queuePayment",
+              amount: command.principalAmount,
+              paymentKind: "principal",
+              requestId: principalRequestId,
+              query: String(exact.source || "").trim() + ":" + String(exact.queue || command.query || "").trim(),
+              exactCustomer: {
+                source: String(exact.source || "").trim(),
+                sheet: String(exact.sheet || "").trim(),
+                row: Number(exact.row || 0),
+                queue: String(exact.queue || command.query || "").trim(),
+                name: String(exact.name || "").trim(),
+              },
+            });
+            const principalApproval = principalQueued?.queued && principalQueued?.rowNo
+              ? await approveRow(principalQueued.rowNo)
+              : null;
+
+            if (principalApproval?.resolved && principalApproval?.decision === "ผ่าน" && principalApproval?.sourceWritten) {
+              if (Number(command.fineAmount || 0) > 0) {
+                const fineRequestId = (event.message?.id || event.webhookEventId)
+                  ? "LINE:" + String(event.message?.id || event.webhookEventId).trim() + ":fine"
+                  : "";
+                const fineQueued = await callSheetsBridge({
+                  ...payload,
+                  action: "queuePayment",
+                  amount: command.fineAmount,
+                  paymentKind: "fine",
+                  requestId: fineRequestId,
+                  query: String(exact.source || "").trim() + ":" + String(exact.queue || command.query || "").trim(),
+                  exactCustomer: {
+                    source: String(exact.source || "").trim(),
+                    sheet: String(exact.sheet || "").trim(),
+                    row: Number(exact.row || 0),
+                    queue: String(exact.queue || command.query || "").trim(),
+                    name: String(exact.name || "").trim(),
+                  },
+                });
+                const fineApproval = fineQueued?.queued && fineQueued?.rowNo
+                  ? await approveRow(fineQueued.rowNo)
+                  : null;
+                if (fineApproval?.resolved && fineApproval?.decision === "ผ่าน" && fineApproval?.sourceWritten) {
+                  result = {
+                    ...principalApproval,
+                    autoApproved: true,
+                    combined: true,
+                    paymentRowNo: firstQueued.rowNo,
+                    principalRowNo: principalQueued.rowNo,
+                    fineRowNo: fineQueued.rowNo,
+                    paymentAmount: command.amount,
+                    principalAmount: command.principalAmount,
+                    fineAmount: command.fineAmount,
+                    totalAmount: command.totalAmount,
+                    name: principalApproval.name || firstApproval.name,
+                    queue: principalApproval.queue || firstApproval.queue,
+                  };
+                } else {
+                  if (fineQueued?.queued && fineQueued?.rowNo) {
+                    await callSheetsBridge({ action: "cancelReviewQueue", query: String(fineQueued.rowNo), lineUserId, sourceType, groupId }).catch(() => null);
+                  }
+                  const principalRollback = await callSheetsBridge({ action: "rollbackReviewQueue", query: String(principalQueued.rowNo), lineUserId, sourceType, groupId }).catch(() => null);
+                  const paymentRollback = await callSheetsBridge({ action: "rollbackReviewQueue", query: String(firstQueued.rowNo), lineUserId, sourceType, groupId }).catch(() => null);
+                  result = {
+                    ok: true,
+                    queued: false,
+                    autoApproved: false,
+                    message: "รายการรวมพร้อมค่าปรับไม่สำเร็จ — " +
+                      (principalRollback?.rolledBack && paymentRollback?.rolledBack ? "ย้อนสองส่วนแรกคืนแล้ว" : "ต้องตรวจสอบการย้อนรายการ") +
+                      " — " + (fineApproval?.message || fineQueued?.message || "บันทึกค่าปรับไม่สำเร็จ"),
+                  };
+                }
+              } else {
+                result = {
+                  ...principalApproval,
+                  autoApproved: true,
+                  combined: true,
+                  paymentRowNo: firstQueued.rowNo,
+                  principalRowNo: principalQueued.rowNo,
+                  paymentAmount: command.amount,
+                  principalAmount: command.principalAmount,
+                  fineAmount: 0,
+                  totalAmount: command.totalAmount,
+                  name: principalApproval.name || firstApproval.name,
+                  queue: principalApproval.queue || firstApproval.queue,
+                };
+              }
+            } else {
+              if (principalQueued?.queued && principalQueued?.rowNo) {
+                await callSheetsBridge({
+                  action: "cancelReviewQueue",
+                  query: String(principalQueued.rowNo),
+                  lineUserId,
+                  sourceType,
+                  groupId,
+                }).catch(() => null);
+              }
+              const rollback = await callSheetsBridge({
+                action: "rollbackReviewQueue",
+                query: String(firstQueued.rowNo),
+                lineUserId,
+                sourceType,
+                groupId,
+              }).catch(() => null);
+              result = {
+                ok: true,
+                queued: false,
+                autoApproved: false,
+                message: "รายการรวมไม่สำเร็จ และ" + (rollback?.rolledBack ? "ย้อนยอดส่วนแรกคืนแล้ว" : "ต้องตรวจสอบการย้อนยอดส่วนแรก") +
+                  " — " + (principalApproval?.message || principalQueued?.message || "ตัดต้นไม่สำเร็จ"),
+              };
+            }
+          } else {
+            result = {
+              ...firstApproval,
+              autoApproved: true,
+              fineAmount: Number(command.fineAmount || 0),
+            };
+          }
+        } else {
+          result = {
+            ...firstQueued,
+            autoApproved: false,
+            message: "สร้างรายการแล้ว แต่ลงยอดอัตโนมัติไม่สำเร็จ: " + (firstApproval?.message || "ไม่ทราบสาเหตุ") +
+              " (คิวตรวจสอบ #" + firstQueued.rowNo + ")",
+          };
+        }
+      }
+
       let responseText = "";
       let responseQuickReply = null;
-      if (command.action === "getRecentIdentityImages") {
+      if (result?.autoApproved) {
+        const queue = result.queue || command.query || "-";
+        const name = result.name || "-";
+        const money = (value) => Number(value || 0).toLocaleString("th-TH", { maximumFractionDigits: 2 });
+        if (result.combinedFine) {
+          const base = result.baseSourceWrite || {};
+          responseText = result.baseKind === "principal" ? [
+            "ตัดต้นพร้อมค่าปรับสำเร็จ",
+            "คิว: " + queue,
+            "ชื่อ: " + name,
+            "รับรวม: " + money(result.totalAmount) + " บาท",
+            "ตัดต้น: " + money(result.baseAmount) + " บาท",
+            "ค่าปรับ: " + money(result.fineAmount) + " บาท",
+            "ยอดเดิม: " + money(base.principalBefore) + " บาท",
+            "ยอดใหม่: " + money(base.principalAfter) + " บาท",
+            "ค่าเช่าใหม่: " + money(base.feeAfter) + " บาท",
+            "วันครบกำหนดเดิม",
+          ].join("\n") : result.baseKind === "close" ? [
+            "ปิดยอดพร้อมค่าปรับสำเร็จ",
+            "คิว: " + queue,
+            "ชื่อ: " + name,
+            "รับรวม: " + money(result.totalAmount) + " บาท",
+            "ยอดปิด: " + money(result.baseAmount) + " บาท",
+            "ค่าปรับ: " + money(result.fineAmount) + " บาท",
+          ].join("\n") : [
+            "รับยอดพร้อมค่าปรับสำเร็จ",
+            "คิว: " + queue,
+            "ชื่อ: " + name,
+            "รับรวม: " + money(result.totalAmount) + " บาท",
+            "ค่าเช่า/ชำระยอด: " + money(result.baseAmount) + " บาท",
+            "ค่าปรับ: " + money(result.fineAmount) + " บาท",
+          ].join("\n");
+        } else if (result.combined) {
+          const principal = result.sourceWrite || {};
+          responseText = [
+            "รับยอดและตัดต้นสำเร็จ",
+            "คิว: " + queue,
+            "ชื่อ: " + name,
+            "รับรวม: " + money(result.totalAmount) + " บาท",
+            "ค่าเช่า/ชำระยอด: " + money(result.paymentAmount) + " บาท",
+            "ตัดต้น: " + money(result.principalAmount) + " บาท",
+            result.fineAmount ? "ค่าปรับ: " + money(result.fineAmount) + " บาท" : null,
+            "ยอดเดิม: " + money(principal.principalBefore) + " บาท",
+            "ยอดใหม่: " + money(principal.principalAfter) + " บาท",
+            "ค่าเช่าใหม่: " + money(principal.feeAfter) + " บาท",
+            "วันครบกำหนดเดิม",
+          ].filter(Boolean).join("\n");
+        } else if (command.successKind === "principal") {
+          const principal = result.sourceWrite || {};
+          responseText = [
+            "ตัดต้นสำเร็จ",
+            "คิว: " + queue,
+            "ชื่อ: " + name,
+            "ยอดเดิม: " + money(principal.principalBefore) + " บาท",
+            "ยอดใหม่: " + money(principal.principalAfter) + " บาท",
+            "ค่าเช่าใหม่: " + money(principal.feeAfter) + " บาท",
+            "วันครบกำหนดเดิม",
+          ].join("\n");
+        } else if (command.successKind === "close") {
+          responseText = [
+            "ปิดยอดสำเร็จ",
+            "คิว: " + queue,
+            "ชื่อ: " + name,
+            "ยอด: " + money(result.amount || command.amount) + " บาท",
+            result.fineAmount ? "ค่าปรับ: " + money(result.fineAmount) + " บาท" : null,
+          ].filter(Boolean).join("\n");
+        } else {
+          responseText = [
+            "รับยอดสำเร็จ",
+            "คิว: " + queue,
+            "ชื่อ: " + name,
+            "ยอด: " + money(result.amount || command.amount) + " บาท",
+          ].join("\n");
+        }
+        const rowNos = [
+          result.paymentRowNo,
+          result.principalRowNo,
+          result.baseRowNo,
+          result.fineRowNo,
+          result.rowNo,
+        ].map(Number).filter((value, index, values) =>
+          Number.isInteger(value) && value >= 2 && values.indexOf(value) === index
+        ).sort((a, b) => a - b);
+        if (rowNos.length) {
+          const rowText = rowNos.join(",");
+          responseText += "\n\nรายการ: " + rowNos.map((value) => "#" + value).join(", ");
+          responseText += "\nหากยอดผิด กดตรวจสอบก่อนยกเลิก";
+          responseQuickReply = {
+            items: [{
+              type: "action",
+              action: {
+                type: "message",
+                label: "ตรวจสอบ / ยกเลิก",
+                text: "ยกเลิกรายการ " + rowText,
+              },
+            }],
+          };
+        }
+      } else if (command.action === "prepareRollbackReviewQueue") {
+        if (!result.prepared) {
+          responseText = result.message || "ยังตรวจสอบรายการไม่ได้";
+        } else {
+          const items = result.items || [];
+          responseText = [
+            "ตรวจสอบก่อนยกเลิก",
+            ...items.map((item) =>
+              "#" + item.rowNo + " | " + (item.type || "-") +
+              " | คิว " + (item.queue || "-") +
+              " | " + (item.name || "-") +
+              (item.amount ? " | " + item.amount + " บาท" : "")
+            ),
+            "",
+            "หากถูกต้อง กด “ยืนยันยกเลิก”",
+          ].join("\n");
+          responseQuickReply = {
+            items: [{
+              type: "action",
+              action: {
+                type: "message",
+                label: "ยืนยันยกเลิก",
+                text: "ยืนยันยกเลิก " + result.rowNos.join(","),
+              },
+            }],
+          };
+        }
+      } else if (command.action === "latestRollbackHelp") {
+        if (!result.found) {
+          responseText = result.message || "ไม่พบรายการล่าสุดที่ยกเลิกได้";
+        } else {
+          responseText = [
+            "รายการล่าสุดที่ยกเลิกได้",
+            "รายการ: " + (result.rowNos || []).map((value) => "#" + value).join(", "),
+            "ประเภท: " + (result.type || "-"),
+            "คิว: " + (result.queue || "-"),
+            "ชื่อ: " + (result.name || "-"),
+            result.amount ? "ยอด: " + result.amount + " บาท" : null,
+            "",
+            "กดตรวจสอบก่อนยกเลิก",
+          ].filter(Boolean).join("\n");
+          responseQuickReply = {
+            items: [{
+              type: "action",
+              action: {
+                type: "message",
+                label: "ตรวจสอบ / ยกเลิก",
+                text: "ยกเลิกรายการ " + (result.rowNos || []).join(","),
+              },
+            }],
+          };
+        }
+      } else if (command.action === "confirmRollbackReviewQueue") {
+        responseText = result.message || (result.rolledBack
+          ? "ยกเลิกรายการแล้ว"
+          : "ยกเลิกไม่สำเร็จ กรุณาตรวจชีตก่อนทำซ้ำ");
+        if (result.rolledBack) {
+          responseText += "\nพิมพ์ยอดที่ถูกต้องใหม่ได้ทันที";
+        }
+      } else if (command.action === "agentSystemAudit") {
+        responseText = result.message || formatSystemAgentReport(result);
+      } else if (command.action === "agentCustomerAudit") {
+        responseText = result.message || formatCustomerAgentReport(result);
+      } else if (command.action === "agentHelp") {
+        responseText = result.message || [
+          "AI ผู้ช่วยเจ้าของ Admin ID",
+          "• AI ตรวจระบบ — ตรวจ Customer / Payment / Notify / ชีต / Trigger / คิวรอตรวจ",
+          "• AI ตรวจคิว <เลขคิว> — ตรวจสถานะและจับยอดที่ไม่ควรแสดง",
+          "",
+          "ทำงานแบบอ่านอย่างเดียว ไม่แก้ยอด ไม่กดผ่าน และไม่ส่งข้อความหาลูกค้า",
+        ].join("\n");
+      } else if (command.action === "getRecentIdentityImages") {
         const items = Array.isArray(result.items) ? result.items : [];
 
         if (!items.length) {
@@ -1925,10 +2537,8 @@ async function handleEvent(event) {
           const customerText = result.approved
             ? "ผูกบัญชีสำเร็จแล้ว\nพิมพ์ ยอดปิด เพื่อดูยอดปิดของคุณได้ทันที"
             : "คำขอผูกบัญชีไม่ได้รับการอนุมัติ กรุณาติดต่อเจ้าหน้าที่";
-          let customerMessage = {
-            type: "text", text: customerText,
-            ...(result.approved ? { quickReply: customerSelfQuickReply() } : {}),
-          };
+          let customerMessage = { type: "text", text: customerText };
+          let approvedOverview = null;
           if (result.approved) {
             try {
               const self = await callSheetsBridge({ action: "getCustomerSelf", lineUserId: result.customerLineUserId, field: "menu" });
@@ -1936,14 +2546,17 @@ async function handleEvent(event) {
                 String(item.queue || "").trim() === String(result.queue || "").trim() &&
                 String(item.name || "").trim() === String(result.customerName || "").trim()
               );
-              if (self?.bound && overview) customerMessage = customerWelcomeMessage(overview);
+              if (self?.bound && overview) {
+                approvedOverview = overview;
+                customerMessage = customerWelcomeMessage(overview);
+              }
             } catch (error) {
               console.warn("Could not load approved customer overview", error);
             }
           }
           await pushMessage(result.customerLineUserId, result.approved ? [customerMessage, customerTermsImageMessage(), customerTermsAckMessage()] : [customerMessage])
             .catch((error) => console.warn("Customer binding result push failed", error));
-          if (result.approved) await safeLinkCustomerMenu(result.customerLineUserId);
+          if (result.approved) await safeLinkCustomerMenu(result.customerLineUserId, approvedOverview || {});
         }
       } else if (command.action === "readinessCheck") {
         if (!Array.isArray(result.checks)) {
@@ -2087,7 +2700,10 @@ async function handleEvent(event) {
       } else if (["queuePayment", "queueSlipReview", "queueClose"].includes(command.action)) {
         responseText = result.message || (result.queued ? "ส่งเข้าคิวตรวจสอบแล้ว" : "ไม่สามารถดำเนินการได้");
 
-        if (result.queued && result.rowNo && Array.isArray(result.ownerLineUserIds)) {
+        const reviewerLineUserIds = Array.isArray(result.reviewerLineUserIds)
+          ? result.reviewerLineUserIds
+          : (Array.isArray(result.ownerLineUserIds) ? result.ownerLineUserIds : []);
+        if (result.queued && result.rowNo && reviewerLineUserIds.length) {
           const customerName = result.customer?.name || command.query || "-";
           const queueText = [
             "มีรายการรอตรวจ",
@@ -2123,9 +2739,9 @@ async function handleEvent(event) {
           };
 
           await Promise.all(
-            result.ownerLineUserIds.map((ownerId) =>
-              pushMessage(ownerId, [ownerMessage]).catch((error) => {
-                console.warn("Owner review alert failed", error);
+            reviewerLineUserIds.map((reviewerId) =>
+              pushMessage(reviewerId, [ownerMessage]).catch((error) => {
+                console.warn("Reviewer alert failed", error);
               })
             )
           );
@@ -2217,6 +2833,20 @@ async function handleEvent(event) {
           ]).catch((error) => {
             console.warn("Review result notification failed", error);
           });
+        }
+        if (result.resolved && result.decision === "ผ่าน" && result.sourceWritten && result.customerLineUserId) {
+          try {
+            const self = await callSheetsBridge({
+              action: "getCustomerSelf",
+              lineUserId: result.customerLineUserId,
+              field: "menu",
+            });
+            if (self?.bound) {
+              await safeLinkCustomerMenu(result.customerLineUserId, self?.items?.[0] || {});
+            }
+          } catch (error) {
+            console.warn("Customer due-date menu refresh failed", error?.message || error);
+          }
         }
       } else if (command.action === "getReminderBatch") {
         const d = result.digest;
@@ -2419,7 +3049,7 @@ export default async function handler(req, res) {
     }
 
     const body = JSON.parse(rawBody.toString("utf8") || "{}");
-    const events = Array.isArray(body.events) ? body.events : [];
+    const events = await claimWebhookEvents(Array.isArray(body.events) ? body.events : []);
 
     await Promise.all(events.map(handleEvent));
 

@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.10.03-131',
+  VERSION: '2026.10.22-139',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -84,6 +84,7 @@ function bridgeActionRole_(action, body) {
     'queuePayment', 'queueSlipReview', 'queueClose',
     'listReviewQueue', 'getReviewQueueItem', 'cancelReviewQueue',
     'planSourceWrite', 'resolveReviewQueue', 'rollbackReviewQueue',
+    'getLatestReversibleReview', 'rollbackReviewGroup',
     'rememberSlipMessage', 'rememberRecentImage', 'getRecentIdentityImages'
   ];
   const notifyActions = [
@@ -92,6 +93,7 @@ function bridgeActionRole_(action, body) {
     'getCustomerReminderBatch', 'markCustomerReminderSent',
     'listCustomerNotificationSheets', 'setCustomerAutoReminderSheet',
     'buildCustomerNotificationBatch', 'resolveCustomerNotificationRecipient',
+    'listCustomerMenuRefreshBatch',
     'getCustomerContactRecipients', 'getStaffSlipRecipients'
   ];
   if (paymentActions.indexOf(name) >= 0) return 'payment';
@@ -143,6 +145,8 @@ function doPost(e) {
         result = postDeploySelfTest_(); break;
       case 'readinessCheck':
         result = readinessCheck_(body); break;
+      case 'claimWebhookEvents':
+        result = claimWebhookEvents_(body); break;
       case 'setBotSwitch':
         result = setBotSwitch_(body); break;
       case 'getCustomerConversationPause':
@@ -193,10 +197,16 @@ function doPost(e) {
         result = buildCustomerNotificationBatch_(body); break;
       case 'resolveCustomerNotificationRecipient':
         result = resolveCustomerNotificationRecipient_(body); break;
+      case 'listCustomerMenuRefreshBatch':
+        result = listCustomerMenuRefreshBatch_(body); break;
       case 'getCustomerContactRecipients':
         result = getCustomerContactRecipients_(body); break;
       case 'getStaffSlipRecipients':
         result = getStaffSlipRecipients_(body); break;
+      case 'manualBindingRequest':
+      case 'manualBindingList':
+      case 'manualBindingApprove':
+        result = manualBindHandle_(body.action, body); break;
       case 'requestCustomerBinding':
         result = requestCustomerBinding_(body); break;
       case 'getCustomerSelf':
@@ -257,6 +267,10 @@ function doPost(e) {
         result = resolveReviewQueue_(body); break;
       case 'rollbackReviewQueue':
         result = rollbackReviewQueue_(body); break;
+      case 'getLatestReversibleReview':
+        result = getLatestReversibleReview_(body); break;
+      case 'rollbackReviewGroup':
+        result = rollbackReviewGroup_(body); break;
       case 'logAction':
         result = logAction_(body); break;
       default:
@@ -265,6 +279,40 @@ function doPost(e) {
     return json_(result);
   } catch (err) {
     return json_({ ok: false, error: String(err && err.message ? err.message : err) });
+  }
+}
+
+function claimWebhookEvents_(body) {
+  const ids = (body && Array.isArray(body.eventIds) ? body.eventIds : [])
+    .map(function(value) { return String(value || '').trim().slice(0, 160); })
+    .filter(function(value, index, all) { return !!value && all.indexOf(value) === index; })
+    .slice(0, 50);
+  if (!ids.length) return { ok: true, claimed: [], duplicates: [] };
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) throw new Error('Webhook claim lock timeout');
+  try {
+    const cache = CacheService.getScriptCache();
+    const keyed = ids.map(function(id) {
+      const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, id);
+      return { id: id, key: 'line-event-' + Utilities.base64EncodeWebSafe(digest).slice(0, 40) };
+    });
+    const keys = keyed.map(function(item) { return item.key; });
+    const existing = cache.getAll(keys) || {};
+    const values = {};
+    const claimed = [];
+    const duplicates = [];
+    keyed.forEach(function(item) {
+      if (existing[item.key]) duplicates.push(item.id);
+      else {
+        claimed.push(item.id);
+        values[item.key] = '1';
+      }
+    });
+    if (claimed.length) cache.putAll(values, 21600);
+    return { ok: true, claimed: claimed, duplicates: duplicates };
+  } finally {
+    lock.releaseLock();
   }
 }
 
@@ -282,7 +330,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.10.03-131', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.10.22-139', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -512,7 +560,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.10.03-131', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.10.22-139', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -941,7 +989,10 @@ function getReminderBatch_(body) {
     ok: true,
     alreadySent: alreadySent,
     lastSentAt: deliveryState.lastAt,
-    recipients: owners.concat(getReminderGroupIds_()).filter(function(v, i, a){ return a.indexOf(v) === i; }),
+    // Daily staff digests follow the active staff switch in column T. This keeps
+    // the owner included while allowing approved staff such as สุธิดา and ศรีโบ
+    // to receive the same operational reminder without granting owner powers.
+    recipients: getAllActiveStaffLineIds_().concat(getReminderGroupIds_()).filter(function(v, i, a){ return a.indexOf(v) === i; }),
     digest: {
       upcoming: (upcoming.items || []).slice(0, 10),
       today: (today.items || []).slice(0, 10),
@@ -1236,17 +1287,10 @@ function resolveCustomerNotificationRecipient_(body) {
 function buildCustomerNotificationBatch_(body) {
   const access = ownerAccessForCustomerNotification_(body);
   if (!access) return { ok: true, allowed: false, items: [], message: 'เฉพาะเจ้าของระบบเท่านั้น' };
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    return buildCustomerNotificationBatchLocked_(body, access);
-  } finally {
-    lock.releaseLock();
-  }
+  return buildCustomerNotificationBatchLocked_(body, access);
 }
 
 function buildCustomerNotificationBatchLocked_(body, access) {
-
   const source = String(body.source || '').trim();
   const sheet = String(body.sheet || '').trim();
   const field = String(body.field || '').trim();
@@ -1268,27 +1312,31 @@ function buildCustomerNotificationBatchLocked_(body, access) {
   const lineSheet = customerLineSheet_();
   if (lineSheet.getLastRow() < 2) return { ok: true, allowed: true, items: [] };
   const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
-  const notifySheet = backendSpreadsheet_().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
-  if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
-  const type = 'เจ้าของ-' + notificationFieldLabel_(field);
-  const todayKey = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
-  const existingKeys = {};
-  if (notifySheet.getLastRow() >= 2) {
-    const existing = notifySheet.getRange(2, 1, notifySheet.getLastRow() - 1, 11).getValues();
-    existing.forEach(function(r) {
-      const created = r[0] instanceof Date ? r[0] : new Date(r[0]);
-      if (isNaN(created.getTime()) || Utilities.formatDate(created, 'Asia/Bangkok', 'yyyy-MM-dd') !== todayKey) return;
-      if (String(r[1] || '').trim() !== type) return;
-      if (['รอส่ง', 'ส่งแล้ว'].indexOf(String(r[8] || '').trim()) === -1) return;
-      const key = String(r[4] || '').trim() + '|' + normalizeGeneral_(r[2]) + '|' + String(r[10] || '').trim();
-      existingKeys[key] = true;
-    });
+  const selectedKey = customerNotificationSheetKey_(source, sheet);
+  const targetMap = {};
+  targetMap[selectedKey] = true;
+  const customerMaps = customerReminderCustomerMaps_(bindings, targetMap, false);
+  const byQueue = customerMaps[selectedKey] || {};
+
+  let paymentMap;
+  try {
+    paymentMap = customerReminderPaymentMap_();
+  } catch (err) {
+    return {
+      ok: true,
+      allowed: true,
+      items: [],
+      count: 0,
+      source: source,
+      sheet: sheet,
+      field: field,
+      message: 'อ่านสถานะชำระไม่สำเร็จ จึงงดสร้างรายการเพื่อป้องกันยอดผิด'
+    };
   }
 
-  const items = [];
+  const type = 'เจ้าของ-' + notificationFieldLabel_(field);
+  const candidates = [];
   const seen = {};
-  const rowsToAppend = [];
-  const firstNewRowNo = notifySheet.getLastRow() + 1;
   for (let i = 0; i < bindings.length; i++) {
     const r = bindings[i];
     if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
@@ -1302,42 +1350,81 @@ function buildCustomerNotificationBatchLocked_(body, access) {
     const uniqueKey = lineUserId + '|' + normalizeGeneral_(queue);
     if (seen[uniqueKey]) continue;
     seen[uniqueKey] = true;
-    const notificationKey = uniqueKey + '|' + source + '/' + sheet;
-    if (existingKeys[notificationKey]) continue;
 
-    const c = findCustomerIdentity_(source, sheet, queue);
+    const c = byQueue[normalizeGeneral_(queue)];
     if (!c || normalizeGeneral_(c.name) !== normalizeGeneral_(r[2])) continue;
     if (isInactiveDueStatus_(c.status)) continue;
-    const summary = calculateCustomerSelfSummary_(c);
+    const summary = calculateCustomerSelfSummary_(c, paymentMap);
     const message = buildCustomerNotificationMessage_(summary, field, customMessage);
-    const rowNo = firstNewRowNo + rowsToAppend.length;
-    rowsToAppend.push([
-      new Date(),
-      type,
-      queue,
-      summary.name || '',
-      lineUserId,
-      summary.dueDate || '',
-      field === 'close' ? summary.calculatedClose : (field === 'payment' ? Number(summary.paymentTotal || 0) : ''),
-      message,
-      'รอส่ง',
-      '',
-      source + '/' + sheet
-    ]);
-    existingKeys[notificationKey] = true;
-    items.push({
-      rowNo: rowNo,
+    candidates.push({
+      notificationKey: uniqueKey + '|' + source + '/' + sheet,
       lineUserId: lineUserId,
       queue: queue,
       name: summary.name || '',
-      field: field,
+      dueDate: summary.dueDate || '',
+      amount: field === 'close' ? summary.calculatedClose : (field === 'payment' ? Number(summary.paymentTotal || 0) : ''),
       message: message,
+      field: field,
       summary: summary
     });
   }
 
-  if (rowsToAppend.length) {
-    notifySheet.getRange(firstNewRowNo, 1, rowsToAppend.length, 11).setValues(rowsToAppend);
+  const items = [];
+  if (candidates.length) {
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(5000)) throw new Error('Customer notification queue lock timeout');
+    try {
+      const notifySheet = backendSpreadsheet_().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
+      if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
+      const todayKey = Utilities.formatDate(new Date(), 'Asia/Bangkok', 'yyyy-MM-dd');
+      const existingKeys = {};
+      if (notifySheet.getLastRow() >= 2) {
+        const existing = notifySheet.getRange(2, 1, notifySheet.getLastRow() - 1, 11).getValues();
+        existing.forEach(function(r) {
+          const created = r[0] instanceof Date ? r[0] : new Date(r[0]);
+          if (isNaN(created.getTime()) || Utilities.formatDate(created, 'Asia/Bangkok', 'yyyy-MM-dd') !== todayKey) return;
+          if (String(r[1] || '').trim() !== type) return;
+          if (['รอส่ง', 'ส่งแล้ว'].indexOf(String(r[8] || '').trim()) === -1) return;
+          const key = String(r[4] || '').trim() + '|' + normalizeGeneral_(r[2]) + '|' + String(r[10] || '').trim();
+          existingKeys[key] = true;
+        });
+      }
+
+      const rowsToAppend = [];
+      const firstNewRowNo = notifySheet.getLastRow() + 1;
+      candidates.forEach(function(candidate) {
+        if (existingKeys[candidate.notificationKey]) return;
+        const rowNo = firstNewRowNo + rowsToAppend.length;
+        rowsToAppend.push([
+          new Date(),
+          type,
+          candidate.queue,
+          candidate.name,
+          candidate.lineUserId,
+          candidate.dueDate,
+          candidate.amount,
+          candidate.message,
+          'รอส่ง',
+          '',
+          source + '/' + sheet
+        ]);
+        existingKeys[candidate.notificationKey] = true;
+        items.push({
+          rowNo: rowNo,
+          lineUserId: candidate.lineUserId,
+          queue: candidate.queue,
+          name: candidate.name,
+          field: candidate.field,
+          message: candidate.message,
+          summary: candidate.summary
+        });
+      });
+      if (rowsToAppend.length) {
+        notifySheet.getRange(firstNewRowNo, 1, rowsToAppend.length, 11).setValues(rowsToAppend);
+      }
+    } finally {
+      lock.releaseLock();
+    }
   }
 
   logAction_({
@@ -1350,7 +1437,7 @@ function buildCustomerNotificationBatchLocked_(body, access) {
     result: 'เตรียมส่ง ' + items.length + ' ราย',
     actionName: 'customerNotificationBatch',
     status: 'เตรียมส่ง',
-    note: ''
+    note: 'Notify v136 preload source/payment; lock เฉพาะเขียนคิว'
   });
 
   return {
@@ -1401,14 +1488,219 @@ function getCustomerContactRecipients_(body) {
   };
 }
 
-function getCustomerReminderBatch_(body) {
-  const lock = LockService.getScriptLock();
-  lock.waitLock(20000);
-  try {
-    return getCustomerReminderBatchLocked_(body);
-  } finally {
-    lock.releaseLock();
+function customerReminderCustomerMaps_(bindings, enabledMap, requireNotifications) {
+  const backend = backendSpreadsheet_();
+  const sourceSheet = backend.getSheetByName(CONFIG.SOURCE_SHEET);
+  if (!sourceSheet || sourceSheet.getLastRow() < 2) return {};
+
+  const sourceRows = sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1, 7).getValues();
+  const sourceIds = {};
+  sourceRows.forEach(function(r) {
+    const source = String(r[0] || '').trim();
+    if (!source || !isTrue_(r[2])) return;
+    const id = extractSpreadsheetId_(String(r[1] || '').trim());
+    if (id) sourceIds[source] = id;
+  });
+
+  const targets = {};
+  bindings.forEach(function(r) {
+    if (String(r[7] || '').trim() !== 'ใช้งาน') return;
+    if (requireNotifications !== false && !isTrue_(r[10])) return;
+    const source = String(r[4] || '').trim();
+    const sheet = String(r[5] || '').trim();
+    const key = customerNotificationSheetKey_(source, sheet);
+    if (!enabledMap[key] || !isActiveCustomerTarget_(source, sheet)) return;
+    targets[key] = { source: source, sheet: sheet };
+  });
+
+  const workbooks = {};
+  const maps = {};
+  Object.keys(targets).forEach(function(key) {
+    const target = targets[key];
+    const id = sourceIds[target.source];
+    if (!id) { maps[key] = {}; return; }
+    try {
+      const ss = workbooks[id] || (workbooks[id] = SpreadsheetApp.openById(id));
+      const sh = ss.getSheetByName(target.sheet);
+      if (!sh) { maps[key] = {}; return; }
+      const h = detectHeaders_(sh);
+      if (!h || !h.queue) { maps[key] = {}; return; }
+      const startRow = h.headerRow + 1;
+      const lastRow = sh.getLastRow();
+      if (startRow > lastRow) { maps[key] = {}; return; }
+      const rowCount = Math.min(lastRow - h.headerRow, CONFIG.MAX_ROWS_PER_TAB);
+      const cols = Object.keys(h)
+        .filter(function(k){ return k !== 'headerRow'; })
+        .map(function(k){ return h[k]; })
+        .filter(function(v){ return v > 0; });
+      const maxCol = cols.length ? Math.max.apply(null, cols) : h.queue;
+      const rows = sh.getRange(startRow, 1, rowCount, maxCol).getDisplayValues();
+      const byQueue = {};
+      rows.forEach(function(row, offset) {
+        const queue = getCell_(row, h.queue);
+        const queueKey = normalizeGeneral_(queue);
+        if (!queueKey || byQueue[queueKey]) return;
+        byQueue[queueKey] = {
+          source: target.source,
+          sheet: target.sheet,
+          row: startRow + offset,
+          queue: queue,
+          name: getCell_(row, h.name),
+          phone: getCell_(row, h.phone),
+          appleId: getCell_(row, h.appleId),
+          model: getCell_(row, h.model),
+          status: getCell_(row, h.status),
+          principal: getCell_(row, h.principal),
+          fee: getCell_(row, h.fee),
+          saleDate: getCell_(row, h.saleDate),
+          dueDate: getCell_(row, h.dueDate),
+          outstanding: getCell_(row, h.outstanding),
+          closeAmount: getCell_(row, h.closeAmount)
+        };
+      });
+      maps[key] = byQueue;
+    } catch (err) {
+      console.warn('Customer reminder source preload failed', {
+        source: target.source,
+        sheet: target.sheet,
+        error: String(err && err.message ? err.message : err).slice(0, 160)
+      });
+      maps[key] = {};
+    }
+  });
+  return maps;
+}
+
+function listCustomerMenuRefreshBatch_(body) {
+  // Read-only batch for the daily Rich Menu refresh. Never writes customer,
+  // payment, notification, or LINE state from GAS.
+  if (!isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)) ||
+      !isTrue_(getSettingValue_('BOT_CUSTOMER_ENABLED', true))) {
+    return { ok: true, items: [], message: 'ระบบลูกค้าปิดใช้งานชั่วคราว' };
   }
+
+  const lineSheet = customerLineSheet_();
+  if (lineSheet.getLastRow() < 2) {
+    return { ok: true, items: [], generatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm') };
+  }
+
+  const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
+  const enabledMap = {};
+  (CONFIG.CUSTOMER_BINDING_TARGETS || []).forEach(function(target) {
+    const source = String(target && target.source || '').trim();
+    const sheet = String(target && target.sheet || '').trim();
+    if (!source || !sheet) return;
+    enabledMap[customerNotificationSheetKey_(source, sheet)] = true;
+  });
+
+  // Reuse the v136 preload path, but include every active binding regardless of
+  // the automatic-notification checkbox. Rich Menu state is account UI, not a
+  // notification delivery preference.
+  const customerMaps = customerReminderCustomerMaps_(bindings, enabledMap, false);
+  const items = [];
+  const seenLine = {};
+
+  for (let i = 0; i < bindings.length; i++) {
+    const r = bindings[i];
+    if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
+
+    const lineUserId = String(r[1] || '').trim();
+    const source = String(r[4] || '').trim();
+    const sheet = String(r[5] || '').trim();
+    const queue = String(r[6] || '').trim();
+    if (!lineUserId || !source || !sheet || !queue) continue;
+    if (!isActiveCustomerTarget_(source, sheet)) continue;
+    if (seenLine[lineUserId]) continue;
+    seenLine[lineUserId] = true;
+
+    const sheetKey = customerNotificationSheetKey_(source, sheet);
+    const byQueue = customerMaps[sheetKey] || {};
+    const c = byQueue[normalizeGeneral_(queue)];
+    const exact = !!c && normalizeGeneral_(c.name) === normalizeGeneral_(r[2]);
+
+    if (!exact) {
+      items.push({
+        lineUserId: lineUserId,
+        source: source,
+        sheet: sheet,
+        queue: queue,
+        name: String(r[2] || '').trim(),
+        resolved: false,
+        status: '',
+        dueDate: '',
+        state: 'checking'
+      });
+      continue;
+    }
+
+    const inactive = isInactiveDueStatus_(c.status);
+    items.push({
+      lineUserId: lineUserId,
+      source: source,
+      sheet: sheet,
+      queue: String(c.queue || queue).trim(),
+      name: String(c.name || r[2] || '').trim(),
+      resolved: true,
+      status: String(c.status || '').trim(),
+      dueDate: inactive ? '' : String(c.dueDate || '').trim(),
+      inactive: inactive,
+      state: inactive ? 'closed' : (String(c.dueDate || '').trim() ? 'due' : 'checking')
+    });
+  }
+
+  return {
+    ok: true,
+    items: items,
+    count: items.length,
+    generatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
+  };
+}
+
+function customerReminderPaymentMap_() {
+  const map = {};
+  const sh = paymentStateSheet_(false);
+  if (!sh || sh.getLastRow() < 2) return map;
+  const rows = sh.getRange(2, 1, sh.getLastRow() - 1, 9).getValues();
+  rows.forEach(function(row) {
+    const key = String(row[0] || '').trim();
+    if (!key) return;
+    let byDay = {};
+    let reviewRows = [];
+    try { byDay = row[6] ? JSON.parse(String(row[6])) : {}; } catch (err) {}
+    try { reviewRows = row[7] ? JSON.parse(String(row[7])) : []; } catch (err) {}
+    map[key] = normalizePaymentCycle_({
+      total: row[5],
+      byDay: byDay,
+      reviewRows: reviewRows
+    });
+  });
+  return map;
+}
+
+function customerReminderExistingMap_(notifySheet, todayText) {
+  const map = {};
+  if (!notifySheet || notifySheet.getLastRow() < 2) return map;
+  const existing = notifySheet.getRange(2, 1, notifySheet.getLastRow() - 1, 11).getValues();
+  existing.forEach(function(r, i) {
+    if (['ลูกค้า-ล่วงหน้า', 'ลูกค้า-ครบกำหนด', 'ลูกค้า-ค้างชำระ'].indexOf(String(r[1] || '').trim()) === -1) return;
+    const createdDay = r[0] instanceof Date
+      ? Utilities.formatDate(r[0], 'Asia/Bangkok', 'yyyy-MM-dd')
+      : '';
+    if (createdDay !== todayText) return;
+    const key = [
+      String(r[10] || '').trim(),
+      normalizeGeneral_(r[2]),
+      String(r[4] || '').trim()
+    ].join('|');
+    const previous = map[key];
+    if (previous && ['ส่งแล้ว', 'รอส่ง'].indexOf(previous.status) !== -1) return;
+    map[key] = { rowNo: i + 2, status: String(r[8] || '').trim() };
+  });
+  return map;
+}
+
+function getCustomerReminderBatch_(body) {
+  return getCustomerReminderBatchLocked_(body);
 }
 
 function getCustomerReminderBatchLocked_(body) {
@@ -1420,9 +1712,6 @@ function getCustomerReminderBatchLocked_(body) {
   const lineSheet = customerLineSheet_();
   if (lineSheet.getLastRow() < 2) return { ok: true, items: [] };
 
-  const notifySheet = backendSpreadsheet_().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
-  if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
-
   const enabledKeys = getCustomerAutoReminderSheetKeys_();
   const enabledMap = {};
   enabledKeys.forEach(function(k){ enabledMap[k] = true; });
@@ -1431,34 +1720,28 @@ function getCustomerReminderBatchLocked_(body) {
   const todayParts = todayText.split('-').map(Number);
   const todaySerial = Math.floor(Date.UTC(todayParts[0], todayParts[1] - 1, todayParts[2]) / 86400000);
   const bindings = lineSheet.getRange(2, 1, lineSheet.getLastRow() - 1, 13).getDisplayValues();
+  const customerMaps = customerReminderCustomerMaps_(bindings, enabledMap);
 
-  const existing = notifySheet.getLastRow() >= 2
-    ? notifySheet.getRange(2, 1, notifySheet.getLastRow() - 1, 11).getValues()
-    : [];
-
-  const existingMap = {};
-  existing.forEach(function(r, i) {
-    if (['ลูกค้า-ครบกำหนด', 'ลูกค้า-ค้างชำระ'].indexOf(String(r[1] || '').trim()) === -1) return;
-    const createdDay = r[0] instanceof Date
-      ? Utilities.formatDate(r[0], 'Asia/Bangkok', 'yyyy-MM-dd')
-      : '';
-    if (createdDay !== todayText) return;
-    const key = [
-      String(r[10] || '').trim(),
-      normalizeGeneral_(r[2]),
-      String(r[4] || '').trim()
-    ].join('|');
-    const previous = existingMap[key];
-    if (previous && ['ส่งแล้ว', 'รอส่ง'].indexOf(previous.status) !== -1) return;
-    existingMap[key] = {
-      rowNo: i + 2,
-      status: String(r[8] || '').trim()
+  let paymentMap;
+  try {
+    paymentMap = customerReminderPaymentMap_();
+  } catch (err) {
+    console.warn('Customer reminder payment preload failed', {
+      error: String(err && err.message ? err.message : err).slice(0, 160)
+    });
+    return {
+      ok: true,
+      items: [],
+      enabledSheets: enabledKeys,
+      message: 'อ่านสถานะชำระไม่สำเร็จ จึงงดเตือนรอบนี้เพื่อป้องกันแจ้งยอดผิด'
     };
-  });
+  }
 
-  const items = [];
-  const rowsToAppend = [];
-  const firstNewRowNo = notifySheet.getLastRow() + 1;
+  const candidates = [];
+  const seen = {};
+  const remindDaysRaw = Number(getSettingValue_('REMIND_BEFORE_DAYS', 1));
+  const remindDays = isFinite(remindDaysRaw) ? Math.max(0, remindDaysRaw) : 1;
+
   for (let i = 0; i < bindings.length; i++) {
     const r = bindings[i];
     if (String(r[7] || '').trim() !== 'ใช้งาน') continue;
@@ -1473,11 +1756,10 @@ function getCustomerReminderBatchLocked_(body) {
     const queue = String(r[6] || '').trim();
     if (!lineUserId || !queue) continue;
 
-    const c = findCustomerIdentity_(source, sheet, queue);
+    const byQueue = customerMaps[sheetKey] || {};
+    const c = byQueue[normalizeGeneral_(queue)];
     if (!c || normalizeGeneral_(c.name) !== normalizeGeneral_(r[2])) continue;
-    // An approved payment advances the source due date. Closed accounts and
-    // rows without a payable fee must never enter the daily reminder queue.
-    if (!String(c.name || '').trim() || isInactiveDueStatus_(c.status) || parseMoney_(c.fee) <= 0) continue;
+    if (!String(c.name || '').trim() || !isActiveDueStatus_(c.status) || parseMoney_(c.fee) <= 0) continue;
     const due = parseDateFlexible_(c.dueDate);
     if (!due) continue;
 
@@ -1485,64 +1767,38 @@ function getCustomerReminderBatchLocked_(body) {
     const dueParts = dueText.split('-').map(Number);
     const dueSerial = Math.floor(Date.UTC(dueParts[0], dueParts[1] - 1, dueParts[2]) / 86400000);
     const daysFromDue = todaySerial - dueSerial;
+    if (daysFromDue < -remindDays) continue;
 
-    if (daysFromDue < 0) continue;
-    let paidTotal = 0;
-    try {
-      paidTotal = paymentNumber_(
-        paymentCycleRecord_(source, sheet, c.queue, due).cycle.total
-      );
-    } catch (err) {
-      // Do not claim that an unreadable payment ledger is unpaid.
-      continue;
-    }
+    const paymentKey = paymentCycleKey_(source, sheet, c.queue, due);
+    const cycle = paymentMap[paymentKey] || { total: 0 };
+    const paidTotal = paymentNumber_(cycle.total);
     const remaining = Math.round((parseMoney_(c.fee) - paidTotal) * 100) / 100;
     if (remaining <= 0) continue;
 
+    const upcoming = daysFromDue < 0;
     const overdue = daysFromDue > 0;
     const dueDisplay = formatThaiDate_(due);
     const sourceKey = source + '/' + sheet;
     const key = [sourceKey, normalizeGeneral_(c.queue), lineUserId].join('|');
-    const found = existingMap[key];
-    // A previous request can finish writing the queue but lose its HTTP response.
-    // Reuse pending rows on the next attempt; only a confirmed sent row is final.
-    if (found && found.status === 'ส่งแล้ว') continue;
+    if (seen[key]) continue;
+    seen[key] = true;
 
     const message = [
-      overdue ? 'แจ้งเตือนยอดที่เลยกำหนดชำระ' : 'แจ้งเตือนวันครบกำหนดชำระ',
+      upcoming ? 'แจ้งเตือนล่วงหน้าก่อนวันครบกำหนดชำระ' :
+        (overdue ? 'แจ้งเตือนยอดที่เลยกำหนดชำระ' : 'แจ้งเตือนวันครบกำหนดชำระ'),
       'ชื่อ: ' + String(c.name || '').trim(),
       'คิว: ' + String(c.queue || '').trim(),
       'วันครบกำหนดชำระ: ' + dueDisplay,
-      overdue ? 'เลยกำหนด ' + daysFromDue + ' วัน' : '',
+      upcoming ? 'ครบกำหนดในอีก ' + Math.abs(daysFromDue) + ' วัน' :
+        (overdue ? 'เลยกำหนด ' + daysFromDue + ' วัน' : ''),
       paidTotal > 0 ? 'รับชำระแล้ว ' + paidTotal + ' บาท คงเหลือ ' + remaining + ' บาท' : '',
       '',
       'กดปุ่มด้านล่างเพื่อตรวจสอบยอดและรายละเอียด'
     ].filter(Boolean).join('\n');
 
-    let rowNo = found ? found.rowNo : 0;
-    if (!rowNo) {
-      rowNo = firstNewRowNo + rowsToAppend.length;
-      rowsToAppend.push([
-        new Date(),
-        overdue ? 'ลูกค้า-ค้างชำระ' : 'ลูกค้า-ครบกำหนด',
-        String(c.queue || '').trim(),
-        String(c.name || '').trim(),
-        lineUserId,
-        dueDisplay,
-        parseMoney_(c.fee),
-        message,
-        'รอส่ง',
-        '',
-        sourceKey
-      ]);
-      existingMap[key] = { rowNo: rowNo, status: 'รอส่ง' };
-    } else {
-      notifySheet.getRange(rowNo, 8).setValue(message);
-      notifySheet.getRange(rowNo, 9).setValue('รอส่ง');
-    }
-
-    items.push({
-      rowNo: rowNo,
+    candidates.push({
+      key: key,
+      type: upcoming ? 'ลูกค้า-ล่วงหน้า' : (overdue ? 'ลูกค้า-ค้างชำระ' : 'ลูกค้า-ครบกำหนด'),
       lineUserId: lineUserId,
       queue: String(c.queue || '').trim(),
       name: String(c.name || '').trim(),
@@ -1550,12 +1806,73 @@ function getCustomerReminderBatchLocked_(body) {
       fee: parseMoney_(c.fee),
       source: source,
       sheet: sheet,
+      sourceKey: sourceKey,
       message: message
     });
   }
 
-  if (rowsToAppend.length) {
-    notifySheet.getRange(firstNewRowNo, 1, rowsToAppend.length, 11).setValues(rowsToAppend);
+  if (!candidates.length) {
+    return {
+      ok: true,
+      items: [],
+      enabledSheets: enabledKeys,
+      generatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
+    };
+  }
+
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(5000)) throw new Error('Customer reminder queue lock timeout');
+  const items = [];
+  try {
+    const notifySheet = backendSpreadsheet_().getSheetByName(CONFIG.NOTIFICATION_QUEUE_SHEET);
+    if (!notifySheet) throw new Error('ไม่พบชีต ' + CONFIG.NOTIFICATION_QUEUE_SHEET);
+    const existingMap = customerReminderExistingMap_(notifySheet, todayText);
+    const rowsToAppend = [];
+    const firstNewRowNo = notifySheet.getLastRow() + 1;
+
+    candidates.forEach(function(candidate) {
+      const found = existingMap[candidate.key];
+      if (found && found.status === 'ส่งแล้ว') return;
+
+      let rowNo = found ? found.rowNo : 0;
+      if (!rowNo) {
+        rowNo = firstNewRowNo + rowsToAppend.length;
+        rowsToAppend.push([
+          new Date(),
+          candidate.type,
+          candidate.queue,
+          candidate.name,
+          candidate.lineUserId,
+          candidate.dueDate,
+          candidate.fee,
+          candidate.message,
+          'รอส่ง',
+          '',
+          candidate.sourceKey
+        ]);
+        existingMap[candidate.key] = { rowNo: rowNo, status: 'รอส่ง' };
+      } else {
+        notifySheet.getRange(rowNo, 8, 1, 2).setValues([[candidate.message, 'รอส่ง']]);
+      }
+
+      items.push({
+        rowNo: rowNo,
+        lineUserId: candidate.lineUserId,
+        queue: candidate.queue,
+        name: candidate.name,
+        dueDate: candidate.dueDate,
+        fee: candidate.fee,
+        source: candidate.source,
+        sheet: candidate.sheet,
+        message: candidate.message
+      });
+    });
+
+    if (rowsToAppend.length) {
+      notifySheet.getRange(firstNewRowNo, 1, rowsToAppend.length, 11).setValues(rowsToAppend);
+    }
+  } finally {
+    lock.releaseLock();
   }
 
   if (items.length) {
@@ -1569,7 +1886,7 @@ function getCustomerReminderBatchLocked_(body) {
       result: 'เตรียมส่ง ' + items.length + ' ราย',
       actionName: 'customerAutoReminderBatch',
       status: 'เตรียมส่ง',
-      note: ''
+      note: 'Notify v136 preload source/payment; lock เฉพาะเขียนคิว'
     });
   }
 
@@ -2639,7 +2956,7 @@ function getActiveCustomerBindings_(lineUserId) {
   return out;
 }
 
-function calculateCustomerSelfSummary_(c) {
+function calculateCustomerSelfSummary_(c, paymentMap) {
   const principal = parseMoney_(c.principal);
   const fee = parseMoney_(c.fee);
   const saleDate = parseDateFlexible_(c.saleDate);
@@ -2647,9 +2964,14 @@ function calculateCustomerSelfSummary_(c) {
   let paidForCycle = 0;
   if (dueDate && c.source && c.sheet && c.queue) {
     try {
-      paidForCycle = paymentNumber_(
-        paymentCycleRecord_(c.source, c.sheet, c.queue, dueDate).cycle.total
-      );
+      if (paymentMap) {
+        const paymentKey = paymentCycleKey_(c.source, c.sheet, c.queue, dueDate);
+        paidForCycle = paymentNumber_((paymentMap[paymentKey] || { total: 0 }).total);
+      } else {
+        paidForCycle = paymentNumber_(
+          paymentCycleRecord_(c.source, c.sheet, c.queue, dueDate).cycle.total
+        );
+      }
     } catch (err) {}
   }
   const now = new Date();
@@ -2659,8 +2981,9 @@ function calculateCustomerSelfSummary_(c) {
   const discountDays = Number(getSettingValue_('CLOSE_DISCOUNT_DAYS', 5)) || 5;
   const discountPercent = Number(getSettingValue_('CLOSE_FEE_DISCOUNT_PERCENT', 50)) || 50;
   const cycleDays = 10;
+  const inactive = isInactiveDueStatus_(c.status);
 
-  const overdueDays = dueDate && !isInactiveDueStatus_(c.status) ? Math.max(0, daysBetween_(asOf, dueDate)) : 0;
+  const overdueDays = dueDate && !inactive ? Math.max(0, daysBetween_(asOf, dueDate)) : 0;
   const cyclesCrossed = overdueDays > 0 ? Math.floor(overdueDays / cycleDays) : 0;
   const crossCycle = cyclesCrossed >= 1;
   const accumulatedFee = fee * (1 + cyclesCrossed);
@@ -2668,7 +2991,7 @@ function calculateCustomerSelfSummary_(c) {
 
   const discountStart = latestDiscountStart_(c, saleDate);
   const daysFromDiscountStart = discountStart ? daysBetween_(asOf, discountStart) : null;
-  const discountEligible = !!discountStart && !crossCycle &&
+  const discountEligible = !inactive && !!discountStart && !crossCycle &&
     daysFromDiscountStart >= 0 && daysFromDiscountStart <= discountDays;
 
   const feeApplied = discountEligible
@@ -2683,6 +3006,7 @@ function calculateCustomerSelfSummary_(c) {
     phoneMasked: maskCustomerPhone_(c.phone),
     source: String(c.source || '').trim(),
     status: String(c.status || '').trim(),
+    inactive: inactive,
     principal: principal,
     fee: fee,
     principalPresent: String(c.principal || '').trim() !== '',
@@ -2695,12 +3019,12 @@ function calculateCustomerSelfSummary_(c) {
     outstanding: parseMoney_(c.outstanding),
     overdueDays: overdueDays,
     lateFee: lateFee,
-    paymentTotal: Math.max(0, Math.round((accumulatedFee + lateFee - paidForCycle) * 100) / 100),
+    paymentTotal: inactive ? 0 : Math.max(0, Math.round((accumulatedFee + lateFee - paidForCycle) * 100) / 100),
     discountEligible: discountEligible,
     discountPercent: discountEligible ? discountPercent : 0,
     discountAmount: discountAmount,
     feeApplied: feeApplied,
-    calculatedClose: Math.max(0, Math.round((principal + feeApplied + lateFee - paidForCycle) * 100) / 100),
+    calculatedClose: inactive ? 0 : Math.max(0, Math.round((principal + feeApplied + lateFee - paidForCycle) * 100) / 100),
     calculatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
   };
 }
@@ -2885,7 +3209,8 @@ function getCalculatedSummary_(body) {
   const discountPercent = Number(getSettingValue_('CLOSE_FEE_DISCOUNT_PERCENT', 50)) || 50;
   const cycleDays = 10;
 
-  const overdueDays = dueDate && !isInactiveDueStatus_(c.status) ? Math.max(0, daysBetween_(asOf, dueDate)) : 0;
+  const inactive = isInactiveDueStatus_(c.status);
+  const overdueDays = dueDate && !inactive ? Math.max(0, daysBetween_(asOf, dueDate)) : 0;
   const cyclesCrossed = overdueDays > 0 ? Math.floor(overdueDays / cycleDays) : 0;
   const crossCycle = cyclesCrossed >= 1;
   const accumulatedFee = fee * (1 + cyclesCrossed);
@@ -2893,18 +3218,24 @@ function getCalculatedSummary_(body) {
 
   const discountStart = latestDiscountStart_(c, saleDate);
   const daysFromDiscountStart = discountStart ? daysBetween_(asOf, discountStart) : null;
-  const discountEligible = !!discountStart && !crossCycle &&
+  const discountEligible = !inactive && !!discountStart && !crossCycle &&
     daysFromDiscountStart >= 0 && daysFromDiscountStart <= discountDays;
 
   const feeApplied = discountEligible
     ? accumulatedFee * (1 - discountPercent / 100)
     : accumulatedFee;
-  const calculatedClose = principal + feeApplied + lateFee;
+  const calculatedClose = inactive ? 0 : principal + feeApplied + lateFee;
 
   return {
     ok: true,
+    inactive: inactive,
+    message: inactive
+      ? 'คิว ' + String(c.queue || query) + ' อยู่สถานะ ' + String(c.status || 'ปิดยอด') + ' จึงไม่มีรายการต้องชำระ'
+      : '',
     summary: {
       customer: c,
+      status: String(c.status || '').trim(),
+      inactive: inactive,
       principal: principal,
       fee: fee,
       dueDate: dueDate ? formatThaiDate_(dueDate) : String(c.dueDate || ''),
@@ -2994,7 +3325,7 @@ function listDueCustomers_(body) {
           if (mode === 'sold' && statusClass !== 'sold') continue;
           if (mode === 'fraud' && statusClass !== 'fraud') continue;
           if (mode === 'installment' && statusClass !== 'installment') continue;
-          if (!statusMode && isInactiveDueStatus_(status)) continue;
+          if (!statusMode && !isActiveDueStatus_(status)) continue;
 
           const dueText = getCell_(row, h.dueDate);
           const due = parseDateFlexible_(dueText);
@@ -3808,6 +4139,9 @@ function planSourceWrite_(body) {
   if (type === 'บันทึกชำระ') {
     proposed.push('บันทึกเหตุการณ์ชำระลงประวัติลูกค้า');
     proposed.push('ยังไม่กำหนดคอลัมน์เขียนกลับต้นทางจนกว่า mapping แหล่งนี้จะผ่านการตรวจ');
+  } else if (type === 'ตัดต้น') {
+    proposed.push('เมื่อกดผ่าน: ลดเงินต้น J, คงสูตรค่าเช่า K, ไม่เปลี่ยนวันครบกำหนด M');
+    proposed.push('ช่องวันที่แถวลูกค้าใส่ Note เท่านั้น ไม่แก้ value/formula; ยอดตัดต้นบวกที่แถว N=คืนต้น ของวันรับเงินจริง เช่น BB25 และบันทึก History/Audit');
   } else if (type === 'ปิดยอด') {
     proposed.push('บันทึกเหตุการณ์ปิดยอดลงประวัติลูกค้า');
     proposed.push('ยังไม่แก้สถานะ/ยอดในชีตต้นทางจนกว่า mapping แหล่งนี้จะผ่านการตรวจ');
@@ -3907,23 +4241,35 @@ function getReviewQueueItem_(body) {
   };
 }
 
-function appendHistoryFromApprovedReview_(reviewRow, reviewRowNo, approver, sourceWritten, paymentTiming) {
+function appendHistoryFromApprovedReview_(reviewRow, reviewRowNo, approver, sourceWritten, paymentTiming, sourceWrite) {
   const type = String(reviewRow[1] || '').trim();
-  if (type !== 'บันทึกชำระ' && type !== 'รับค่าปรับ' && type !== 'ปิดยอด') return false;
+  if (type !== 'บันทึกชำระ' && type !== 'รับค่าปรับ' && type !== 'ตัดต้น' && type !== 'ปิดยอด') return false;
 
   const ss = backendSpreadsheet_();
   const sh = ss.getSheetByName(CONFIG.HISTORY_SHEET);
   if (!sh) return false;
+  if (sh.getLastRow() >= 2) {
+    const firstRow = Math.max(2, sh.getLastRow() - 499);
+    const notes = sh.getRange(firstRow, 16, sh.getLastRow() - firstRow + 1, 1).getDisplayValues();
+    const marker = 'คิวตรวจสอบ #' + reviewRowNo;
+    if (notes.some(function(r) { return String(r[0] || '').indexOf(marker) >= 0; })) return true;
+  }
 
   const sourceParts = String(reviewRow[4] || '').split(' / ');
   const source = String(sourceParts[0] || '').trim();
   const sourceSheet = sourceParts.slice(1).join(' / ').trim();
-  const eventType = type === 'ปิดยอด' ? 'ปิดยอด' : type === 'รับค่าปรับ' ? 'ค่าปรับ' : 'ชำระค่าเช่า';
+  const eventType = type === 'ปิดยอด' ? 'ปิดยอด' : type === 'รับค่าปรับ' ? 'ค่าปรับ' : type === 'ตัดต้น' ? 'ตัดต้น' : 'ชำระค่าเช่า';
   const note = 'อนุมัติจากคิวตรวจสอบ #' + reviewRowNo + (sourceWritten ? ' / ซิงก์ชีตต้นทางแล้ว' : ' / ยังไม่ซิงก์ชีตต้นทาง') +
-    (paymentTiming && paymentTiming.timingDetail ? ' / ' + paymentTiming.timingDetail : '');
+    (paymentTiming && paymentTiming.timingDetail ? ' / ' + paymentTiming.timingDetail : '') +
+    (type === 'ตัดต้น' && sourceWrite
+      ? ' / เงินต้น ' + sourceWrite.principalBefore + ' - ' + sourceWrite.amount + ' = ' + sourceWrite.principalAfter +
+        ' / ค่าเช่า ' + sourceWrite.feeBefore + ' -> ' + sourceWrite.feeAfter +
+        ' / source ' + source + ' / sheet ' + sourceSheet + ' / row ' + sourceWrite.sourceRow +
+        ' / queue ' + String(reviewRow[2] || '').trim()
+      : '');
 
   sh.appendRow([
-    type === 'รับค่าปรับ' ? finePaidDate_(reviewRow[5]) : paymentTiming && paymentTiming.paidAt ? new Date(paymentTiming.paidAt) : new Date(),
+    type === 'รับค่าปรับ' ? finePaidDate_(reviewRow[5]) : type === 'ตัดต้น' ? principalPaidDate_(reviewRow[5]) : paymentTiming && paymentTiming.paidAt ? new Date(paymentTiming.paidAt) : new Date(),
     source,
     sourceSheet,
     String(reviewRow[2] || '').trim(),
@@ -4281,7 +4627,7 @@ function loadPaymentBackupFromLog_(reviewRowNo) {
     if (!sh || sh.getLastRow() < 2) return null;
     const values = sh.getRange(2, 1, sh.getLastRow() - 1, 11).getDisplayValues();
     for (let i = values.length - 1; i >= 0; i--) {
-      if (String(values[i][8] || '').trim() !== 'paymentSourceBackup') continue;
+      if (['paymentSourceBackupAfter', 'principalApprovedAudit', 'paymentSourceBackup'].indexOf(String(values[i][8] || '').trim()) < 0) continue;
       if (String(values[i][5] || '').trim() !== String(reviewRowNo)) continue;
       const raw = String(values[i][10] || '').trim();
       if (!raw) continue;
@@ -4349,6 +4695,34 @@ function finePaidDate_(detail) {
   if (!m) return null;
   const d = new Date(m[1] + 'T00:00:00+07:00');
   return !isNaN(d.getTime()) && dateKey_(d) === m[1] && m[1] <= dateKey_(new Date()) ? d : null;
+}
+
+function principalPaidDate_(detail) {
+  const m = String(detail || '').match(/paymentKind=principal[\s\S]*วันที่รับเงินจริง: (\d{4}-\d{2}-\d{2})/);
+  if (!m) return null;
+  const d = new Date(m[1] + 'T00:00:00+07:00');
+  return !isNaN(d.getTime()) && dateKey_(d) === m[1] && m[1] <= dateKey_(new Date()) ? d : null;
+}
+
+function principalCalendarAmount_(range) {
+  if (range.getFormula()) return null;
+  const value = range.getValue();
+  if (value === '' || value == null) return 0;
+  if (typeof value !== 'number' && typeof value !== 'string') return null;
+  const number = typeof value === 'number' ? value : Number(String(value).replace(/,/g, '').trim());
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function findPrincipalTotalRow_(sheet, headers) {
+  if (!headers || !headers.note) return 0;
+  const lastRow = sheet.getLastRow();
+  if (lastRow < 1) return 0;
+  const labels = sheet.getRange(1, headers.note, lastRow, 1).getDisplayValues();
+  const rows = [];
+  labels.forEach(function(r, i) {
+    if (normalizeGeneral_(r[0]) === normalizeGeneral_('คืนต้น')) rows.push(i + 1);
+  });
+  return rows.length === 1 ? rows[0] : 0;
 }
 
 function findFineTotalRow_(sheet, headers) {
@@ -4468,6 +4842,215 @@ function applyApprovedFineToSource_(reviewRow, rawReviewRow, reviewRowNo) {
     paidDate: dateKey_(paidAt), source: sourceName, sheet: sourceSheet, sourceRow: Number(customer.row) };
 }
 
+function applyApprovedPrincipalToSource_(reviewRow, rawReviewRow, reviewRowNo) {
+  if (!isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false))) {
+    return { ok: false, message: 'ระบบเขียนชีตต้นทางยังปิดอยู่' };
+  }
+
+  const sourceParts = String(reviewRow[4] || '').split(' / ');
+  const sourceName = String(sourceParts.shift() || '').trim();
+  const sourceSheet = sourceParts.join(' / ').trim();
+  if (!paymentTabAllowed_(sourceName, sourceSheet)) {
+    return { ok: false, message: 'ตัดต้นได้เฉพาะ V6/10-69 และ v3/10-69' };
+  }
+
+  const customer = findCustomerIdentity_(sourceName, sourceSheet, reviewRow[2]);
+  if (!customer || normalizeGeneral_(customer.name) !== normalizeGeneral_(reviewRow[3])) {
+    return { ok: false, message: 'ข้อมูลลูกค้าเปลี่ยนแล้ว กรุณาตรวจคิวก่อน' };
+  }
+
+  const amount = paymentNumber_(rawReviewRow[6]);
+  const paidAt = principalPaidDate_(reviewRow[5]);
+  if (!(amount > 0) || !paidAt) {
+    return { ok: false, message: 'ยอดตัดต้นหรือวันที่รับเงินจริงไม่ถูกต้อง' };
+  }
+
+  const sourceSs = sourceSpreadsheetFor_(sourceName);
+  const sheet = sourceSs && sourceSs.getSheetByName(sourceSheet);
+  if (!sheet) return { ok: false, message: 'เปิดชีตต้นทางไม่ได้' };
+  const headers = detectHeaders_(sheet);
+  if (!headers || headers.principal !== 10 || headers.fee !== 11 || headers.dueDate !== 13 || !headers.note) {
+    return { ok: false, message: 'หัวตารางตัดต้นไม่ตรง J=เงินต้น, K=ค่าเช่า, M=วันครบกำหนด, N=โน้ต' };
+  }
+
+  const sourceRow = Number(customer.row);
+  const principalRange = sheet.getRange(sourceRow, 10);
+  const feeRange = sheet.getRange(sourceRow, 11);
+  const dueRange = sheet.getRange(sourceRow, 13);
+  const principalBefore = paymentNumber_(principalRange.getValue());
+  const feeBefore = paymentNumber_(feeRange.getValue());
+  const feeFormulaBefore = feeRange.getFormula() || '';
+  const dueBefore = dueRange.getValue();
+  if (!(principalBefore > 0)) return { ok: false, message: 'เงินต้นคงเหลือไม่ถูกต้อง' };
+  if (amount > principalBefore + 0.005) {
+    return { ok: false, message: 'ยอดตัดต้นมากกว่าเงินต้นคงเหลือ ' + principalBefore + ' บาท' };
+  }
+  if (!feeFormulaBefore) return { ok: false, message: 'ช่องค่าเช่า K ไม่มีสูตร จึงยังไม่ตัดต้น' };
+  if (!(dueBefore instanceof Date) || isNaN(dueBefore.getTime())) {
+    return { ok: false, message: 'วันครบกำหนด M ไม่ใช่วันที่ จึงยังไม่ตัดต้น' };
+  }
+
+  const calendarStartCol = headers.note + 1;
+  const paidCol = findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, paidAt);
+  if (!paidCol) return { ok: false, message: 'ไม่พบช่องวันที่รับเงินจริงในปฏิทิน' };
+
+  // Principal rule: customer date cell keeps its existing value/formula and receives NOTE only.
+  // The money is accumulated in the row labelled "คืนต้น" for that same date (e.g. BB25).
+  const customerPaidRange = sheet.getRange(sourceRow, paidCol);
+  const principalTotalRow = findPrincipalTotalRow_(sheet, headers);
+  if (!principalTotalRow || principalTotalRow === sourceRow) {
+    return { ok: false, message: 'ไม่พบแถวสรุปคืนต้นที่ชัดเจน' };
+  }
+  const principalTotalRange = sheet.getRange(principalTotalRow, paidCol);
+  const calendarBefore = principalCalendarAmount_(principalTotalRange);
+  if (calendarBefore === null) {
+    return { ok: false, message: 'ช่องรวมคืนต้นของวันที่รับเงินจริงเป็นสูตรหรือไม่ใช่ตัวเลข จึงไม่เขียนทับ' };
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const key = paymentSourceWriteKey_(reviewRowNo);
+  const existingRaw = props.getProperty(key);
+  if (existingRaw) {
+    try {
+      const prior = JSON.parse(existingRaw);
+      if (prior && prior.kind === 'principal' && prior.writtenAt && !prior.reversedAt) {
+        return {
+          ok: true, written: true, duplicateGuard: true, principalOnly: true,
+          source: prior.source, sheet: prior.sheet, sourceRow: prior.sourceRow,
+          amount: prior.amount, principalBefore: prior.principalBefore,
+          principalAfter: prior.principalAfter, feeBefore: prior.feeBefore,
+          feeAfter: prior.feeAfter, paidDate: dateKey_(new Date(prior.paidAt)),
+          dueDate: prior.dueDate, paymentTiming: prior.paymentTiming,
+          principalTotalRow: prior.principalTotalRow || '',
+          customerCalendarA1: prior.customerCalendarA1 || '',
+          principalTotalA1: prior.principalTotalA1 || ''
+        };
+      }
+      return { ok: false, message: 'พบข้อมูลตัดต้นค้างระหว่างเขียน กรุณาตรวจ Audit ก่อนกดซ้ำ' };
+    } catch (err) {
+      return { ok: false, message: 'ข้อมูลกันซ้ำของคิวนี้เสียหาย กรุณาตรวจ Audit' };
+    }
+  }
+
+  const principalAfter = Math.round((principalBefore - amount) * 100) / 100;
+  const timing = paymentTiming_(dueBefore, paidAt);
+  const unique = {};
+  [principalRange, feeRange, dueRange, customerPaidRange, principalTotalRange].forEach(function(range) {
+    unique[range.getA1Notation()] = range;
+  });
+  const before = Object.keys(unique).map(function(a1) { return snapshotCell_(unique[a1]); });
+  const backup = {
+    version: 3,
+    kind: 'principal',
+    paymentKind: 'principal',
+    reviewRowNo: reviewRowNo,
+    source: sourceName,
+    sheet: sourceSheet,
+    spreadsheetId: sourceSs.getId(),
+    sourceRow: sourceRow,
+    queue: customer.queue || '',
+    name: customer.name || '',
+    amount: amount,
+    principalBefore: principalBefore,
+    principalAmount: amount,
+    principalAfter: principalAfter,
+    feeBefore: feeBefore,
+    feeAfter: null,
+    feeFormulaBefore: feeFormulaBefore,
+    paidAt: paidAt.toISOString(),
+    paidDate: dateKey_(paidAt),
+    dueDate: dateKey_(dueBefore),
+    paymentTiming: timing,
+    calendarCol: paidCol,
+    customerCalendarA1: customerPaidRange.getA1Notation(),
+    principalTotalRow: principalTotalRow,
+    principalTotalA1: principalTotalRange.getA1Notation(),
+    calendarBefore: calendarBefore,
+    calendarAfter: Math.round((calendarBefore + amount) * 100) / 100,
+    before: before,
+    createdAt: new Date().toISOString()
+  };
+  props.setProperty(key, JSON.stringify(backup));
+  persistPaymentBackupLog_(backup, 'paymentSourceBackup', 'สำเร็จ', JSON.stringify(backup));
+
+  try {
+    principalRange.setValue(principalAfter);
+    SpreadsheetApp.flush();
+    const feeFormulaAfter = feeRange.getFormula() || '';
+    const dueAfter = dueRange.getValue();
+    if (feeFormulaAfter !== feeFormulaBefore) throw new Error('สูตร K เปลี่ยนระหว่างตัดต้น');
+    if (!(dueAfter instanceof Date) || dateKey_(dueAfter) !== dateKey_(dueBefore)) {
+      throw new Error('วันครบกำหนด M เปลี่ยนระหว่างตัดต้น');
+    }
+    backup.feeAfter = paymentNumber_(feeRange.getValue());
+    backup.feeFormulaAfter = feeFormulaAfter;
+    const feeRateBefore = principalBefore > 0 ? (feeBefore / principalBefore) : NaN;
+    if (!Number.isFinite(feeRateBefore) || feeRateBefore < 0) {
+      throw new Error('อัตราค่าเช่า K ก่อนตัดต้นไม่ถูกต้อง');
+    }
+    backup.feeRateBefore = feeRateBefore;
+    const expectedFeeAfter = Math.round((principalAfter * feeRateBefore) * 100) / 100;
+    if (Math.abs(backup.feeAfter - expectedFeeAfter) > 0.01) {
+      throw new Error('ค่าเช่า K ไม่คำนวณใหม่ตามสูตรเดิมหลังตัด');
+    }
+
+    const marker = '[ตัดต้น #' + reviewRowNo + ']';
+    const customerLine = marker + ' คิว ' + (customer.queue || '') + ' / รับตัดต้น ' + amount +
+      ' บาท / เงินต้น ' + principalBefore + ' -> ' + principalAfter +
+      ' / ค่าเช่า ' + feeBefore + ' -> ' + backup.feeAfter +
+      ' / รับเงินจริง ' + backup.paidDate + ' / วันครบกำหนดคงเดิม ' + backup.dueDate +
+      ' / ยอดรวมตัดต้นลง ' + principalTotalRange.getA1Notation();
+    customerPaidRange.setNote([
+      customerPaidRange.getNote() || '',
+      customerLine
+    ].filter(Boolean).join('\n'));
+
+    principalTotalRange.setValue(backup.calendarAfter);
+    principalTotalRange.setNote([
+      principalTotalRange.getNote() || '',
+      marker + ' คิว ' + (customer.queue || '') + ' / รับตัดต้น ' + amount + ' บาท / วันที่รับเงินจริง ' + backup.paidDate
+    ].filter(Boolean).join('\n'));
+    try { principalTotalRange.setNumberFormat(principalRange.getNumberFormat()); } catch (err) {}
+    SpreadsheetApp.flush();
+  } catch (err) {
+    before.forEach(function(snap) { restoreCellSnapshot_(sheet, snap); });
+    SpreadsheetApp.flush();
+    backup.failedAt = new Date().toISOString();
+    backup.failure = String(err && err.message || err);
+    props.setProperty(key, JSON.stringify(backup));
+    persistPaymentBackupLog_(backup, 'principalSourceWriteFailed', 'ไม่สำเร็จ', JSON.stringify(backup));
+    return { ok: false, message: backup.failure };
+  }
+
+  backup.after = Object.keys(unique).map(function(a1) { return snapshotCell_(unique[a1]); });
+  backup.writtenAt = new Date().toISOString();
+  props.setProperty(key, JSON.stringify(backup));
+  persistPaymentBackupLog_(backup, 'paymentSourceBackupAfter', 'สำเร็จ', JSON.stringify(backup));
+  persistPaymentBackupLog_(backup, 'principalApprovedAudit', 'สำเร็จ', JSON.stringify(backup));
+
+  return {
+    ok: true,
+    written: true,
+    principalOnly: true,
+    source: sourceName,
+    sheet: sourceSheet,
+    sourceRow: sourceRow,
+    queue: customer.queue || '',
+    amount: amount,
+    principalBefore: principalBefore,
+    principalAfter: principalAfter,
+    feeBefore: feeBefore,
+    feeAfter: backup.feeAfter,
+    dueDate: dateKey_(dueBefore),
+    paidDate: backup.paidDate,
+    calendarBefore: calendarBefore,
+    calendarAfter: backup.calendarAfter,
+    customerCalendarA1: backup.customerCalendarA1,
+    principalTotalRow: backup.principalTotalRow,
+    principalTotalA1: backup.principalTotalA1,
+    paymentTiming: timing
+  };
+}
 function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   if (!isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false))) {
     return { ok: false, message: 'ระบบเขียนชีตต้นทางยังปิดอยู่' };
@@ -4651,6 +5234,287 @@ function applyApprovedPaymentToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   };
 }
 
+function applyApprovedCloseToSource_(reviewRow, rawReviewRow, reviewRowNo) {
+  if (!isTrue_(getSettingValue_('FINANCIAL_SOURCE_WRITES_ENABLED', false))) {
+    return { ok: false, message: 'ระบบเขียนชีตต้นทางยังปิดอยู่' };
+  }
+
+  const sourceParts = String(reviewRow[4] || '').split(' / ');
+  const sourceName = String(sourceParts[0] || '').trim();
+  const sourceSheet = sourceParts.slice(1).join(' / ').trim();
+  if (!paymentTabAllowed_(sourceName, sourceSheet)) {
+    return { ok: false, message: 'ปิดยอดได้เฉพาะ V6/10-69 และ v3/10-69' };
+  }
+
+  const customer = findCustomerIdentity_(sourceName, sourceSheet, reviewRow[2]);
+  if (!customer) return { ok: false, message: 'ไม่พบลูกค้าในชีตต้นทาง' };
+  if (reviewRow[3] && normalizeGeneral_(customer.name) !== normalizeGeneral_(reviewRow[3])) {
+    return { ok: false, message: 'ชื่อลูกค้าในต้นทางเปลี่ยนแล้ว' };
+  }
+  const sourceSs = sourceSpreadsheetFor_(sourceName);
+  const sheet = sourceSs && sourceSs.getSheetByName(sourceSheet);
+  if (!sheet) return { ok: false, message: 'เปิดชีตต้นทางไม่ได้' };
+  const headers = detectHeaders_(sheet);
+  if (!headers || !headers.status || !headers.dueDate || !headers.fee) {
+    return { ok: false, message: 'หัวตารางต้นทางไม่ครบสำหรับปิดยอด' };
+  }
+
+  const sourceRow = Number(customer.row);
+  const statusRange = sheet.getRange(sourceRow, headers.status);
+  const dueRange = sheet.getRange(sourceRow, headers.dueDate);
+  const noteRange = headers.note ? sheet.getRange(sourceRow, headers.note) : null;
+  const oldDue = dueRange.getValue();
+  const amount = paymentNumber_(rawReviewRow[6]);
+  const paidAt = rawReviewRow[0] instanceof Date ? rawReviewRow[0] : new Date();
+  if (!(oldDue instanceof Date) || isNaN(oldDue.getTime())) {
+    return { ok: false, message: 'วันจ่ายเดิมไม่ใช่วันที่ จึงยังไม่ปิดยอด' };
+  }
+  if (!(amount > 0)) return { ok: false, message: 'ยอดปิดไม่ถูกต้อง' };
+
+  const calendarStartCol = headers.note ? headers.note + 1 : Math.max(headers.dueDate + 1, 15);
+  const paidCol = findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, paidAt);
+  if (!paidCol) return { ok: false, message: 'ไม่พบช่องวันที่รับปิดยอดในปฏิทิน' };
+  const paidRange = sheet.getRange(sourceRow, paidCol);
+  const principal = paymentNumber_(customer.principal);
+  if (!(principal > 0)) return { ok: false, message: 'เงินต้นคงเหลือไม่ถูกต้อง จึงยังไม่ปิดยอด' };
+  if (amount + 0.005 < principal) {
+    return { ok: false, message: 'ยอดปิดน้อยกว่าเงินต้นคงเหลือ ' + principal + ' บาท' };
+  }
+  const principalTotalRow = findPrincipalTotalRow_(sheet, headers);
+  if (!principalTotalRow || principalTotalRow === sourceRow) {
+    return { ok: false, message: 'ไม่พบแถวสรุปคืนต้นที่ชัดเจน' };
+  }
+  const principalTotalRange = sheet.getRange(principalTotalRow, paidCol);
+  const principalTotalBefore = principalCalendarAmount_(principalTotalRange);
+  if (principalTotalBefore === null) {
+    return { ok: false, message: 'ช่องรวมคืนต้นของวันที่ปิดยอดเป็นสูตรหรือไม่ใช่ตัวเลข จึงไม่เขียนทับ' };
+  }
+
+  const props = PropertiesService.getScriptProperties();
+  const key = paymentSourceWriteKey_(reviewRowNo);
+  const existingBackup = props.getProperty(key);
+  if (existingBackup) {
+    let prior = null;
+    try { prior = JSON.parse(existingBackup); } catch (err) {}
+    if (prior && prior.kind === 'closeout' && prior.writtenAt && !prior.reversedAt &&
+        normalizeGeneral_(statusRange.getValue()) === normalizeGeneral_('ปิดยอด') &&
+        (paidRange.getNote() || '').indexOf('[ปิดยอด #' + reviewRowNo + ']') >= 0 &&
+        (principalTotalRange.getNote() || '').indexOf('[ปิดยอด #' + reviewRowNo + ']') >= 0) {
+      return {
+        ok: true, written: true, finalClose: true, amount: amount,
+        paidDate: dateKey_(paidAt), source: sourceName, sheet: sourceSheet, sourceRow: sourceRow,
+        principal: principal, principalTotalA1: principalTotalRange.getA1Notation(),
+        dueDateUnchanged: dateKey_(oldDue), paymentTiming: paymentTiming_(oldDue, paidAt)
+      };
+    }
+    return { ok: false, message: 'รายการนี้มีข้อมูลสำรองแล้ว กรุณาตรวจสอบก่อนลองซ้ำ' };
+  }
+
+  if (isInactiveDueStatus_(customer.status)) {
+    return { ok: false, message: 'ลูกค้าอยู่สถานะปิดหรือไม่ใช้งานแล้ว กรุณาตรวจสอบก่อน' };
+  }
+
+  const paidExisting = paymentNumber_(paidRange.getValue());
+  const paidNote = paidRange.getNote() || '';
+  const paidBackground = String(paidRange.getBackground() || '').toUpperCase();
+  const receiptExisting = paidBackground === '#CCFF00' || /^\[(?:ชำระ|ค่าปรับ|ปิดยอด) #/m.test(paidNote);
+  const oldDueCol = findCalendarDateColumn_(sheet, headers.headerRow, calendarStartCol, oldDue);
+  const dueMarkerOnly = paidCol === oldDueCol && !receiptExisting;
+  if (String(paidRange.getValue() || '').trim() && !receiptExisting && !dueMarkerOnly) {
+    return { ok: false, message: 'ช่องวันที่รับปิดยอดมีข้อมูลเดิมอยู่ จึงไม่เขียนทับ' };
+  }
+  const receiptBefore = receiptExisting ? paidExisting : 0;
+  const finalReceipt = Math.round((receiptBefore + amount) * 100) / 100;
+
+  const unique = {};
+  [statusRange, dueRange, noteRange, paidRange, principalTotalRange].filter(Boolean).forEach(function(range) {
+    unique[range.getA1Notation()] = range;
+  });
+  const before = Object.keys(unique).map(function(name) { return snapshotCell_(unique[name]); });
+  const timing = paymentTiming_(oldDue, paidAt);
+  const backup = {
+    version: 2,
+    kind: 'closeout',
+    reviewRowNo: reviewRowNo,
+    source: sourceName,
+    sheet: sourceSheet,
+    spreadsheetId: sourceSs.getId(),
+    sourceRow: sourceRow,
+    queue: customer.queue || '',
+    name: customer.name || '',
+    amount: amount,
+    principal: principal,
+    principalTotalRow: principalTotalRow,
+    principalTotalA1: principalTotalRange.getA1Notation(),
+    principalTotalBefore: principalTotalBefore,
+    principalTotalAfter: Math.round((principalTotalBefore + principal) * 100) / 100,
+    oldDue: oldDue.toISOString(),
+    paidAt: paidAt.toISOString(),
+    paymentTiming: timing,
+    before: before,
+    createdAt: new Date().toISOString()
+  };
+  props.setProperty(key, JSON.stringify(backup));
+  persistPaymentBackupLog_(backup, 'paymentSourceBackup', 'สำเร็จ', JSON.stringify(backup));
+
+  try {
+    const marker = '[ปิดยอด #' + reviewRowNo + ']';
+    paidRange.setValue(finalReceipt);
+    paidRange.setBackground('#CCFF00');
+    paidRange.setNote([paidNote, marker + ' รับ ' + amount + ' บาท / เงินต้น ' + principal + ' บาท / ' +
+      timing.timingDetail + ' / คงวันจ่ายเดิม'].filter(Boolean).join('\n'));
+    principalTotalRange.setValue(backup.principalTotalAfter);
+    principalTotalRange.setBackground('#CCFF00');
+    principalTotalRange.setNote([
+      principalTotalRange.getNote() || '',
+      marker + ' คิว ' + (customer.queue || '') + ' / คืนต้น ' + principal + ' บาท / รับรวม ' + amount +
+        ' บาท / วันที่รับเงินจริง ' + dateKey_(paidAt)
+    ].filter(Boolean).join('\n'));
+    statusRange.setValue('ปิดยอด');
+    if (noteRange) {
+      noteRange.setNote([noteRange.getNote() || '', '[ปิดยอด #' + reviewRowNo + '] ปิดบัญชีแล้ว / วันจ่ายเดิม ' +
+        dateKey_(oldDue) + ' ไม่เลื่อนรอบ'].filter(Boolean).join('\n'));
+    }
+    try { paidRange.setNumberFormat(sheet.getRange(sourceRow, headers.fee).getNumberFormat()); } catch (err) {}
+    try { principalTotalRange.setNumberFormat(sheet.getRange(sourceRow, headers.principal || 10).getNumberFormat()); } catch (err) {}
+    SpreadsheetApp.flush();
+  } catch (err) {
+    before.forEach(function(snap) { restoreCellSnapshot_(sheet, snap); });
+    props.deleteProperty(key);
+    throw err;
+  }
+
+  backup.after = Object.keys(unique).map(function(name) { return snapshotCell_(unique[name]); });
+  backup.writtenAt = new Date().toISOString();
+  props.setProperty(key, JSON.stringify(backup));
+  persistPaymentBackupLog_(backup, 'paymentSourceBackupAfter', 'สำเร็จ', JSON.stringify(backup));
+
+  return {
+    ok: true,
+    written: true,
+    finalClose: true,
+    source: sourceName,
+    sheet: sourceSheet,
+    sourceRow: sourceRow,
+    amount: amount,
+    principal: principal,
+    principalTotalRow: principalTotalRow,
+    principalTotalA1: principalTotalRange.getA1Notation(),
+    principalTotalBefore: principalTotalBefore,
+    principalTotalAfter: backup.principalTotalAfter,
+    paidDate: dateKey_(paidAt),
+    dueDateUnchanged: dateKey_(oldDue),
+    paymentTiming: timing
+  };
+}
+
+function reviewRowIds_(value) {
+  const matches = String(value || '').match(/\d+/g) || [];
+  const ids = matches.map(function(v) { return Number(v); })
+    .filter(function(v) { return Number.isInteger(v) && v >= 2; });
+  return ids.filter(function(v, i) { return ids.indexOf(v) === i; });
+}
+
+function getLatestReversibleReview_(body) {
+  const access = checkAccess_({ lineUserId: body.lineUserId, permission: 'ดูรายงาน' });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: true, found: false, message: 'เฉพาะเจ้าของระบบเท่านั้น' };
+  }
+
+  const backend = backendSpreadsheet_();
+  const sh = backend.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
+  if (!sh || sh.getLastRow() < 2) {
+    return { ok: true, found: false, message: 'ยังไม่มีรายการที่ยกเลิกได้' };
+  }
+
+  const values = sh.getRange(2, 1, sh.getLastRow() - 1, 12).getDisplayValues();
+  const allowedTypes = ['บันทึกชำระ', 'รับค่าปรับ', 'ตัดต้น', 'ปิดยอด'];
+  const staffName = String(access.staffName || '').trim();
+  const props = PropertiesService.getScriptProperties();
+  let latestIndex = -1;
+  let latestBackup = null;
+
+  for (let i = values.length - 1; i >= 0; i--) {
+    const row = values[i];
+    if (allowedTypes.indexOf(String(row[1] || '').trim()) < 0) continue;
+    if (String(row[8] || '').trim() !== 'ผ่าน') continue;
+    if (staffName && String(row[9] || '').trim() !== staffName) continue;
+    let backup = null;
+    const raw = props.getProperty(paymentSourceWriteKey_(i + 2));
+    if (raw) try { backup = JSON.parse(raw); } catch (err) {}
+    if (!backup) backup = loadPaymentBackupFromLog_(i + 2);
+    if (!backup || backup.reversedAt) continue;
+    latestIndex = i;
+    latestBackup = backup;
+    break;
+  }
+
+  if (latestIndex < 0) {
+    return { ok: true, found: false, message: 'ไม่พบรายการล่าสุดที่ยกเลิกได้' };
+  }
+
+  const latest = values[latestIndex];
+  const requestId = String(latest[7] || '').trim();
+  const groupKey = requestId.replace(/:(?:principal|fine)$/i, '');
+  const rows = [];
+  for (let i = 0; i < values.length; i++) {
+    const row = values[i];
+    const candidateId = String(row[7] || '').trim();
+    if (!groupKey || candidateId.replace(/:(?:principal|fine)$/i, '') !== groupKey) continue;
+    if (allowedTypes.indexOf(String(row[1] || '').trim()) < 0) continue;
+    if (String(row[8] || '').trim() !== 'ผ่าน') continue;
+    rows.push(i + 2);
+  }
+  if (!rows.length) rows.push(latestIndex + 2);
+
+  return {
+    ok: true,
+    found: true,
+    rowNos: rows.sort(function(a, b) { return a - b; }),
+    queue: String(latestBackup.queue || latest[2] || '').trim(),
+    name: String(latestBackup.name || latest[3] || '').trim(),
+    amount: latestBackup.amount || latest[6] || '',
+    type: String(latest[1] || '').trim(),
+    message: 'พบรายการล่าสุดที่ยกเลิกได้'
+  };
+}
+
+function rollbackReviewGroup_(body) {
+  const ids = reviewRowIds_(body.query);
+  if (!ids.length || ids.length > 3) {
+    return { ok: true, rolledBack: false, message: 'ระบุเลขรายการ 1-3 รายการให้ถูกต้อง' };
+  }
+  const lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    const results = [];
+    const descending = ids.slice().sort(function(a, b) { return b - a; });
+    for (let i = 0; i < descending.length; i++) {
+      const result = rollbackReviewQueueLocked_(Object.assign({}, body, { query: String(descending[i]) }));
+      results.push(result);
+      if (!result || !result.rolledBack) {
+        return {
+          ok: true,
+          rolledBack: false,
+          partial: results.some(function(x) { return x && x.rolledBack; }),
+          results: results,
+          message: 'ยกเลิกทั้งชุดไม่ครบ กรุณาตรวจชีตและเลขรายการก่อนทำซ้ำ'
+        };
+      }
+    }
+    return {
+      ok: true,
+      rolledBack: true,
+      rowNos: descending,
+      queue: results[0] && results[0].queue || '',
+      name: results[0] && results[0].name || '',
+      message: 'ยกเลิกรายการ #' + descending.join(', #') + ' แล้ว และคืนค่าชีตต้นทางครบทั้งชุด'
+    };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function rollbackReviewQueue_(body) {
   const lock = LockService.getScriptLock();
   lock.waitLock(20000);
@@ -4676,8 +5540,8 @@ function rollbackReviewQueueLocked_(body) {
   }
 
   const reviewRow = reviewSheet.getRange(rowNo, 1, 1, 12).getDisplayValues()[0];
-  if (['บันทึกชำระ', 'รับค่าปรับ'].indexOf(String(reviewRow[1] || '').trim()) < 0) {
-    return { ok: true, rolledBack: false, message: 'ยกเลิกรายการอัตโนมัติได้เฉพาะรายการบันทึกชำระหรือรับค่าปรับ' };
+  if (['บันทึกชำระ', 'รับค่าปรับ', 'ตัดต้น', 'ปิดยอด'].indexOf(String(reviewRow[1] || '').trim()) < 0) {
+    return { ok: true, rolledBack: false, message: 'ยกเลิกรายการอัตโนมัติได้เฉพาะรายการบันทึกชำระ รับค่าปรับ ตัดต้น หรือปิดยอด' };
   }
   if (String(reviewRow[8] || '').trim() !== 'ผ่าน') {
     return { ok: true, rolledBack: false, message: 'คิวนี้ไม่ได้อยู่สถานะผ่าน' };
@@ -4771,14 +5635,14 @@ function rollbackReviewQueueLocked_(body) {
       '',
       '',
       '',
-      'ยกเลิกรายการชำระ',
+      backup.kind === 'principal' ? 'ยกเลิกตัดต้น' : 'ยกเลิกรายการชำระ',
       '',
       '',
       '',
       '',
       backup.amount || '',
       access.staffName || 'เจ้าของ',
-      'ยกเลิกรายการ #' + rowNo + ' และคืนค่าชีตต้นทาง'
+      (backup.kind === 'principal' ? 'ยกเลิกตัดต้น' : 'ยกเลิกรายการ') + ' #' + rowNo + ' และคืนค่าชีตต้นทาง'
     ]);
   }
 
@@ -4846,10 +5710,15 @@ function resolveReviewQueueLocked_(body) {
   }
 
   let sourceWrite = null;
-  if (decision === 'ผ่าน' && ['บันทึกชำระ', 'รับค่าปรับ'].indexOf(String(displayRow[1] || '').trim()) >= 0) {
-    sourceWrite = String(displayRow[1]).trim() === 'รับค่าปรับ'
+  if (decision === 'ผ่าน' && ['บันทึกชำระ', 'รับค่าปรับ', 'ตัดต้น', 'ปิดยอด'].indexOf(String(displayRow[1] || '').trim()) >= 0) {
+    const reviewType = String(displayRow[1]).trim();
+    sourceWrite = reviewType === 'รับค่าปรับ'
       ? applyApprovedFineToSource_(displayRow, rawRow, rowNo)
-      : applyApprovedPaymentToSource_(displayRow, rawRow, rowNo);
+      : reviewType === 'ตัดต้น'
+        ? applyApprovedPrincipalToSource_(displayRow, rawRow, rowNo)
+      : reviewType === 'ปิดยอด'
+        ? applyApprovedCloseToSource_(displayRow, rawRow, rowNo)
+        : applyApprovedPaymentToSource_(displayRow, rawRow, rowNo);
     if (!sourceWrite || !sourceWrite.ok || !sourceWrite.written) {
       return {
         ok: true,
@@ -4871,7 +5740,8 @@ function resolveReviewQueueLocked_(body) {
       rowNo,
       access.staffName || 'เจ้าของ',
       !!(sourceWrite && sourceWrite.written),
-      sourceWrite && sourceWrite.paymentTiming
+      sourceWrite && sourceWrite.paymentTiming,
+      sourceWrite
     );
     sh.getRange(rowNo, 12).setValue(
       sourceWrite && sourceWrite.written
@@ -4894,6 +5764,22 @@ function resolveReviewQueueLocked_(body) {
     }
   }
 
+  let customerLineUserId = '';
+  try {
+    const recipientParts = String(displayRow[4] || '').split(' / ');
+    const recipientSource = String(recipientParts.shift() || '').trim();
+    const recipientSheet = recipientParts.join(' / ').trim();
+    const customerRecipient = resolveCustomerNotificationRecipient_({
+      lineUserId: body.lineUserId,
+      source: recipientSource,
+      sheet: recipientSheet,
+      queue: displayRow[2]
+    });
+    if (customerRecipient && customerRecipient.found && customerRecipient.recipient) {
+      customerLineUserId = String(customerRecipient.recipient.lineUserId || '').trim();
+    }
+  } catch (err) {}
+
   return {
     ok: true,
     resolved: true,
@@ -4904,12 +5790,17 @@ function resolveReviewQueueLocked_(body) {
     queue: displayRow[2],
     amount: displayRow[6],
     requesterLineUserId: requesterLineUserId,
+    customerLineUserId: customerLineUserId,
     historyRecorded: historyRecorded,
     sourceWritten: !!(sourceWrite && sourceWrite.written),
     sourceWrite: sourceWrite,
     message: decision === 'ผ่าน'
       ? ('คิว #' + rowNo + ' ผ่านการตรวจสอบแล้ว' + (sourceWrite && sourceWrite.written
-          ? sourceWrite.fineOnly
+          ? sourceWrite.finalClose
+            ? ' ปิดยอดแล้ว โดยไม่เลื่อนวันจ่ายและไม่สร้างรอบใหม่'
+            : sourceWrite.principalOnly
+            ? ' ตัดต้นแล้ว เงินต้นเหลือ ' + sourceWrite.principalAfter + ' บาท ค่าเช่าใหม่ ' + sourceWrite.feeAfter + ' บาท วันครบกำหนดเดิม'
+            : sourceWrite.fineOnly
             ? ' บันทึกค่าปรับและรวมยอดรายวันแล้ว วันจ่ายและยอดค่าเช่าไม่เปลี่ยน'
             : sourceWrite.cycleComplete
             ? ' ลงยอดครบและเลื่อนวันจ่ายรอบถัดไปแล้ว'
@@ -5265,32 +6156,37 @@ function queueFinancialReview_(body, type) {
 
 function queueFinancialReviewLocked_(body, type) {
   if (type === 'บันทึกชำระ' && body.paymentKind === 'fine') type = 'รับค่าปรับ';
+  if (type === 'บันทึกชำระ' && body.paymentKind === 'principal') type = 'ตัดต้น';
   const permissionMap = {
     'บันทึกชำระ': 'บันทึกชำระ',
     'รับค่าปรับ': 'บันทึกชำระ',
+    'ตัดต้น': 'บันทึกชำระ',
     'ตรวจสลิป': 'ยืนยันสลิป',
     'ปิดยอด': 'ปิดยอด'
   };
   const access = checkAccess_({
     lineUserId: body.lineUserId,
-    permission: permissionMap[type] || ''
+    permission: type === 'ปิดยอด' ? '' : (permissionMap[type] || '')
   });
   if (!access.allowed) {
     return { ok: true, queued: false, message: access.message || 'ไม่มีสิทธิ์ดำเนินการ' };
+  }
+  if (type === 'ปิดยอด' && ['เจ้าของ', 'แอดมิน', 'admin'].indexOf(String(access.role || '').trim().toLowerCase()) < 0) {
+    return { ok: true, queued: false, message: 'คำสั่งปิดยอดใช้ได้เฉพาะแอดมินและเจ้าของเท่านั้น' };
   }
 
   const query = String(body.query || '').trim();
   if (!query) return { ok: true, queued: false, message: 'กรุณาระบุคำค้นลูกค้า' };
 
   let customer = null;
-  if ((type === 'บันทึกชำระ' || type === 'รับค่าปรับ') && body.exactCustomer) {
+  if ((type === 'บันทึกชำระ' || type === 'รับค่าปรับ' || type === 'ตัดต้น' || type === 'ปิดยอด') && body.exactCustomer) {
     const exact = body.exactCustomer || {};
     const exactSource = String(exact.source || '').trim();
     const exactSheet = String(exact.sheet || '').trim();
     const exactQueue = String(exact.queue || '').trim();
 
     if (!paymentTabAllowed_(exactSource, exactSheet)) {
-      return { ok: true, queued: false, message: 'รับชำระได้เฉพาะ V6/10-69 และ v3/10-69' };
+      return { ok: true, queued: false, message: (type === 'ปิดยอด' ? 'ปิดยอด' : 'รับชำระ') + 'ได้เฉพาะ V6/10-69 และ v3/10-69' };
     }
 
     customer = findCustomerIdentity_(exactSource, exactSheet, exactQueue);
@@ -5327,10 +6223,17 @@ function queueFinancialReviewLocked_(body, type) {
   const sh = ss.getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
   if (!sh) return { ok: false, error: 'ไม่พบชีตคิวตรวจสอบ' };
 
-  const amount = body.amount == null ? '' : Number(body.amount);
-  const requestId = (type === 'บันทึกชำระ' || type === 'รับค่าปรับ') ? String(body.requestId || '').trim() : '';
+  let amount = body.amount == null ? '' : Number(body.amount);
+  if (type === 'ปิดยอด' && !(amount > 0)) {
+    amount = paymentNumber_(customer.closeAmount || customer.calculatedClose || customer.outstanding);
+  }
+  if (type === 'ปิดยอด' && !(amount > 0)) {
+    return { ok: true, queued: false, message: 'ไม่พบยอดปิดที่ถูกต้อง กรุณาตรวจข้อมูลลูกค้าก่อน' };
+  }
+  const requestId = (type === 'บันทึกชำระ' || type === 'รับค่าปรับ' || type === 'ตัดต้น' || type === 'ปิดยอด') ? String(body.requestId || '').trim() : '';
   const paidOn = String(body.paidOn || dateKey_(new Date())).trim();
   const fineDetail = 'ค่าปรับ | วันที่รับเงินจริง: ' + paidOn;
+  const principalDetail = 'ตัดต้น | paymentKind=principal | วันที่รับเงินจริง: ' + paidOn;
   if (type === 'รับค่าปรับ') {
     if (!(amount > 0) || !finePaidDate_(fineDetail)) return { ok: true, queued: false, message: 'ยอดค่าปรับหรือวันที่ไม่ถูกต้อง' };
     const rows = sh.getLastRow() > 1 ? sh.getRange(2, 1, sh.getLastRow() - 1, 12).getDisplayValues() : [];
@@ -5340,6 +6243,18 @@ function queueFinancialReviewLocked_(body, type) {
           r[5] === fineDetail && paymentNumber_(r[6]) === amount && ['รอตรวจ', 'ผ่าน'].indexOf(r[8]) >= 0) {
         return { ok: true, queued: false, duplicate: true, duplicateRowNo: i + 2, message: 'มีรายการค่าปรับนี้แล้ว #' + (i + 2) };
       }
+    }
+  }
+  if (type === 'ตัดต้น') {
+    const principal = paymentNumber_(customer.principal);
+    if (!(amount > 0) || !principalPaidDate_(principalDetail)) {
+      return { ok: true, queued: false, message: 'ยอดตัดต้นหรือวันที่รับเงินจริงไม่ถูกต้อง' };
+    }
+    if (!(principal > 0)) {
+      return { ok: true, queued: false, message: 'เงินต้นคงเหลือไม่ถูกต้อง กรุณาตรวจข้อมูลลูกค้า' };
+    }
+    if (amount > principal + 0.005) {
+      return { ok: true, queued: false, message: 'ยอดตัดต้นมากกว่าเงินต้นคงเหลือ ' + principal + ' บาท' };
     }
   }
   const duplicateRowNo = hasDuplicatePendingReview_(sh, type, customer, amount, requestId);
@@ -5355,7 +6270,7 @@ function queueFinancialReviewLocked_(body, type) {
     };
   }
 
-  const detail = type === 'รับค่าปรับ' ? fineDetail : type === 'บันทึกชำระ'
+  const detail = type === 'รับค่าปรับ' ? fineDetail : type === 'ตัดต้น' ? principalDetail : type === 'บันทึกชำระ'
     ? 'คำขอบันทึกชำระจาก LINE'
     : type === 'ปิดยอด'
       ? 'คำขอปิดยอดจาก LINE'
@@ -5382,15 +6297,14 @@ function queueFinancialReviewLocked_(body, type) {
   const staffValues = staffSheet && staffSheet.getLastRow() >= 2
     ? staffSheet.getRange(2, 1, staffSheet.getLastRow() - 1, 20).getValues()
     : [];
-  const ownerLineUserIds = staffValues
+  const reviewerLineUserIds = staffValues
     .filter(function(r) {
-      return String(r[8] || '').trim() === 'เจ้าของ' &&
-        String(r[2] || '').trim() === 'เจ้าหน้าที่' &&
+      return String(r[2] || '').trim() === 'เจ้าหน้าที่' &&
         r[19] === true &&
-        isTrue_(r[3]) &&
         String(r[1] || '').trim();
     })
-    .map(function(r) { return String(r[1] || '').trim(); });
+    .map(function(r) { return String(r[1] || '').trim(); })
+    .filter(function(v, i, a) { return a.indexOf(v) === i; });
 
   return {
     ok: true,
@@ -5400,7 +6314,10 @@ function queueFinancialReviewLocked_(body, type) {
     customer: customer,
     amount: amount,
     requesterLineUserId: String(body.lineUserId || '').trim(),
-    ownerLineUserIds: ownerLineUserIds,
+    // Keep the legacy field during the rolling Vercel/GAS deployment so the
+    // currently deployed webhook immediately sends to every active reviewer.
+    ownerLineUserIds: reviewerLineUserIds,
+    reviewerLineUserIds: reviewerLineUserIds,
     message: 'ส่งเข้าคิวตรวจสอบแล้ว #' + rowNo
   };
 }
@@ -5450,6 +6367,9 @@ function customerStatusClass_(status) {
 function isInactiveDueStatus_(status) {
   const statusClass = customerStatusClass_(status);
   return ['deleted','closed','sold','fraud','installment'].indexOf(statusClass) !== -1;
+}
+function isActiveDueStatus_(status) {
+  return customerStatusClass_(status) === 'active';
 }
 function normalizePhone_(v) { return String(v || '').replace(/\D/g,''); }
 function normalizeApple_(v) { return String(v || '').toLowerCase().replace(/\s+/g,'').trim(); }
