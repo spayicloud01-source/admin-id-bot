@@ -1,5 +1,11 @@
 import { callSheetsBridge, getBridgeRoutingStatus, inspectBridgeRole } from "../../lib/sheetsBridge.js";
 
+const EXPECTED_ROLE_VERSIONS = {
+  customer: "2026.10.07-133",
+  payment: "2026.10.25-140",
+  notify: "2026.10.10-137",
+};
+
 export default async function handler(req, res) {
   if (req.method !== "GET") {
     res.setHeader("Allow", "GET");
@@ -43,7 +49,12 @@ export default async function handler(req, res) {
   await Promise.all(roles.map(async (role) => {
     try {
       const bridge = await inspectBridgeRole(role);
-      result.checks.roles[role] = { ok: bridge?.ok === true && bridge.role === role && bridge.version === "2026.10.03-131", role: bridge.role, version: bridge.version };
+      result.checks.roles[role] = {
+        ok: bridge?.ok === true && bridge.role === role && bridge.version === EXPECTED_ROLE_VERSIONS[role],
+        role: bridge.role,
+        version: bridge.version,
+        expectedVersion: EXPECTED_ROLE_VERSIONS[role],
+      };
     } catch (error) {
       result.checks.roles[role] = { ok: false, error: String(error?.message || error).slice(0, 160) };
     }
