@@ -849,6 +849,23 @@ async function handleSlipResendPostback(event) {
   return true;
 }
 
+async function handleStaffInputPostback(event) {
+  if (event.type !== "postback" || event.source?.type !== "user") return false;
+  const match = String(event.postback?.data || "").match(/^staffInput=(payment|principal|fine|close)$/);
+  if (!match) return false;
+  try {
+    await callSheetsBridge({
+      action: "setStaffInputMode",
+      lineUserId: String(event.source?.userId || "").trim(),
+      sourceType: "user",
+      mode: match[1],
+    });
+  } catch (error) {
+    console.warn("Could not remember staff input mode", error?.message || error);
+  }
+  return true;
+}
+
 async function handleEvent(event) {
 
   // CUSTOMER_CHAT_SILENCE_20261020
@@ -885,6 +902,7 @@ async function handleEvent(event) {
     }
   }
   if (await handleSlipResendPostback(event)) return;
+  if (await handleStaffInputPostback(event)) return;
 
   if (event.type === "follow") {
     await replyMessage(event.replyToken, [{
@@ -1106,20 +1124,44 @@ async function handleEvent(event) {
     const closeoutInput = parseCloseoutCommand(text);
     if (closeoutInput?.matched) command = closeoutInput.command;
 
-    // A bare "queue amount" message is unambiguous payment input.
-    // Convert it before customer binding so "310-4 1200" can never become a name-binding attempt.
-    if (!command && sourceType === "user" && lineUserId) {
-      const barePayment = text.match(/^(\S+)\s+([0-9,]+(?:\.\d{1,2})?)$/);
-      if (barePayment) {
-        command = {
-          prefix: "รับชำระ",
-          action: "queuePayment",
-          permission: "บันทึกชำระ",
-          privateOnly: true,
-          query: barePayment[1],
-          amount: Number(barePayment[2].replace(/,/g, "")),
-        };
+    const explicitFinancialInput = /^(?:รับยอด|ตัดต้น|รับค่าปรับ|ปิดยอด)(?:\s|$)/u.test(text);
+    if (explicitFinancialInput && sourceType === "user" && lineUserId) {
+      callSheetsBridge({ action: "consumeStaffInputMode", lineUserId, sourceType: "user" }).catch(() => null);
+    }
+
+    // If the staff member tapped one of the four floating buttons, remember
+    // that mode for the next numeric message. This also recovers gracefully
+    // when they accidentally sent the prefilled label before entering details.
+    if (!command && sourceType === "user" && lineUserId &&
+        /^\S+\s+[0-9,]+(?:\.\d{1,2})?(?:\s+(?:(?:ค่า?ปรับ|ปรับ)\s*[0-9,]+(?:\.\d{1,2})?))?(?:\s+\d{1,2}\/\d{1,2}\/\d{4})?$/u.test(text)) {
+      try {
+        const pending = await callSheetsBridge({
+          action: "consumeStaffInputMode",
+          lineUserId,
+          sourceType: "user",
+        });
+        const prefix = {
+          payment: "รับยอด",
+          principal: "ตัดต้น",
+          fine: "รับค่าปรับ",
+          close: "ปิดยอด",
+        }[pending?.mode];
+        if (prefix) {
+          const expanded = `${prefix} ${text}`;
+          const pendingCloseout = parseCloseoutCommand(expanded);
+          command = pendingCloseout?.matched ? pendingCloseout.command : parseCommand(expanded);
+        }
+      } catch (error) {
+        console.warn("Could not consume staff input mode", error?.message || error);
       }
+    }
+
+    // A bare queue + amount (+ optional fine/date) is unambiguous payment
+    // input. Convert it before customer binding so it can never become a
+    // name-binding attempt, even if the short-lived button mode expired.
+    if (!command && sourceType === "user" && lineUserId) {
+      const barePayment = parseCommand(`รับยอด ${text}`);
+      if (barePayment?.action === "queuePayment" && barePayment.query) command = barePayment;
     }
 
     // Customer self-service must not consume text that has already been recognized as a staff command.

@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.10.25-140',
+  VERSION: '2026.10.25-141',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -85,7 +85,8 @@ function bridgeActionRole_(action, body) {
     'listReviewQueue', 'getReviewQueueItem', 'cancelReviewQueue',
     'planSourceWrite', 'resolveReviewQueue', 'rollbackReviewQueue',
     'getLatestReversibleReview', 'rollbackReviewGroup',
-    'rememberSlipMessage', 'rememberRecentImage', 'getRecentIdentityImages'
+    'rememberSlipMessage', 'rememberRecentImage', 'getRecentIdentityImages',
+    'setStaffInputMode', 'consumeStaffInputMode'
   ];
   const notifyActions = [
     'installReminderTrigger', 'getReminderTriggerStatus',
@@ -251,6 +252,10 @@ function doPost(e) {
         result = rememberRecentImage_(body); break;
       case 'getRecentIdentityImages':
         result = getRecentIdentityImages_(body); break;
+      case 'setStaffInputMode':
+        result = setStaffInputMode_(body); break;
+      case 'consumeStaffInputMode':
+        result = consumeStaffInputMode_(body); break;
       case 'ocrThaiIdCardImage':
         result = ocrThaiIdCardImage_(body); break;
       case 'queueClose':
@@ -330,7 +335,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.10.25-140', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.10.25-141', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -560,7 +565,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.10.25-140', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.10.25-141', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -5807,6 +5812,49 @@ function resolveReviewQueueLocked_(body) {
             : ' ลงยอดรับแล้ว สะสม ' + sourceWrite.paidTotal + ' บาท เหลือ ' + sourceWrite.remaining + ' บาท วันจ่ายยังไม่เลื่อน'
           : ''))
       : 'คิว #' + rowNo + ' ไม่ผ่านการตรวจสอบ'
+  };
+}
+
+function staffInputModeCacheKey_(lineUserId) {
+  const raw = String(lineUserId || '').trim();
+  const digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, raw);
+  return 'staff-input-mode:' + Utilities.base64EncodeWebSafe(digest).slice(0, 40);
+}
+
+function setStaffInputMode_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId,
+    sourceType: 'user',
+    permission: 'บันทึกชำระ',
+    allowSystemControl: true
+  });
+  if (!access.allowed) {
+    return { ok: true, stored: false, message: access.message || 'ไม่มีสิทธิ์รับยอด' };
+  }
+
+  const mode = String(body.mode || '').trim().toLowerCase();
+  if (['payment', 'principal', 'fine', 'close'].indexOf(mode) < 0) {
+    return { ok: true, stored: false, message: 'โหมดปุ่มไม่ถูกต้อง' };
+  }
+  if (mode === 'close' && ['เจ้าของ', 'แอดมิน', 'admin'].indexOf(String(access.role || '').trim().toLowerCase()) < 0) {
+    return { ok: true, stored: false, message: 'คำสั่งปิดยอดใช้ได้เฉพาะแอดมินและเจ้าของเท่านั้น' };
+  }
+
+  CacheService.getScriptCache().put(staffInputModeCacheKey_(body.lineUserId), mode, 600);
+  return { ok: true, stored: true, mode: mode };
+}
+
+function consumeStaffInputMode_(body) {
+  const lineUserId = String(body.lineUserId || '').trim();
+  if (!lineUserId) return { ok: true, found: false, mode: '' };
+  const cache = CacheService.getScriptCache();
+  const key = staffInputModeCacheKey_(lineUserId);
+  const mode = String(cache.get(key) || '').trim().toLowerCase();
+  if (mode) cache.remove(key);
+  return {
+    ok: true,
+    found: ['payment', 'principal', 'fine', 'close'].indexOf(mode) >= 0,
+    mode: mode
   };
 }
 

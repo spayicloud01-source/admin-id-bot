@@ -2,7 +2,7 @@ import { callSheetsBridge, getBridgeRoutingStatus, inspectBridgeRole } from "../
 
 const EXPECTED_ROLE_VERSIONS = {
   customer: "2026.10.07-133",
-  payment: "2026.10.25-140",
+  payment: "2026.10.25-141",
   notify: "2026.10.10-137",
 };
 
