@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.10.22-139',
+  VERSION: '2026.10.25-140',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -330,7 +330,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.10.22-139', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.10.25-140', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -560,7 +560,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.10.22-139', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.10.25-140', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -6232,6 +6232,8 @@ function queueFinancialReviewLocked_(body, type) {
   }
   const requestId = (type === 'บันทึกชำระ' || type === 'รับค่าปรับ' || type === 'ตัดต้น' || type === 'ปิดยอด') ? String(body.requestId || '').trim() : '';
   const paidOn = String(body.paidOn || dateKey_(new Date())).trim();
+  const paidAt = parseDateFlexible_(paidOn);
+  if (!paidAt) return { ok: true, queued: false, message: 'วันที่รับเงินจริงไม่ถูกต้อง' };
   const fineDetail = 'ค่าปรับ | วันที่รับเงินจริง: ' + paidOn;
   const principalDetail = 'ตัดต้น | paymentKind=principal | วันที่รับเงินจริง: ' + paidOn;
   if (type === 'รับค่าปรับ') {
@@ -6277,7 +6279,7 @@ function queueFinancialReviewLocked_(body, type) {
       : 'คำขอตรวจสลิปจาก LINE';
 
   sh.appendRow([
-    new Date(),
+    paidAt,
     type,
     customer.queue || '',
     customer.name || '',

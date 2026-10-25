@@ -1,0 +1,12 @@
+import assert from "node:assert/strict";
+import fs from "node:fs";
+
+const gas = fs.readFileSync(new URL("../apps-script/AdminIdBridge.gs", import.meta.url), "utf8");
+const webhook = fs.readFileSync(new URL("../api/line/webhook.js", import.meta.url), "utf8");
+
+assert.match(gas, /VERSION:\s*'2026\.10\.25-140'/);
+assert.match(gas, /const paidAt = parseDateFlexible_\(paidOn\)/);
+assert.match(gas, /sh\.appendRow\(\[\s*paidAt,/s);
+assert.match(webhook, /if \(command\.paidOn\) payload\.paidOn = command\.paidOn/);
+
+console.log("PASS: all financial commands carry the selected receipt date to Payment GAS");

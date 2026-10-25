@@ -12,6 +12,13 @@ assert.deepEqual(
   { action: "queuePayment", query: "610-4", amount: 800, totalAmount: 900, fineAmount: 100, autoApprove: true, successKind: "combinedFine", invalidCombined: false },
 );
 
+assert.equal(parseCommand("รับยอด 610-4 900 24/10/2569")?.paidOn, "2026-10-24");
+assert.equal(parseCommand("รับยอด 610-4 900 ปรับ100 24/10/2569")?.paidOn, "2026-10-24");
+assert.equal(parseCommand("ตัดต้น 310-4 1000 24/10/2569")?.paidOn, "2026-10-24");
+assert.equal(parseCommand("ตัดต้น 310-4 1100 ปรับ100 24/10/2569")?.paidOn, "2026-10-24");
+assert.equal(parseCommand("รับค่าปรับ 610-4 100 24/10/2569")?.paidOn, "2026-10-24");
+assert.equal(parseCommand("รับยอด 610-4 900 31/02/2569")?.amount, null);
+
 assert.deepEqual(
   pick(parseCommand("รับยอด 610-4 1,250 ค่าปรับ50"), ["amount", "totalAmount", "fineAmount", "successKind", "invalidCombined"]),
   { amount: 1200, totalAmount: 1250, fineAmount: 50, successKind: "combinedFine", invalidCombined: false },
@@ -50,6 +57,9 @@ assert.deepEqual(
 );
 
 assert.equal(parseCloseoutCommand("ปิดยอด 310-6 500 ปรับ600")?.valid, false);
+assert.equal(parseCloseoutCommand("ปิดยอด 310-6 5,550 24/10/2569")?.command?.paidOn, "2026-10-24");
+assert.equal(parseCloseoutCommand("ปิดยอด 310-6 5,550 ปรับ150 24/10/2569")?.command?.paidOn, "2026-10-24");
+assert.equal(parseCloseoutCommand("ปิดยอด 310-6 5,550 31/02/2569")?.valid, false);
 assert.equal(parseCloseoutCommand("ค้นหา 310-6"), null);
 
 assert.deepEqual(
