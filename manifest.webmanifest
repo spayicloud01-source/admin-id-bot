@@ -1,0 +1,27 @@
+{
+  "id": "/admin-id-mobile",
+  "name": "Admin ID — หลังบ้าน",
+  "short_name": "Admin ID",
+  "description": "ระบบหลังบ้าน Admin ID สำหรับเจ้าของ",
+  "lang": "th",
+  "start_url": "/?app=1",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f4030",
+  "theme_color": "#0f4030",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/api/web/config?icon=192",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/api/web/config?icon=512",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ]
+}

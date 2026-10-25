@@ -1073,7 +1073,7 @@ async function handleEvent(event) {
       const url = "https://admin-id-bot.vercel.app/?token=" + encodeURIComponent(token);
       await replyMessage(event.replyToken, [{
         type: "text",
-        text: "ลิงก์เข้าเว็บหลังบ้าน (ใช้ได้ 4 ชั่วโมง)\n" + url + "\n\nห้ามส่งต่อลิงก์นี้ให้ผู้อื่น"
+        text: "ลิงก์เข้าเว็บหลังบ้าน (ล็อกอินค้างไว้บนเบราว์เซอร์นี้จนกว่าจะกดออกจากระบบ)\n" + url + "\n\nห้ามส่งต่อลิงก์นี้ให้ผู้อื่น"
       }]);
       await safeLogAction({
         lineUserId,
@@ -1085,7 +1085,7 @@ async function handleEvent(event) {
         result: "ออกลิงก์เข้าเว็บ",
         actionName: "webLogin",
         status: "สำเร็จ",
-        note: "session 4 ชั่วโมง",
+        note: "owner persistent session; no automatic timeout",
       });
       return;
     }
