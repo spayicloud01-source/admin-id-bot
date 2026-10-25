@@ -8,10 +8,14 @@ const original = { richMenuId: "old", name: "existing" };
 const menu = extendMenu(original);
 assert.equal(menu.areas.length, 4);
 assert.deepEqual(menu.areas.map((x) => x.action.label), ["รับยอด", "ตัดต้น", "ค่าปรับ", "ปิดยอด"]);
-assert.deepEqual(menu.areas.map((x) => x.action.text), ["รับยอด", "ตัดต้น", "รับค่าปรับ", "ปิดยอด"]);
-assert.equal(parseCommand(menu.areas[0].action.text).action, "queuePayment");
-assert.equal(parseCommand(menu.areas[1].action.text).paymentKind, "principal");
-assert.equal(parseCommand(menu.areas[2].action.text).paymentKind, "fine");
+assert.ok(menu.name.startsWith("admin-id-staff-v8:"));
+assert.deepEqual(menu.areas.map((x) => x.action.type), ["postback", "postback", "postback", "postback"]);
+assert.deepEqual(menu.areas.map((x) => x.action.inputOption), ["openKeyboard", "openKeyboard", "openKeyboard", "openKeyboard"]);
+assert.deepEqual(menu.areas.map((x) => x.action.fillInText), ["รับยอด ", "ตัดต้น ", "รับค่าปรับ ", "ปิดยอด "]);
+assert.deepEqual(menu.areas.map((x) => x.action.data), ["staffInput=payment", "staffInput=principal", "staffInput=fine", "staffInput=close"]);
+assert.equal(parseCommand(menu.areas[0].action.fillInText + "610-4 900").autoApprove, true);
+assert.equal(parseCommand(menu.areas[1].action.fillInText + "610-4 1000").paymentKind, "principal");
+assert.equal(parseCommand(menu.areas[2].action.fillInText + "610-4 100").paymentKind, "fine");
 
 const image = Buffer.from(STAFF_MENU_IMAGE, "base64");
 const meta = await sharp(image).metadata();
