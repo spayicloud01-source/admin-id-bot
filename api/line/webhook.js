@@ -2349,6 +2349,14 @@ async function handleEvent(event) {
             "ค่าเช่าใหม่: " + money(principal.feeAfter) + " บาท",
             "วันครบกำหนดเดิม",
           ].filter(Boolean).join("\n");
+        } else if (command.successKind === "fine") {
+          responseText = [
+            "รับค่าปรับสำเร็จ",
+            "คิว: " + queue,
+            "ชื่อ: " + name,
+            "ยอด: " + money(result.amount || command.amount) + " บาท",
+            "วันจ่ายและค่าเช่าไม่เปลี่ยน",
+          ].join("\n");
         } else if (command.successKind === "principal") {
           const principal = result.sourceWrite || {};
           responseText = [

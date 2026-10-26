@@ -3,7 +3,7 @@ const HEALTH_SCHEMA_VERSION = 3;
 import { callSheetsBridge, getBridgeRoutingStatus } from "../lib/sheetsBridge.js";
 import { LAKROI_SEED_BILLS } from "../lib/lakroiSeed.js";
 
-const APP_VERSION = "2026.10.25-141";
+const APP_VERSION = "2026.10.26-142";
 // Generic health actions are routed to the Customer bridge. Split-role
 // versions are verified independently by /api/sheets/diagnostics.
 const EXPECTED_BRIDGE_VERSION = "2026.10.07-133";
