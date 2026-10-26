@@ -5,11 +5,11 @@ const gas = fs.readFileSync(new URL("../apps-script/AdminIdBridge.gs", import.me
 const webhook = fs.readFileSync(new URL("../api/line/webhook.js", import.meta.url), "utf8");
 const diagnostics = fs.readFileSync(new URL("../api/sheets/diagnostics.js", import.meta.url), "utf8");
 
-assert.match(gas, /VERSION:\s*'2026\.10\.25-141'/);
+assert.match(gas, /VERSION:\s*'2026\.10\.26-143'/);
 assert.match(gas, /const paidAt = parseDateFlexible_\(paidOn\)/);
 assert.match(gas, /sh\.appendRow\(\[\s*paidAt,/s);
 assert.match(webhook, /if \(command\.paidOn\) payload\.paidOn = command\.paidOn/);
-assert.match(diagnostics, /payment:\s*"2026\.10\.25-141"/);
+assert.match(diagnostics, /payment:\s*"2026\.10\.26-143"/);
 assert.match(gas, /function setStaffInputMode_\(body\)/);
 assert.match(gas, /function consumeStaffInputMode_\(body\)/);
 assert.match(webhook, /handleStaffInputPostback/);
