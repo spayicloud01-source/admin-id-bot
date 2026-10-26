@@ -1,5 +1,5 @@
 const CONFIG = {
-  VERSION: '2026.10.25-141',
+  VERSION: '2026.10.26-143',
   CUSTOMER_PILOT_SOURCE: 'v6',
   CUSTOMER_PILOT_SHEET: 'V6/10-69',
   CUSTOMER_BINDING_TARGETS: [
@@ -335,7 +335,7 @@ function postDeploySelfTest_() {
     });
   }
 
-  add('version', CONFIG.VERSION === '2026.10.25-141', CONFIG.VERSION, true);
+  add('version', CONFIG.VERSION === '2026.10.26-143', CONFIG.VERSION, true);
   add('เจ้าหน้าที่', !!ss.getSheetByName(CONFIG.STAFF_SHEET), CONFIG.STAFF_SHEET, true);
   add('ลิ้งชีต', !!ss.getSheetByName(CONFIG.SOURCE_SHEET), CONFIG.SOURCE_SHEET, true);
   add('ประวัติลูกค้า', !!ss.getSheetByName(CONFIG.HISTORY_SHEET), CONFIG.HISTORY_SHEET, true);
@@ -565,7 +565,7 @@ function readinessCheck_(body) {
     checks.push({ name: name, pass: !!pass, detail: detail || '' });
   }
 
-  add('Apps Script version', CONFIG.VERSION === '2026.10.25-141', CONFIG.VERSION);
+  add('Apps Script version', CONFIG.VERSION === '2026.10.26-143', CONFIG.VERSION);
   add('BOT_MASTER_ENABLED', isTrue_(getSettingValue_('BOT_MASTER_ENABLED', true)), String(getSettingValue_('BOT_MASTER_ENABLED', true)));
   add('BOT_STAFF_ENABLED', isTrue_(getSettingValue_('BOT_STAFF_ENABLED', true)), String(getSettingValue_('BOT_STAFF_ENABLED', true)));
 
@@ -5316,7 +5316,38 @@ function applyApprovedCloseToSource_(reviewRow, rawReviewRow, reviewRowNo) {
   }
 
   if (isInactiveDueStatus_(customer.status)) {
-    return { ok: false, message: 'ลูกค้าอยู่สถานะปิดหรือไม่ใช้งานแล้ว กรุณาตรวจสอบก่อน' };
+    // Some source rows are manually pre-marked as "ปิดยอด" before the LINE
+    // command is sent. That is not proof that the receipt was written. Allow
+    // this one migration case only when neither the source row nor the review
+    // history contains evidence of an earlier completed closeout. Other
+    // inactive states remain blocked.
+    const preMarkedCloseout = normalizeGeneral_(customer.status) === normalizeGeneral_('ปิดยอด');
+    const noteHasCloseout = noteRange && /\[ปิดยอด #\d+\]/.test(String(noteRange.getNote() || ''));
+    const calendarNotes = sheet.getRange(
+      sourceRow,
+      calendarStartCol,
+      1,
+      Math.max(1, sheet.getLastColumn() - calendarStartCol + 1)
+    ).getNotes()[0] || [];
+    const calendarHasCloseout = calendarNotes.some(function(note) {
+      return /\[ปิดยอด #\d+\]/.test(String(note || ''));
+    });
+    const reviewSheet = backendSpreadsheet_().getSheetByName(CONFIG.REVIEW_QUEUE_SHEET);
+    let approvedCloseoutExists = false;
+    if (reviewSheet && reviewSheet.getLastRow() >= 2) {
+      const rows = reviewSheet.getRange(2, 1, reviewSheet.getLastRow() - 1, 9).getDisplayValues();
+      const sourceKey = sourceName + ' / ' + sourceSheet;
+      approvedCloseoutExists = rows.some(function(row, index) {
+        return index + 2 !== reviewRowNo &&
+          String(row[1] || '').trim() === 'ปิดยอด' &&
+          normalizeGeneral_(row[2]) === normalizeGeneral_(customer.queue) &&
+          String(row[4] || '').trim() === sourceKey &&
+          String(row[8] || '').trim() === 'ผ่าน';
+      });
+    }
+    if (!preMarkedCloseout || noteHasCloseout || calendarHasCloseout || approvedCloseoutExists) {
+      return { ok: false, message: 'ลูกค้าอยู่สถานะปิดหรือไม่ใช้งานแล้ว กรุณาตรวจสอบก่อน' };
+    }
   }
 
   const paidExisting = paymentNumber_(paidRange.getValue());
