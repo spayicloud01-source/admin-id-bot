@@ -5,7 +5,7 @@ const gas = fs.readFileSync(new URL("../apps-script/AdminIdBridge.gs", import.me
 const webhook = fs.readFileSync(new URL("../api/line/webhook.js", import.meta.url), "utf8");
 const sheetsBridge = fs.readFileSync(new URL("../lib/sheetsBridge.js", import.meta.url), "utf8");
 
-assert.match(gas, /VERSION: '2026\.10\.25-141'/);
+assert.match(gas, /VERSION: '2026\.10\.26-143'/);
 assert.match(gas, /'getLatestReversibleReview', 'rollbackReviewGroup'/);
 assert.match(gas, /function getLatestReversibleReview_/);
 assert.match(gas, /function rollbackReviewGroup_/);
