@@ -5,6 +5,7 @@ process.env.CUSTOMER_PORTAL_SECRET = "customer-portal-test-secret";
 const {
   customerSessionToken,
   money,
+  isPortalCustomerInactive,
   normalizeCustomerName,
   normalizeQueue,
   safeCustomerView,
@@ -15,6 +16,10 @@ assert.equal(normalizeQueue(" 310 - 10 "), "310-10");
 assert.equal(normalizeCustomerName("นางสาว เกวลิน  เรืองบุญ"), "เกวลินเรืองบุญ");
 assert.equal(normalizeCustomerName("ด.ช. สมชาย ใจดี"), "สมชายใจดี");
 assert.equal(money("1,234.567 บาท"), 1234.57);
+assert.equal(isPortalCustomerInactive({status:"ใช้งาน"}), false);
+for (const status of ["ปิดยอดแล้ว","ปิดยอด","ปิดบัญชี","ยกเลิก","ไม่ใช้งาน"]) {
+  assert.equal(isPortalCustomerInactive({status}), true, status);
+}
 
 const customer = {
   source: "v1/v3",
@@ -48,4 +53,28 @@ assert.equal(overdue.paymentTotal, 1100);
 assert.equal(overdue.closeAmount, 6100);
 assert.match(overdue.dueMessage, /เกินกำหนด 6 วัน/);
 
-console.log("PASS customer portal identity, session, and safe response");
+
+const bangkokNoon = new Date("2026-10-30T05:00:00.000Z");
+const statuses = [
+  ["31 ต.ค. 26", 1, 0],
+  ["2 พ.ย. 26", 3, 0],
+  ["30 ต.ค. 26", 0, 0],
+  ["23 ต.ค. 26", 0, 7],
+  ["31 ต.ค. 69", 1, 0],
+  ["2 พฤศจิกายน 2569", 3, 0],
+  ["31/10/2569", 1, 0],
+  ["2026-10-31", 1, 0],
+  ["๓๑ ต.ค. ๒๖", 1, 0],
+];
+for (const [date, daysUntil, overdueDays] of statuses) {
+  const status = safeCustomerView({ ...customer, dueDate: date }, bangkokNoon);
+  assert.equal(status.daysUntil, daysUntil, "daysUntil for "+date);
+  assert.equal(status.overdueDays, overdueDays, "overdueDays for "+date);
+  assert.match(status.dueMessage, daysUntil > 0 ? new RegExp(String(daysUntil)+" วัน") : overdueDays > 0 ? /เกินกำหนด/ : /วันนี้/);
+}
+const invalidThaiMonth = safeCustomerView({ ...customer, dueDate: "31 ก.ย. 26" }, bangkokNoon);
+assert.match(invalidThaiMonth.dueMessage, /ยังไม่มีวันครบกำหนด/);
+const invalidThaiDay = safeCustomerView({ ...customer, dueDate: "32 ต.ค. 26" }, bangkokNoon);
+assert.match(invalidThaiDay.dueMessage, /ยังไม่มีวันครบกำหนด/);
+
+console.log("PASS customer portal identity, session, Thai due-date countdown and safe response");

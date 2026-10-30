@@ -25,7 +25,7 @@ const context = vm.createContext({
   Date,
   console,
   Utilities: { formatDate: (date) => [date.getFullYear(), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0')].join('-') },
-  LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
+  LockService: { getScriptLock: () => ({ waitLock() {}, tryLock() { return true; }, releaseLock() {} }) },
   PropertiesService: {
     getScriptProperties: () => ({
       getProperty: (key) => Object.prototype.hasOwnProperty.call(scriptProps, key) ? scriptProps[key] : null,
@@ -113,6 +113,15 @@ vm.runInContext(`
   ownerAccessForCustomerNotification_ = function() { return { role: 'เจ้าของ' }; };
   isConfiguredCustomerNotificationSheet_ = function(s, t) { return s === 'v6' && t === 'V6/10-69'; };
   customerLineSheet_ = function() { return customerGrid; };
+  customerReminderCustomerMaps_ = function(bindings, targetMap) {
+    // Keep this test about recipient selection and duplicate protection.
+    // Preload fixtures are exercised separately; no real spreadsheets/LINE calls.
+    return { 'v6|V6/10-69': {
+      '6121': { source: 'v6', sheet: 'V6/10-69', queue: '6121', name: 'ภาณุ', status: 'ใช้งาน' },
+      '6122': { source: 'v6', sheet: 'V6/10-69', queue: '6122', name: 'มานี', status: 'ใช้งาน' }
+    } };
+  };
+  customerReminderPaymentMap_ = function() { return {}; };
   findCustomerIdentity_ = function(s, t, q) {
     return { source: s, sheet: t, queue: q, name: q === '6121' ? 'ภาณุ' : 'มานี' };
   };

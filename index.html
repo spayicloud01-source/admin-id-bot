@@ -89,9 +89,11 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 @media(max-width:760px){.dueoverview{grid-template-columns:1fr}.dueoverviewbox{padding:13px;border-radius:16px}.duerow{grid-template-columns:1fr 1fr;padding:9px}.duerow b{font-size:12px}}
 @media(max-width:390px){.card .metric{font-size:25px}.card{padding:12px 10px}.actionbuttons{grid-template-columns:1fr}}
 
+.web-version{position:fixed;right:9px;bottom:calc(9px + env(safe-area-inset-bottom,0px));z-index:30;padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.82);color:#64748b;font-size:10px;font-weight:500;line-height:1.2;letter-spacing:.01em;pointer-events:none;user-select:none;box-shadow:0 1px 4px rgba(15,23,42,.08)}
 </style>
 </head>
 <body>
+<div class="web-version" aria-label="เวอร์ชันเว็บ">Web v2026.10.30.4</div>
 <header class="top"><div class="topin"><div class="brand"><div class="logo">ID</div><div><h1>Admin ID — หลังบ้าน</h1><p>LINE OA → Vercel → Apps Script → Google Sheets</p></div></div><div class="status"><span id="dot" class="dot"></span><span id="sys">กำลังตรวจระบบ…</span></div></div></header>
 <main class="wrap">
 <section id="login" class="login hidden"><h2>ต้องยืนยันสิทธิ์เจ้าของก่อน</h2><p>เปิด LINE OA Admin ID แล้วพิมพ์คำสั่งด้านล่าง ระบบจะตรวจว่าบัญชี LINE เป็น “เจ้าของ” และส่งลิงก์เข้าเว็บกลับมา</p><span class="cmd">เข้าเว็บ</span></section>
@@ -424,6 +426,11 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       }).catch(function(e){byId("dueList").innerHTML='<div class="empty"><b>โหลดไม่สำเร็จ</b><p>'+escapeHtml(String((e&&e.message)||e))+'</p></div>';});
   }
 
+  function isCustomerSlipUrl(value){
+    try { var url=new URL(String(value||"")); return url.protocol==="https:" && /^[a-z0-9-]+\.public\.blob\.vercel-storage\.com$/i.test(url.hostname); }
+    catch(e){ return false; }
+  }
+
   function renderToolResult(boxId,data){
     var box=byId(boxId),items=[],head="",out="",i,x,keys,j;
     if(!box)return;
@@ -441,15 +448,25 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       x=items[i]||{};keys=Object.keys(x);out+='<div class="item"><div class="itemname">'+escapeHtml(x.name||x.staffName||x.queue||x.rowNo||("รายการ "+(i+1)))+'</div><div class="itemmeta">';
       for(j=0;j<keys.length;j++){
         if(x[keys[j]]==null||x[keys[j]]===""||typeof x[keys[j]]==="object")continue;
-        out+='<b>'+escapeHtml(keys[j])+'</b>: '+escapeHtml(x[keys[j]])+'<br>';
+        if(keys[j]==="slipRef" && isCustomerSlipUrl(x[keys[j]])){
+          var href=escapeHtml(x[keys[j]]);
+          out+='<b>สลิป</b>: <a href="'+href+'" target="_blank" rel="noopener noreferrer">เปิดสลิปเพื่อตรวจสอบ</a><br>';
+          out+='<a href="'+href+'" target="_blank" rel="noopener noreferrer"><img src="'+href+'" alt="สลิปรอการตรวจสอบ" loading="lazy" style="display:block;width:100%;max-width:260px;max-height:320px;object-fit:contain;margin:8px 0;border:1px solid #dbe6e3;border-radius:10px"></a>';
+        }else{
+          out+='<b>'+escapeHtml(keys[j])+'</b>: '+escapeHtml(x[keys[j]])+'<br>';
+        }
       }
       out+='</div>';
-      if(x.rowNo)out+='<button class="btn soft itembtn" data-pick-review="'+escapeHtml(x.rowNo)+'">เลือกคิว #'+escapeHtml(x.rowNo)+'</button>';
+      if(x.rowNo)out+='<button class="btn soft itembtn" data-pick-review="'+escapeHtml(x.rowNo)+'"'+(x.type?' data-queue-review="1"':'')+'>เลือกคิว #'+escapeHtml(x.rowNo)+'</button>';
       out+='</div>';
     }
     box.innerHTML=head+out;
     var picks=box.querySelectorAll("[data-pick-review]");
-    for(i=0;i<picks.length;i++)picks[i].onclick=function(){var row=this.getAttribute("data-pick-review");byId("reviewRow").value=row;byId("customerBindingRow").value=row;};
+    for(i=0;i<picks.length;i++)picks[i].onclick=function(){
+      var row=this.getAttribute("data-pick-review");
+      byId("reviewRow").value=row;byId("customerBindingRow").value=row;
+      if(boxId==="reviewToolResult" && this.getAttribute("data-queue-review")==="1")runWebAction({action:"getReviewQueueItem",query:row},"reviewToolResult",null);
+    };
   }
 
   function runWebAction(payload,boxId,button){
@@ -697,6 +714,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     var all=document.querySelectorAll(".tab,.view"),j;
     for(j=0;j<all.length;j++)all[j].classList.remove("active");
     this.classList.add("active");byId(this.getAttribute("data-view")).classList.add("active");
+    if(this.getAttribute("data-view")==="reviewTools")byId("refreshReview").click();
   };}
   byId("cardCustomers").onclick=openCustomers;
   byId("cardToday").onclick=function(){openDue("today");};

@@ -36,6 +36,10 @@
       "destination": "/api/web/send?customerRoute=contact"
     },
     {
+      "source": "/api/customer/discount",
+      "destination": "/api/web/send?customerRoute=discount"
+    },
+    {
       "source": "/customer",
       "destination": "/customer.html"
     }

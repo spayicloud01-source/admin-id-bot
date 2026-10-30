@@ -875,6 +875,7 @@ async function handleEvent(event) {
       (event.type === "follow" || event.type === "message" || event.type === "postback") &&
       process.env.LINE_CUSTOMER_AUTO_REPLY_ENABLED !== "true") {
     let staffAllowed = false;
+    let staffLookup = null;
     try {
       const staff = await callSheetsBridge({
         action: "checkAccess",
@@ -884,12 +885,35 @@ async function handleEvent(event) {
         permission: "",
         allowSystemControl: true
       });
+      staffLookup = staff;
       staffAllowed = staff?.allowed === true && !!String(staff?.role || "").trim();
     } catch (error) {
       // Fail closed: unknown permission must never trigger a customer auto-response.
       console.warn("Customer chat silence: access lookup unavailable", error?.message);
     }
     if (!staffAllowed) {
+      // Old LINE Rich Menus send plain text. Relink a VERIFIED active customer
+      // to the web-link menu when they tap one, even while auto replies are off.
+      // Rich Menu linking does not consume a LINE message quota.
+      const menuText = event.type === "message" && event.message?.type === "text"
+        ? String(event.message.text || "").trim() : "";
+      if (staffLookup?.message === "บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID" &&
+          /^(ชำระยอด|ยอดปิด|สถานะ|ข้อมูล|สิทธิ์ส่วนลด|ติดต่อแอดมิน)$/.test(menuText)) {
+        try {
+          const self = await callSheetsBridge({
+            action: "getCustomerSelf", lineUserId: event.source.userId, field: "status"
+          });
+          const active = (self?.items || []).find(item =>
+            item && item.inactive !== true &&
+            !/ปิด|ยกเลิก|ไม่ใช้งาน/i.test(String(item.status || ""))
+          );
+          if (self?.bound && active?.queue) {
+            await linkVerifiedCustomerMenu(event.source.userId);
+          }
+        } catch (error) {
+          console.warn("Could not refresh verified customer menu", error?.message || error);
+        }
+      }
       // Keep forwarding customer slips to authorized staff, but send NO customer ack.
       if (event.type === "message" && event.message?.type === "image") {
         try {

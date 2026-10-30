@@ -4,6 +4,8 @@ import { Readable } from 'node:stream';
 import handler from '../api/line/webhook.js';
 process.env.LINE_CHANNEL_SECRET='test-secret';
 process.env.LINE_CHANNEL_ACCESS_TOKEN='test-token';
+// This suite covers the legacy welcome/reply flow, which Production intentionally disables.
+process.env.LINE_CUSTOMER_AUTO_REPLY_ENABLED='true';
 process.env.SHEETS_BRIDGE_SECRET='bridge-secret';
 process.env.GOOGLE_APPS_SCRIPT_URL='https://example.test/bridge';
 process.env.PUBLIC_BASE_URL='https://admin-id-bot.example';
@@ -30,7 +32,7 @@ globalThis.fetch=async(url,options={})=>{
   return json({ok:true,bound:false});
  }
  if(url.endsWith('/message/reply')) {replies.push(JSON.parse(options.body).messages);return json({});}
- if(url.endsWith('/richmenu/list')) return json({richmenus:[{name:'admin-id-customer-v3',richMenuId:'richmenu-test'}]});
+ if(url.endsWith('/richmenu/list')) return json({richmenus:[{name:'admin-id-customer-v4-web',richMenuId:'richmenu-test'}]});
  if(url.includes('/richmenu/richmenu-test')) {menuLinks.push(url);return json({});}
  if(url.endsWith('/content')) return json({});
  return json({});
@@ -50,7 +52,7 @@ assert.equal(messages.length,3);
 const card=messages[0];assert.equal(card.type,'flex');
 const fields=card.contents.body.contents.filter(x=>x.type==='box').map(x=>x.contents.map(y=>y.text));
 assert.deepEqual(fields,[['ชื่อ','สมชาย ใจดี'],['คิว','6121'],['รุ่น','iPhone 15 Pro Max'],['เบอร์โทร','ไม่มีข้อมูล'],['ยอด','15,000 บาท'],['ค่าเช่า','1,500 บาท'],['วันขาย/ฝาก','24/09/2026']]);
-assert.deepEqual(card.quickReply.items.map(x=>x.action.text),['ชำระยอด','ยอดปิด','สถานะ','ข้อมูล','สิทธิ์ส่วนลด','ติดต่อแอดมิน']);
+assert.equal(card.quickReply,undefined,'welcome now uses persistent footer actions instead of quickReply');
 assert.deepEqual(card.contents.footer.contents.filter(x=>x.type==='box').flatMap(x=>x.contents.map(y=>y.action.text)),['ชำระยอด','ยอดปิด','สถานะ','ข้อมูล','สิทธิ์ส่วนลด','ติดต่อแอดมิน']);
 assert.equal(messages[1].type,'image');
 assert.match(messages[1].originalContentUrl,/api\/assets\/customer-terms$/);
@@ -65,43 +67,25 @@ assert.equal(hyphenated[0].type,'flex');
 const invalid=await send('U-invalid','ผูกบัญชี 610-21');
 assert.match(invalid[0].text,/กรุณาแจ้ง คิว/);
 assert.equal(auditLogs.at(-1).status,'รูปแบบไม่ถูกต้อง');
-const auditCountBeforeSelfService=auditLogs.length;
-const unbound=await send('U-unbound','สถานะ');
-assert.equal(unbound[0].type,'text');
-assert.equal(auditLogs.length,auditCountBeforeSelfService);
-const denied=await send('U-unknown','ช่วยเหลือ');
-assert.equal(denied[0].type,'text');
-assert.equal(auditLogs.at(-1).status,'ไม่มีสิทธิ์');
-assert.equal(auditLogs.at(-1).actionName,'checkAccess');
-selfResult={bound:true,items:[{name:'ภาณุ',queue:'610-21',dueDate:'01/10/2026',overdueDays:0}]};
-const duePushCount=progressMessages.length;
-const naturalDue=await send('U-hyphen','จ่ายวันไหนดี');
-assert.equal(naturalDue[0].type,'text');
-assert.match(naturalDue[0].text,/กำลังตรวจสอบ/);
-const naturalDueResult=progressMessages.slice(duePushCount).at(-1);
-assert.equal(naturalDueResult.type,'flex');
-assert.match(naturalDueResult.contents.body.contents[1].text,/01\/10\/2026/);
-assert.deepEqual(naturalDueResult.quickReply.items.map(x=>x.action.text),['ชำระยอด','ยอดปิด','สถานะ','ข้อมูล','สิทธิ์ส่วนลด','ติดต่อแอดมิน']);
-assert.deepEqual(naturalDueResult.contents.footer.contents.filter(x=>x.type==='box').flatMap(x=>x.contents.map(y=>y.action.text)),['ชำระยอด','ยอดปิด','สถานะ','ข้อมูล','สิทธิ์ส่วนลด','ติดต่อแอดมิน']);
-selfResult={bound:true,items:[{name:'ภาณุ',queue:'610-21',source:'v1/v3',principal:100,fee:15,accumulatedFee:15,lateFee:10,paymentTotal:25,calculatedClose:125,dueDate:'01/10/2026'}]};
-const paymentPushCount=progressMessages.length;
-const payment=await send('U-hyphen','ชำระยอด');
-assert.equal(payment[0].type,'text');
-assert.match(payment[0].text,/กำลังตรวจสอบ/);
-const paymentResult=progressMessages.slice(paymentPushCount).at(-1);
-assert.equal(paymentResult.type,'flex');
-assert.match(paymentResult.contents.hero.url,/source=v1%2Fv3/);
-assert.match(paymentResult.contents.hero.url,/amount=25\.00/);
-assert.equal(paymentResult.contents.footer.contents[0].action.label,'เปิด/บันทึก QR');
-const fallback=await send('U-hyphen','มีเรื่องอยากถาม');
-assert.equal(fallback[0].type,'flex');
-assert.match(fallback[0].contents.body.contents[1].text,/ติดต่อแอดมิน/);
-await send('U-existing-customer','สถานะ');
-assert.ok(menuLinks.some(url=>url.includes('/user/U-existing-customer/')));
-staffAccess={ok:true,allowed:true,role:'เจ้าของ'};
-await send('U-staff-customer','สถานะ');
-assert.ok(!menuLinks.some(url=>url.includes('/user/U-staff-customer/')));
+// Legacy customer self-service LINE text responses are intentionally unavailable
+// in the deployed quota-saving mode. Payment/discount web actions have dedicated
+// endpoint tests; below we verify no-message safe menu migration instead.
+// With customer auto replies off, tapping the OLD LINE message menu must
+// refresh the verified customer's URI menu without replying or sending Push.
+process.env.LINE_CUSTOMER_AUTO_REPLY_ENABLED='false';
+staffAccess={ok:true,allowed:false,message:'บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID'};
+selfResult={bound:true,items:[{queue:'6121',status:'ใช้งาน',inactive:false}]};
+const replyBeforeSilent=replies.length;
+const pushBeforeSilent=progressMessages.length;
+await send('U-silent','สถานะ');
+assert.equal(replies.length,replyBeforeSilent,'no auto reply during LINE quota silence');
+assert.equal(progressMessages.length,pushBeforeSilent,'no LINE push during menu relink');
+assert.ok(menuLinks.some(url=>url.includes('/user/U-silent/')),'bound customer Rich Menu updates');
+selfResult={bound:true,items:[{queue:'6121',status:'ปิดยอดแล้ว',inactive:true}]};
+await send('U-closed','สถานะ');
+assert.ok(!menuLinks.some(url=>url.includes('/user/U-closed/')),'closed customer never receives payment menu');
 staffAccess={ok:true,allowed:false,message:'บัญชีเจ้าหน้าที่ถูกระงับ'};
-await send('U-disabled-staff-customer','สถานะ');
-assert.ok(!menuLinks.some(url=>url.includes('/user/U-disabled-staff-customer/')));
-console.log('PASS: verified overview card, exact fields, six buttons; rejected binding has no card');
+selfResult={bound:true,items:[{queue:'6121',status:'ใช้งาน'}]};
+await send('U-disabled-silent','สถานะ');
+assert.ok(!menuLinks.some(url=>url.includes('/user/U-disabled-silent/')),'disabled staff menu must not be replaced');
+console.log('PASS: verified welcome and silent, no-quota LINE Rich Menu migration; closed/staff customers excluded');
