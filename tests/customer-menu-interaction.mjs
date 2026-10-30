@@ -28,9 +28,17 @@ const document={
   getElementById(id){if(!els.has(id))els.set(id,makeEl());return els.get(id);},
   querySelectorAll(selector){assert.equal(selector,".customer-btn");return buttons;},
 };
+const calls=[];
+let discountResponse={eligible:true,discountAmount:400,discountPercent:50,
+  calculatedClose:4300,feeBefore:800,discountStartDate:"25/10/2569",crossCycleOutstanding:false};
 const {render,selectAction}=new Function("document","window","location","fetch",script)(
-  document, {}, {search:""}, () => {throw Error("Unexpected API call during UI test");}
+  document, {}, {search:""}, async(url) => {
+    calls.push(url);
+    assert.equal(url,"/api/customer/discount");
+    return {ok:true,json:async()=>discountResponse};
+  }
 );
+const settled=()=>new Promise(resolve=>setImmediate(resolve));
 const customer={
   queue:"310-4",name:"สมชาย ทดสอบ",status:"ใช้งาน",
   lateFee:150,closeAmount:5300,paymentTotal:1150,
@@ -41,9 +49,22 @@ render({customer,history:[]});
 assert.equal(buttons.find(x=>x.dataset.action==="fine").disabled,false,"fine payment available when calculated fine exists");
 selectAction("discount");
 assert.equal(els.get("discountPanel").classList.contains("hidden"),false,"discount panel must appear");
-assert.equal(els.get("discountCloseAmount").textContent,"5,300 บาท");
+await settled();
+assert.equal(els.get("discountStatus").textContent,"มีสิทธิ์รับส่วนลดค่าเช่ารอบนี้");
+assert.equal(els.get("discountCloseAmount").textContent,"4,300 บาท");
+assert.equal(els.get("discountPercent").textContent,"50%");
+assert.equal(els.get("discountAmount").textContent,"400 บาท");
+assert.equal(els.get("discountStartDate").textContent,"25/10/2569");
+assert.deepEqual(calls,["/api/customer/discount"]);
+discountResponse={eligible:false,discountAmount:0,discountPercent:0,
+  calculatedClose:4800,feeBefore:800,discountStartDate:"15/10/2569",crossCycleOutstanding:true};
+selectAction("discount");
+await settled();
+assert.equal(els.get("discountStatus").textContent,"ไม่มีสิทธิ์ส่วนลดค่าเช่ารอบนี้");
+assert.equal(els.get("discountAmount").textContent,"0 บาท");
+assert.match(els.get("discountReason").textContent,/ค้างชำระข้ามรอบ/);
 assert.equal(els.get("paymentBox").classList.contains("hidden"),true);
-assert.match(html,/ขณะนี้เว็บยังไม่มีข้อมูลสิทธิ์ส่วนลดที่ยืนยันแล้ว/);
+assert.match(html,/คำนวณตามกฎส่วนลดเดิมของ Admin ID/);
 assert.equal(typeof els.get("discountContactBtn").onclick,"function");
 els.get("discountContactBtn").onclick();
 assert.equal(els.get("contactPanel").classList.contains("hidden"),false,"contact panel is shown, no automatic push");
