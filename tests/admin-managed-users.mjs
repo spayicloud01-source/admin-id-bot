@@ -37,7 +37,8 @@ async function compile(filename,replacements){
  const result=await import("data:text/javascript;base64,"+Buffer.from(code).toString("base64"));
  return result.default;
 }
-globalThis.__authTest={bridge,store,envExports,realAuth};
+const crypto=await import("node:crypto");
+globalThis.__authTest={bridge,store,envExports,realAuth,crypto:crypto.default};
 const api=await compile("adminAccountsApi.js",[
  ['import crypto from "node:crypto";','const crypto=globalThis.__authTest.crypto;'],
  ['import {callSheetsBridge} from "./sheetsBridge.js";','const callSheetsBridge=globalThis.__authTest.bridge;'],
@@ -52,8 +53,7 @@ const staff=await compile("adminStaffPortalApi.js",[
  ['import {getUser} from "./adminAccountStore.js";','const {getUser}=globalThis.__authTest.store;'],
  ['import {callSheetsBridge} from "./sheetsBridge.js";','const callSheetsBridge=globalThis.__authTest.bridge;'],
 ]);
-const crypto=await import("node:crypto");
-globalThis.__authTest.crypto=crypto.default;
+
 function response(){return {headers:{},statusCode:null,body:null,setHeader(k,v){this.headers[k]=v;},status(c){this.statusCode=c;return this;},json(v){this.body=v;return this;}};}
 const ownerToken=createWebSession({lineUserId:"U-unique-owner",role:"เจ้าของ",staffName:"owner"});
 async function call(handler,token,method,body={},headerOrigin="https://admin-id-bot.vercel.app"){
