@@ -17,5 +17,8 @@ assert.match(html,/id="contactPanel"/);
 assert.match(html,/id="dueCountdown"/);
 assert.match(script,/dueCountdown\x27\)\.textContent=account\.dueMessage/);
 assert.match(html,/status-panel strong/);
+assert.match(html,/\.status-panel #dueCountdown,\.status-panel #dueMessage\{color:#ffe16b\}/,'not overdue: yellow due text');
+assert.match(html,/\.status-panel\.overdue #dueCountdown,\.status-panel\.overdue #dueMessage\{color:#ff8a8a\}/,'overdue: red due text');
+assert.match(script,/classList\.toggle\('overdue',account\.overdueDays>0\)/,'red condition is backend overdueDays');
 assert.match(script,/action===\x27status\x27/);
 console.log('PASS: all customer LINE deep links support authenticated navigation, without automatic LINE contact');
