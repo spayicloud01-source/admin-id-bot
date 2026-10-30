@@ -48,7 +48,7 @@ process.env.VERCEL_ENV="production";
 await assert.rejects(()=>api.listUsers(),/Private authentication storage required/);
 // With a dedicated private token configured, all account operations must target
 // private storage and never reuse the default public Blob credentials.
-process.env.ADMIN_AUTH_BLOB_TOKEN="preview-private-test-token";
+process.env.ADMIN_AUTH_BLOB_READ_WRITE_TOKEN="preview-private-test-token";
 assert.equal(await api.getUser("private-user"),null);
 assert.equal(privateOptions.access,"private");
 assert.equal(privateOptions.token,"preview-private-test-token");
