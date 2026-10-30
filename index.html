@@ -93,7 +93,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 </style>
 </head>
 <body>
-<div class="web-version" aria-label="เวอร์ชันเว็บ">Web v2026.10.30.4</div>
+<div class="web-version" aria-label="เวอร์ชันเว็บ">Web v2026.10.30.5</div>
 <header class="top"><div class="topin"><div class="brand"><div class="logo">ID</div><div><h1>Admin ID — หลังบ้าน</h1><p>LINE OA → Vercel → Apps Script → Google Sheets</p></div></div><div class="status"><span id="dot" class="dot"></span><span id="sys">กำลังตรวจระบบ…</span></div></div></header>
 <main class="wrap">
 <section id="login" class="login hidden"><h2>ต้องยืนยันสิทธิ์เจ้าของก่อน</h2><p>เปิด LINE OA Admin ID แล้วพิมพ์คำสั่งด้านล่าง ระบบจะตรวจว่าบัญชี LINE เป็น “เจ้าของ” และส่งลิงก์เข้าเว็บกลับมา</p><span class="cmd">เข้าเว็บ</span></section>
@@ -203,6 +203,41 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   var DASHBOARD_CACHE_OWNER = "";
 
   function byId(id){ return document.getElementById(id); }
+  // Keep an authenticated owner's session across tabs in the same browser.
+  // The token is saved persistently only after /api/web/config verifies it.
+  var OWNER_TOKEN_KEY="adminIdVerifiedOwner";
+  var OWNER_TOKEN_TTL=30*24*60*60*1000;
+  function forgetOwnerToken(){
+    try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}
+    try{localStorage.removeItem(OWNER_TOKEN_KEY);}catch(e){}
+    TOKEN="";
+  }
+  function restoreOwnerToken(){
+    try{
+      var record=JSON.parse(localStorage.getItem(OWNER_TOKEN_KEY)||"null");
+      if(record&&typeof record.token==="string"&&record.token &&
+          Number.isFinite(Number(record.savedAt))&&
+          Date.now()>=Number(record.savedAt)&&
+          Date.now()-Number(record.savedAt)<OWNER_TOKEN_TTL){
+        return record.token;
+      }
+      localStorage.removeItem(OWNER_TOKEN_KEY);
+    }catch(e){}
+    return "";
+  }
+  function rememberVerifiedOwner(){
+    if(!TOKEN)return;
+    try{sessionStorage.setItem("adminIdWebToken",TOKEN);}catch(e){}
+    try{localStorage.setItem(OWNER_TOKEN_KEY,JSON.stringify({token:TOKEN,savedAt:Date.now()}));}catch(e){}
+    // Remove the confidential LINE login token from the address bar.
+    try{
+      var url=new URL(location.href);
+      if(url.searchParams.has("token")){
+        url.searchParams.delete("token");
+        history.replaceState(null,"",url.pathname+url.search+url.hash);
+      }
+    }catch(e){}
+  }
   function authHeaders(){ var h={}; if(TOKEN){ h.Authorization="Bearer "+TOKEN; } return h; }
   function saveDashboardCache(owner){
     try{
@@ -377,7 +412,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     fetch("/api/web/summary?mode="+encodeURIComponent(mode),{headers:authHeaders(),cache:"no-store"})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){} location.reload();return;}
+        if(x.r.status===401){forgetOwnerToken(); location.reload();return;}
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"โหลดข้อมูลไม่ได้");
         var items=x.j.items||[];
         var countIds={today:"todayCount",upcoming:"upcomingCount",overdue:"overdueCount",deleted:"deletedCount",pending_lock:"pendingLockCount",sold:"soldCount",fraud:"fraudCount",installment:"installmentCount"};
@@ -477,7 +512,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     return fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify(payload)})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}location.reload();return;}
+        if(x.r.status===401){forgetOwnerToken();location.reload();return;}
         if(!x.r.ok||!x.j.ok)throw new Error(x.j.error||x.j.message||"ดำเนินการไม่สำเร็จ");
         renderToolResult(boxId,x.j);return x.j;
       }).catch(function(e){if(byId(boxId))byId(boxId).innerHTML='<div class="warning">ผิดพลาด: '+escapeHtml(String((e&&e.message)||e))+'</div>';})
@@ -503,10 +538,11 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         return r.json().then(function(j){ return {r:r,j:j}; });
       }).then(function(x){
         if(x.r.status===401||x.r.status===403){
-          try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}
-          TOKEN=""; showLogin(); return;
+          forgetOwnerToken();
+          showLogin(); return;
         }
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"โหลดข้อมูลไม่ได้");
+        rememberVerifiedOwner();
         ITEMS=x.j.sheets||[];
         fillSources(); updateCustomerCount(); showApp();
         DASHBOARD_CACHE_SAVED_AT=Date.now();
@@ -586,7 +622,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({action:"record_payment",queue:q,amount:amount})})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}location.reload();return;}
+        if(x.r.status===401){forgetOwnerToken();location.reload();return;}
         if(!x.r.ok||!x.j.ok)throw new Error(x.j.error||"บันทึกไม่ได้");
         box.textContent=(x.j.message||"ส่งเข้าคิวตรวจสอบแล้ว")+(x.j.rowNo?(" • คิวตรวจสอบ #"+x.j.rowNo):"");
         box.classList.remove("hidden");
@@ -646,7 +682,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({action:"getCalculatedSummary",query:q,resolveRecipient:true})})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}location.reload();return;}
+        if(x.r.status===401){forgetOwnerToken();location.reload();return;}
         if(!x.r.ok||!x.j.ok)throw new Error(x.j.error||"ค้นหาไม่สำเร็จ");
         if(x.j.needsSelection)throw new Error("พบคิวซ้ำมากกว่า 1 รายการ กรุณาตรวจเลขคิว");
         if(!x.j.summary||!x.j.summary.customer)throw new Error("ไม่พบคิว "+q+" ใน V6/10-69 หรือ v3/10-69");
@@ -678,7 +714,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     fetch("/api/web/send",{method:"POST",headers:headers,body:JSON.stringify({targets:one?[]:SELECTED_TARGETS.map(function(x){return {source:x.source,sheet:x.sheet};}),field:field,queue:q,customMessage:customMessage,recipientToken:one?ONE_RECIPIENT_TOKEN:""})})
       .then(function(r){return r.json().then(function(j){return {r:r,j:j};});})
       .then(function(x){
-        if(x.r.status===401){try{sessionStorage.removeItem("adminIdWebToken");}catch(e){} location.reload();return;}
+        if(x.r.status===401){forgetOwnerToken(); location.reload();return;}
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"ส่งไม่สำเร็จ");
         box.innerHTML='<div style="display:flex;align-items:center;gap:9px;font-weight:800;font-size:14px"><span style="display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#16a34a;color:#fff;font-size:16px">✓</span><span>'+escapeHtml(x.j.message||"ส่งสำเร็จ")+'</span></div>'+(x.j.failed?'<div style="margin-top:6px">ไม่สำเร็จ '+escapeHtml(x.j.failed)+' ราย</div>':'');
         box.classList.remove("hidden");
@@ -689,8 +725,13 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   try{
     var qs=new URLSearchParams(location.search);
     var incoming=qs.get("token");
-    if(incoming){ try{sessionStorage.setItem("adminIdWebToken",incoming);}catch(e){} }
-    try{TOKEN=sessionStorage.getItem("adminIdWebToken")||"";}catch(e){TOKEN=incoming||"";}
+    if(incoming){
+      TOKEN=incoming;
+      try{sessionStorage.setItem("adminIdWebToken",incoming);}catch(e){}
+    }else{
+      try{TOKEN=sessionStorage.getItem("adminIdWebToken")||"";}catch(e){}
+      if(!TOKEN)TOKEN=restoreOwnerToken();
+    }
   }catch(e){ TOKEN=""; }
 
   byId("source").addEventListener("change",fillSheets);
