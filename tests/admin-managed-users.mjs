@@ -81,6 +81,7 @@ assert.equal(whoami.statusCode,200);
 assert.equal(whoami.body.profile.role,"พนักงาน");
 assert.equal((await call(staff,staffToken,"POST",{action:"getCustomerInfo",query:"310-4"})).statusCode,200);
 assert.equal((await call(staff,staffToken,"POST",{action:"resolveReviewQueue",query:"2",decision:"ผ่าน"})).statusCode,403);
+assert.equal((await call(staff,staffToken,"POST",{action:"listReviewQueue"})).statusCode,403);
 assert.equal((await call(staff,staffToken,"POST",{action:"setStaffPermission",query:"2"})).statusCode,403);
 const stopped=await call(api,ownerToken,"POST",{action:"toggle",username:"staff-lop",enabled:false});
 assert.equal(stopped.statusCode,200);
