@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "postinstall": "node scripts/financial-command-selftest.mjs && node tests/financial-date-static.mjs && node --check api/line/webhook.js && node --check lib/staffRichMenu.js",
+    "postinstall": "node scripts/financial-command-selftest.mjs && node tests/financial-date-static.mjs && node --check api/line/webhook.js && node --check lib/staffRichMenu.js && node tests/customer-web-review-no-line.mjs",
     "test": "node tests/run-all.mjs"
   },
   "dependencies": {
