@@ -19,12 +19,12 @@ let checked=[];
 globalThis.__mockAdminBridge=async payload=>{checked.push(payload);return staffResult;};
 globalThis.__mockAdminCreateSession=createWebSession;
 globalThis.__mockAdminCredentials={configuredOwnerCredentials,verifyOwnerPassword};
-let code=readFileSync(new URL("../api/web/password-login.js",import.meta.url),"utf8")
-  .replace('import { callSheetsBridge } from "../../lib/sheetsBridge.js";',
+let code=readFileSync(new URL("../lib/adminPasswordLoginApi.js",import.meta.url),"utf8")
+  .replace('import { callSheetsBridge } from "./sheetsBridge.js";',
     'const callSheetsBridge=globalThis.__mockAdminBridge;')
-  .replace('import { createWebSession } from "../../lib/webAuth.js";',
+  .replace('import { createWebSession } from "./webAuth.js";',
     'const createWebSession=globalThis.__mockAdminCreateSession;')
-  .replace('import { configuredOwnerCredentials, verifyOwnerPassword } from "../../lib/adminPasswordAuth.js";',
+  .replace('import { configuredOwnerCredentials, verifyOwnerPassword } from "./adminPasswordAuth.js";',
     'const {configuredOwnerCredentials,verifyOwnerPassword}=globalThis.__mockAdminCredentials;');
 const {default:handler}=await import("data:text/javascript;base64,"+Buffer.from(code).toString("base64"));
 function makeRes(){
