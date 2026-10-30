@@ -93,10 +93,24 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 </style>
 </head>
 <body>
-<div class="web-version" aria-label="เวอร์ชันเว็บ">Web v2026.10.30.5</div>
+<div class="web-version" aria-label="เวอร์ชันเว็บ">Web v2026.10.31.1</div>
 <header class="top"><div class="topin"><div class="brand"><div class="logo">ID</div><div><h1>Admin ID — หลังบ้าน</h1><p>LINE OA → Vercel → Apps Script → Google Sheets</p></div></div><div class="status"><span id="dot" class="dot"></span><span id="sys">กำลังตรวจระบบ…</span></div></div></header>
 <main class="wrap">
-<section id="login" class="login hidden"><h2>ต้องยืนยันสิทธิ์เจ้าของก่อน</h2><p>เปิด LINE OA Admin ID แล้วพิมพ์คำสั่งด้านล่าง ระบบจะตรวจว่าบัญชี LINE เป็น “เจ้าของ” และส่งลิงก์เข้าเว็บกลับมา</p><span class="cmd">เข้าเว็บ</span></section>
+<section id="login" class="login hidden">
+  <div style="max-width:410px;margin:0 auto">
+    <h2>Admin ID — เข้าสู่ระบบเจ้าของ</h2>
+    <p>กรอกชื่อผู้ใช้และรหัสผ่านของเจ้าของเพื่อเข้าสู่ระบบหลังบ้าน</p>
+    <form id="passwordLoginForm" autocomplete="on" style="text-align:left;display:grid;gap:12px">
+      <label for="ownerUsername" style="font-size:13px;font-weight:700">ชื่อผู้ใช้</label>
+      <input id="ownerUsername" type="text" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="64" required placeholder="ชื่อผู้ใช้" style="width:100%;height:44px;padding:0 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:16px">
+      <label for="ownerPassword" style="font-size:13px;font-weight:700">รหัสผ่าน</label>
+      <input id="ownerPassword" type="password" name="password" autocomplete="current-password" minlength="12" maxlength="128" required placeholder="รหัสผ่าน" style="width:100%;height:44px;padding:0 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:16px">
+      <button id="passwordLoginButton" class="btn primary" type="submit">เข้าสู่ระบบ</button>
+      <p id="passwordLoginError" role="alert" aria-live="polite" style="margin:0;min-height:20px;color:#b91c1c;text-align:left"></p>
+    </form>
+    <p style="margin-top:18px">เข้าไม่ได้? ใช้ LINE OA Admin ID บัญชีเจ้าของ พิมพ์ <strong>เข้าเว็บ</strong> เพื่อรับลิงก์สำรอง</p>
+  </div>
+</section>
 
 <div id="app" class="hidden">
 <section class="source">
@@ -193,6 +207,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 <script>
 (function(){
   var TOKEN = "";
+  var PASSWORD_LOGIN = false;
   var ITEMS = [];
   var SELECTED = null;
   var SELECTED_TARGETS = [];
@@ -208,7 +223,8 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   var OWNER_TOKEN_KEY="adminIdVerifiedOwner";
   var OWNER_TOKEN_TTL=30*24*60*60*1000;
   function forgetOwnerToken(){
-    try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}
+    try{sessionStorage.removeItem("adminIdWebToken");sessionStorage.removeItem("adminIdWebPasswordMode");}catch(e){}
+    PASSWORD_LOGIN=false;
     try{localStorage.removeItem(OWNER_TOKEN_KEY);}catch(e){}
     TOKEN="";
   }
@@ -228,7 +244,13 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   function rememberVerifiedOwner(){
     if(!TOKEN)return;
     try{sessionStorage.setItem("adminIdWebToken",TOKEN);}catch(e){}
-    try{localStorage.setItem(OWNER_TOKEN_KEY,JSON.stringify({token:TOKEN,savedAt:Date.now()}));}catch(e){}
+    if(PASSWORD_LOGIN){
+      try{sessionStorage.setItem("adminIdWebPasswordMode","yes");}catch(e){}
+      try{localStorage.removeItem(OWNER_TOKEN_KEY);}catch(e){}
+    }else{
+      try{sessionStorage.removeItem("adminIdWebPasswordMode");}catch(e){}
+      try{localStorage.setItem(OWNER_TOKEN_KEY,JSON.stringify({token:TOKEN,savedAt:Date.now()}));}catch(e){}
+    }
     // Remove the confidential LINE login token from the address bar.
     try{
       var url=new URL(location.href);
@@ -727,12 +749,44 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     var incoming=qs.get("token");
     if(incoming){
       TOKEN=incoming;
-      try{sessionStorage.setItem("adminIdWebToken",incoming);}catch(e){}
+      PASSWORD_LOGIN=false;
+      try{sessionStorage.setItem("adminIdWebToken",incoming);sessionStorage.removeItem("adminIdWebPasswordMode");}catch(e){}
     }else{
-      try{TOKEN=sessionStorage.getItem("adminIdWebToken")||"";}catch(e){}
-      if(!TOKEN)TOKEN=restoreOwnerToken();
+      try{
+        TOKEN=sessionStorage.getItem("adminIdWebToken")||"";
+        PASSWORD_LOGIN=sessionStorage.getItem("adminIdWebPasswordMode")==="yes";
+      }catch(e){}
+      if(!TOKEN){TOKEN=restoreOwnerToken();PASSWORD_LOGIN=false;}
     }
   }catch(e){ TOKEN=""; }
+
+  byId("passwordLoginForm").addEventListener("submit",async function(event){
+    event.preventDefault();
+    var button=byId("passwordLoginButton"),error=byId("passwordLoginError");
+    var username=byId("ownerUsername").value.trim();
+    var password=byId("ownerPassword").value;
+    button.disabled=true;button.textContent="กำลังตรวจสอบ…";error.textContent="";
+    try{
+      var response=await fetch("/api/web/password-login",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({username:username,password:password}),
+        credentials:"same-origin",cache:"no-store"
+      });
+      var data=await response.json();
+      if(!response.ok||!data.ok||typeof data.token!=="string")throw new Error(data.error||"เข้าสู่ระบบไม่สำเร็จ");
+      TOKEN=data.token;
+      PASSWORD_LOGIN=true;
+      byId("ownerPassword").value="";
+      try{sessionStorage.setItem("adminIdWebToken",TOKEN);sessionStorage.setItem("adminIdWebPasswordMode","yes");}catch(e){}
+      try{localStorage.removeItem(OWNER_TOKEN_KEY);}catch(e){}
+      loadConfig();
+    }catch(e){
+      error.textContent=String((e&&e.message)||"เข้าสู่ระบบไม่สำเร็จ");
+    }finally{
+      button.disabled=false;button.textContent="เข้าสู่ระบบ";
+      byId("ownerPassword").value="";
+    }
+  });
 
   byId("source").addEventListener("change",fillSheets);
   byId("sheet").addEventListener("change",function(){byId("use").disabled=!byId("sheet").value;syncButtons();});
