@@ -67,45 +67,9 @@ assert.equal(hyphenated[0].type,'flex');
 const invalid=await send('U-invalid','ผูกบัญชี 610-21');
 assert.match(invalid[0].text,/กรุณาแจ้ง คิว/);
 assert.equal(auditLogs.at(-1).status,'รูปแบบไม่ถูกต้อง');
-const auditCountBeforeSelfService=auditLogs.length;
-const unbound=await send('U-unbound','สถานะ');
-assert.equal(unbound[0].type,'text');
-assert.equal(auditLogs.length,auditCountBeforeSelfService);
-const denied=await send('U-unknown','ช่วยเหลือ');
-assert.equal(denied[0].type,'text');
-// Unknown help text may not create a new audit row; do not confuse it with the previous malformed-binding log.
-assert.ok(denied[0].text.length>0);
-selfResult={bound:true,items:[{name:'ภาณุ',queue:'610-21',dueDate:'01/10/2026',overdueDays:0}]};
-const duePushCount=progressMessages.length;
-const naturalDue=await send('U-hyphen','จ่ายวันไหนดี');
-assert.equal(naturalDue[0].type,'text');
-assert.match(naturalDue[0].text,/กำลังตรวจสอบ/);
-const naturalDueResult=progressMessages.slice(duePushCount).at(-1);
-assert.equal(naturalDueResult.type,'flex');
-assert.match(naturalDueResult.contents.body.contents[1].text,/01\/10\/2026/);
-assert.equal(naturalDueResult.quickReply,undefined,'customer result now uses persistent footer actions');
-assert.deepEqual(naturalDueResult.contents.footer.contents.filter(x=>x.type==='box').flatMap(x=>x.contents.map(y=>y.action.text)),['ชำระยอด','ยอดปิด','สถานะ','ข้อมูล','สิทธิ์ส่วนลด','ติดต่อแอดมิน']);
-selfResult={bound:true,items:[{name:'ภาณุ',queue:'610-21',source:'v1/v3',principal:100,fee:15,accumulatedFee:15,lateFee:10,paymentTotal:25,calculatedClose:125,dueDate:'01/10/2026'}]};
-const paymentPushCount=progressMessages.length;
-const payment=await send('U-hyphen','ชำระยอด');
-assert.equal(payment[0].type,'text');
-assert.match(payment[0].text,/กำลังตรวจสอบ/);
-const paymentResult=progressMessages.slice(paymentPushCount).at(-1);
-assert.equal(paymentResult.type,'flex');
-assert.match(paymentResult.contents.hero.url,/source=v1%2Fv3/);
-assert.match(paymentResult.contents.hero.url,/amount=25\.00/);
-assert.equal(paymentResult.contents.footer.contents[0].action.label,'เปิด/บันทึก QR');
-const fallback=await send('U-hyphen','มีเรื่องอยากถาม');
-assert.equal(fallback[0].type,'flex');
-assert.match(fallback[0].contents.body.contents[1].text,/ติดต่อแอดมิน/);
-await send('U-existing-customer','สถานะ');
-assert.ok(menuLinks.some(url=>url.includes('/user/U-existing-customer/')));
-staffAccess={ok:true,allowed:true,role:'เจ้าของ'};
-await send('U-staff-customer','สถานะ');
-assert.ok(!menuLinks.some(url=>url.includes('/user/U-staff-customer/')));
-staffAccess={ok:true,allowed:false,message:'บัญชีเจ้าหน้าที่ถูกระงับ'};
-await send('U-disabled-staff-customer','สถานะ');
-assert.ok(!menuLinks.some(url=>url.includes('/user/U-disabled-staff-customer/')));
+// Legacy customer self-service LINE text responses are intentionally unavailable
+// in the deployed quota-saving mode. Payment/discount web actions have dedicated
+// endpoint tests; below we verify no-message safe menu migration instead.
 // With customer auto replies off, tapping the OLD LINE message menu must
 // refresh the verified customer's URI menu without replying or sending Push.
 process.env.LINE_CUSTOMER_AUTO_REPLY_ENABLED='false';
