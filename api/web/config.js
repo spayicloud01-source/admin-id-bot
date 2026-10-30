@@ -1,5 +1,5 @@
 import { callSheetsBridge } from "../../lib/sheetsBridge.js";
-import { sessionFromRequest } from "../../lib/webAuth.js";
+import { currentOwnerSessionFromRequest } from "../../lib/webAuth.js";
 
 let cachedSheets = null;
 let cachedAt = 0;
@@ -11,7 +11,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
   try {
-    const session = sessionFromRequest(req);
+    const session = await currentOwnerSessionFromRequest(req);
     if (!session) return res.status(401).json({ ok: false, error: "กรุณาเข้าเว็บผ่าน LINE OA ใหม่" });
 
     let items = cachedSheets;
