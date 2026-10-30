@@ -1,7 +1,16 @@
 import { callSheetsBridge } from "../../lib/sheetsBridge.js";
 import { sessionFromRequest } from "../../lib/webAuth.js";
 import { paymentQrUrl } from "../../lib/paymentQr.js";
+import customerSessionHandler from "../../lib/customerSessionApi.js";
+import customerPaymentHandler from "../../lib/customerPaymentApi.js";
+import customerQrHandler from "../../lib/customerQrApi.js";
 import crypto from "node:crypto";
+
+const CUSTOMER_HANDLERS = {
+  session: customerSessionHandler,
+  payment: customerPaymentHandler,
+  qr: customerQrHandler,
+};
 
 const ALLOWED_ADMIN_ACTIONS = new Set([
   "searchCustomer", "getCustomerInfo", "getCalculatedSummary", "getHistory",
@@ -243,6 +252,8 @@ function paymentFlex(summary = {}, field = "payment") {
 }
 
 export default async function handler(req, res) {
+  const customerRoute = String(req.query?.customerRoute || "");
+  if (CUSTOMER_HANDLERS[customerRoute]) return CUSTOMER_HANDLERS[customerRoute](req, res);
   if (req.method !== "POST") {
     res.setHeader("Allow", "POST");
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });

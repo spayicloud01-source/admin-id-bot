@@ -21,15 +21,15 @@
   "rewrites": [
     {
       "source": "/api/customer/session",
-      "destination": "/api/customer?route=session"
+      "destination": "/api/web/send?customerRoute=session"
     },
     {
       "source": "/api/customer/payment",
-      "destination": "/api/customer?route=payment"
+      "destination": "/api/web/send?customerRoute=payment"
     },
     {
       "source": "/api/customer/qr",
-      "destination": "/api/customer?route=qr"
+      "destination": "/api/web/send?customerRoute=qr"
     },
     {
       "source": "/customer",
