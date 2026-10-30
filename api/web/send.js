@@ -6,6 +6,8 @@ import customerPaymentHandler from "../../lib/customerPaymentApi.js";
 import customerQrHandler from "../../lib/customerQrApi.js";
 import crypto from "node:crypto";
 
+export const maxDuration = 60;
+
 const CUSTOMER_HANDLERS = {
   session: customerSessionHandler,
   payment: customerPaymentHandler,
