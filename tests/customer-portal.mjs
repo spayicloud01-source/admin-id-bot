@@ -5,6 +5,7 @@ process.env.CUSTOMER_PORTAL_SECRET = "customer-portal-test-secret";
 const {
   customerSessionToken,
   money,
+  isPortalCustomerInactive,
   normalizeCustomerName,
   normalizeQueue,
   safeCustomerView,
@@ -15,6 +16,10 @@ assert.equal(normalizeQueue(" 310 - 10 "), "310-10");
 assert.equal(normalizeCustomerName("นางสาว เกวลิน  เรืองบุญ"), "เกวลินเรืองบุญ");
 assert.equal(normalizeCustomerName("ด.ช. สมชาย ใจดี"), "สมชายใจดี");
 assert.equal(money("1,234.567 บาท"), 1234.57);
+assert.equal(isPortalCustomerInactive({status:"ใช้งาน"}), false);
+for (const status of ["ปิดยอดแล้ว","ปิดยอด","ปิดบัญชี","ยกเลิก","ไม่ใช้งาน"]) {
+  assert.equal(isPortalCustomerInactive({status}), true, status);
+}
 
 const customer = {
   source: "v1/v3",
