@@ -15,13 +15,14 @@ globalThis.__sessionBridgeMock = async request => {
 };
 globalThis.__sessionPortalMock = {
   ...portal,
-  revalidatePortalCustomer: async () => currentCustomer,
+  revalidatePortalCustomer: async () => portal.isPortalCustomerInactive(currentCustomer) ? null : currentCustomer,
+  findPortalCustomer: async () => ({customer:currentCustomer,reason:""}),
 };
 const code = readFileSync(new URL("../lib/customerSessionApi.js", import.meta.url), "utf8")
   .replace('import { callSheetsBridge } from "./sheetsBridge.js";',
     'const callSheetsBridge=globalThis.__sessionBridgeMock;')
   .replace(/import \{\s*clearCustomerSessionCookie,[\s\S]*?\} from "\.\/customerPortal\.js";/,
-    "const {clearCustomerSessionCookie,clientIp,customerSessionToken,findPortalCustomer,normalizeCustomerName,normalizeQueue,revalidatePortalCustomer,safeCustomerView,sessionFromCustomerRequest,setCustomerSessionCookie}=globalThis.__sessionPortalMock;");
+    "const {clearCustomerSessionCookie,clientIp,customerSessionToken,isPortalCustomerInactive,findPortalCustomer,normalizeCustomerName,normalizeQueue,revalidatePortalCustomer,safeCustomerView,sessionFromCustomerRequest,setCustomerSessionCookie}=globalThis.__sessionPortalMock;");
 assert.doesNotMatch(code,/from "\.\/customerPortal\.js"/);
 const {default: handler} = await import("data:text/javascript;base64,"+Buffer.from(code).toString("base64"));
 const original = portal.customerSessionToken(customer, Date.now()-10*86400000);
@@ -47,12 +48,20 @@ assert.equal(historyCount,1);
 currentCustomer={...customer,status:"ปิดยอดแล้ว"};
 const closed=mockRes();
 await handler(req,closed);
-assert.equal(closed.code,200);
-assert.equal(closed.response.customer.inactive,true);
-assert.equal(closed.response.customer.paymentTotal,0);
-assert.equal(closed.response.customer.lateFee,0);
-assert.equal(closed.headers["set-cookie"],undefined,"closed account does not extend session");
-assert.equal(historyCount,2);
+assert.equal(closed.code,401,"old valid cookie is rejected as soon as account is closed");
+assert.match(closed.headers["set-cookie"],/Max-Age=0/,"closed account cookie cleared");
+assert.equal(closed.response.customer,undefined,"no account data disclosed");
+assert.equal(historyCount,1,"closed account history never returned");
+
+const login=mockRes();
+await handler({
+  method:"POST",
+  headers:{"x-forwarded-for":"203.0.113.22"},
+  body:{queue:"610-1",firstName:"ลูกค้า",lastName:"ทดสอบ"},
+},login);
+assert.equal(login.code,403,"fresh login cannot access a closed account");
+assert.match(login.response.error,/ไม่สามารถเข้าสู่ระบบได้/);
+assert.match(login.headers["set-cookie"],/Max-Age=0/);
 const invalid=mockRes();
 await handler({method:"GET",headers:{cookie:"admin_id_customer=invalid"}},invalid);
 assert.equal(invalid.code,401);
@@ -61,4 +70,4 @@ const logout=mockRes();
 await handler({method:"DELETE",headers:{cookie}},logout);
 assert.equal(logout.code,200);
 assert.match(logout.headers["set-cookie"],/Max-Age=0/);
-console.log("PASS rolling 30-day customer sessions renew after revalidation, but closed accounts do not renew");
+console.log("PASS active sessions renew 30 days; closed sessions revoked and fresh login blocked");
