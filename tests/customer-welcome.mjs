@@ -32,7 +32,7 @@ globalThis.fetch=async(url,options={})=>{
   return json({ok:true,bound:false});
  }
  if(url.endsWith('/message/reply')) {replies.push(JSON.parse(options.body).messages);return json({});}
- if(url.endsWith('/richmenu/list')) return json({richmenus:[{name:'admin-id-customer-v3',richMenuId:'richmenu-test'}]});
+ if(url.endsWith('/richmenu/list')) return json({richmenus:[{name:'admin-id-customer-v4-web',richMenuId:'richmenu-test'}]});
  if(url.includes('/richmenu/richmenu-test')) {menuLinks.push(url);return json({});}
  if(url.endsWith('/content')) return json({});
  return json({});
@@ -52,7 +52,7 @@ assert.equal(messages.length,3);
 const card=messages[0];assert.equal(card.type,'flex');
 const fields=card.contents.body.contents.filter(x=>x.type==='box').map(x=>x.contents.map(y=>y.text));
 assert.deepEqual(fields,[['ชื่อ','สมชาย ใจดี'],['คิว','6121'],['รุ่น','iPhone 15 Pro Max'],['เบอร์โทร','ไม่มีข้อมูล'],['ยอด','15,000 บาท'],['ค่าเช่า','1,500 บาท'],['วันขาย/ฝาก','24/09/2026']]);
-assert.deepEqual(card.quickReply.items.map(x=>x.action.text),['ชำระยอด','ยอดปิด','สถานะ','ข้อมูล','สิทธิ์ส่วนลด','ติดต่อแอดมิน']);
+assert.equal(card.quickReply,undefined,'welcome now uses persistent footer actions instead of quickReply');
 assert.deepEqual(card.contents.footer.contents.filter(x=>x.type==='box').flatMap(x=>x.contents.map(y=>y.action.text)),['ชำระยอด','ยอดปิด','สถานะ','ข้อมูล','สิทธิ์ส่วนลด','ติดต่อแอดมิน']);
 assert.equal(messages[1].type,'image');
 assert.match(messages[1].originalContentUrl,/api\/assets\/customer-terms$/);
@@ -83,7 +83,7 @@ assert.match(naturalDue[0].text,/กำลังตรวจสอบ/);
 const naturalDueResult=progressMessages.slice(duePushCount).at(-1);
 assert.equal(naturalDueResult.type,'flex');
 assert.match(naturalDueResult.contents.body.contents[1].text,/01\/10\/2026/);
-assert.deepEqual(naturalDueResult.quickReply.items.map(x=>x.action.text),['ชำระยอด','ยอดปิด','สถานะ','ข้อมูล','สิทธิ์ส่วนลด','ติดต่อแอดมิน']);
+assert.equal(naturalDueResult.quickReply,undefined,'customer result now uses persistent footer actions');
 assert.deepEqual(naturalDueResult.contents.footer.contents.filter(x=>x.type==='box').flatMap(x=>x.contents.map(y=>y.action.text)),['ชำระยอด','ยอดปิด','สถานะ','ข้อมูล','สิทธิ์ส่วนลด','ติดต่อแอดมิน']);
 selfResult={bound:true,items:[{name:'ภาณุ',queue:'610-21',source:'v1/v3',principal:100,fee:15,accumulatedFee:15,lateFee:10,paymentTotal:25,calculatedClose:125,dueDate:'01/10/2026'}]};
 const paymentPushCount=progressMessages.length;
