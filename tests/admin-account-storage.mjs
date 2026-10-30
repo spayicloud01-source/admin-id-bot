@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import {readFileSync} from "node:fs";
 const data=new Map();
+let privateOptions;
 globalThis.__testEncryptedStore={
  crypto,
- get:async(path)=>{
+ get:async(path,options)=>{
+  privateOptions=options;
   const x=data.get(path);if(!x)return null;
   return {blob:{etag:x.etag},stream:new ReadableStream({start(controller){controller.enqueue(x.bytes);controller.close();}})};
  },
@@ -47,11 +49,6 @@ await assert.rejects(()=>api.listUsers(),/Private authentication storage require
 // With a dedicated private token configured, all account operations must target
 // private storage and never reuse the default public Blob credentials.
 process.env.ADMIN_AUTH_BLOB_TOKEN="preview-private-test-token";
-let privateOptions;
-globalThis.__testEncryptedStore.get=async(path,options)=>{
-  privateOptions=options;
-  return null;
-};
 assert.equal(await api.getUser("private-user"),null);
 assert.equal(privateOptions.access,"private");
 assert.equal(privateOptions.token,"preview-private-test-token");
