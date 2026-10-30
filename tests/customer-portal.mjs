@@ -46,7 +46,7 @@ assert.match(view.dueMessage, /ยังไม่มีวันครบกำ�
 assert.equal(Object.hasOwn(view, "source"), false);
 assert.equal(Object.hasOwn(view, "sheet"), false);
 
-const overdue = safeCustomerView({ ...customer, dueDate: "24/10/2569", closeAmount: "" });
+const overdue = safeCustomerView({ ...customer, dueDate: "24/10/2569", closeAmount: "" }, new Date("2026-10-30T05:00:00.000Z"));
 assert.equal(overdue.overdueDays, 6);
 assert.equal(overdue.lateFee, 300);
 assert.equal(overdue.paymentTotal, 1100);
