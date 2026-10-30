@@ -1,0 +1,12 @@
+{
+  "name": "Admin ID ลูกค้า",
+  "short_name": "Admin ID",
+  "start_url": "/customer",
+  "display": "standalone",
+  "background_color": "#fbf7ed",
+  "theme_color": "#0b6b57",
+  "icons": [
+    { "src": "/customer-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
+

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="120" fill="#0b6b57"/>
+  <path d="M145 170h222v172H145z" fill="#fff" opacity=".14"/>
+  <text x="256" y="318" text-anchor="middle" font-family="Arial,sans-serif" font-size="190" font-weight="700" fill="#fff">ID</text>
+  <circle cx="392" cy="120" r="40" fill="#c99b45"/>
+</svg>
+
