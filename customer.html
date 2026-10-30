@@ -68,6 +68,12 @@
           <button id="submitPayment" class="primary" type="button">ส่งหลักฐานให้แอดมินตรวจ</button>
           <div id="pendingBox" class="pending hidden"></div>
         </div>
+        <div id="contactPanel" class="card payment-box hidden">
+          <h3>ติดต่อแอดมิน</h3>
+          <p class="lead">หากต้องการให้แอดมินติดต่อกลับ กรุณากดปุ่มด้านล่าง ระบบจะแจ้งไปยัง LINE เจ้าหน้าที่</p>
+          <button id="contactAdminBtn" class="primary" type="button">ส่งคำขอติดต่อแอดมิน</button>
+          <div id="contactAlert" class="alert hidden"></div>
+        </div>
       </section>
 
       <section class="section"><div class="section-head"><h3>ประวัติล่าสุด</h3><span>รายการที่ตรวจแล้ว</span></div><div id="history" class="history"></div></section>
@@ -82,12 +88,46 @@
     async function api(url,options={}){const res=await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});let data={};try{data=await res.json()}catch{}if(!res.ok)throw new Error(data.error||'ระบบขัดข้อง กรุณาลองใหม่');return data}
     function setView(logged){$('loginView').classList.toggle('hidden',logged);$('appView').classList.toggle('hidden',!logged)}
     function defaultAmount(){if(!account)return 0;return kind==='close'?account.closeAmount:account.paymentTotal}
-    function selectAction(action){document.querySelectorAll('.customer-btn').forEach(x=>x.classList.toggle('active',x.dataset.action===action));$('qrWrap').classList.add('hidden');$('pendingBox').classList.add('hidden');alertBox('payAlert','');if(['payment','close'].includes(action)){kind=action;$('paymentBox').classList.toggle('hidden',!!account.inactive);$('amount').value=defaultAmount()||'';$('amountLabel').textContent=action==='close'?'ยอดปิดที่ชำระ':'ยอดที่ชำระ';return}$('paymentBox').classList.add('hidden');if(action==='info'){alertBox('appAlert','ข้อมูลลูกค้าและสถานะแสดงอยู่ด้านบนแล้ว','success');scrollTo({top:0,behavior:'smooth'})}else if(action==='discount'){alertBox('appAlert','ยอดปิดโดยประมาณ '+money(account.closeAmount)+' หากมีสิทธิ์ส่วนลด ระบบจะคำนวณในยอดปิด กรุณาตรวจสอบกับแอดมินก่อนโอน','success')}else if(action==='admin'){alertBox('appAlert','กำลังส่งแจ้งแอดมิน…','success');api('/api/customer/contact',{method:'POST',body:'{}'}).then(data=>alertBox('appAlert',data.message,'success')).catch(err=>alertBox('appAlert',err.message))}}
-    function render(data){account=data.customer;$('customerName').textContent=account.name||'—';$('customerModel').textContent=account.model||'';$('customerQueue').textContent='คิว '+account.queue;$('customerStatus').textContent='สถานะ '+(account.status||'ใช้งาน');$('dueMessage').textContent=account.dueMessage||'ยังไม่มีวันครบกำหนด';$('fineMessage').textContent=account.lateFee>0?'ค่าปรับ '+money(account.lateFee):'ยังไม่มีค่าปรับ';$('statusPanel').classList.toggle('overdue',account.overdueDays>0);$('principal').textContent=money(account.principal);$('fee').textContent=money(account.fee);$('dueDate').textContent=account.dueDate||'—';$('lateFee').textContent=money(account.lateFee);$('closeAmount').textContent=money(account.closeAmount);$('updatedAt').textContent='อัปเดตล่าสุด '+new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});$('paymentBox').classList.add('hidden');document.querySelectorAll('.customer-btn').forEach(x=>x.classList.remove('active'));if(account.inactive)alertBox('appAlert','รายการนี้ปิดหรือไม่ใช้งานแล้ว ไม่สามารถแจ้งชำระเพิ่มได้');else alertBox('appAlert','');const items=data.history||[];$('history').innerHTML=items.length?items.map(x=>`<div class="history-item"><div><b>${escapeHtml(x.eventType||'รายการชำระ')}</b><small>${escapeHtml(x.dateTime||'')}</small></div><strong>${money(x.amount)}</strong></div>`).join(''):'<div class="empty">ยังไม่มีประวัติที่แสดงได้</div>';setView(true)}
+    const VALID_ACTIONS=['payment','close','status','info','discount','admin'];
+    function actionFromLink(){
+      const requested=new URLSearchParams(location.search).get('action')||'';
+      return VALID_ACTIONS.includes(requested)?requested:'';
+    }
+    function selectAction(action){
+      if(!account||!VALID_ACTIONS.includes(action))return;
+      document.querySelectorAll('.customer-btn').forEach(x=>x.classList.toggle('active',x.dataset.action===action));
+      $('qrWrap').classList.add('hidden');
+      $('pendingBox').classList.add('hidden');
+      $('paymentBox').classList.add('hidden');
+      $('contactPanel').classList.add('hidden');
+      alertBox('payAlert','');
+      alertBox('contactAlert','');
+      alertBox('appAlert','');
+      if(['payment','close'].includes(action)){
+        kind=action;
+        if(account.inactive){alertBox('appAlert','รายการนี้ปิดหรือไม่ใช้งานแล้ว ไม่สามารถแจ้งชำระเพิ่มได้');return}
+        $('paymentBox').classList.remove('hidden');
+        $('amount').value=defaultAmount()||'';
+        $('amountLabel').textContent=action==='close'?'ยอดปิดที่ชำระ':'ยอดที่ชำระ';
+        $('paymentBox').scrollIntoView({behavior:'smooth',block:'start'});
+      }else if(action==='status'){
+        $('statusPanel').scrollIntoView({behavior:'smooth',block:'start'});
+      }else if(action==='info'){
+        $('customerName').scrollIntoView({behavior:'smooth',block:'start'});
+      }else if(action==='discount'){
+        alertBox('appAlert','ยอดปิดโดยประมาณ '+money(account.closeAmount)+' หากมีสิทธิ์ส่วนลด ระบบจะคำนวณในยอดปิด กรุณาตรวจสอบกับแอดมินก่อนโอน','success');
+        $('appAlert').scrollIntoView({behavior:'smooth',block:'start'});
+      }else if(action==='admin'){
+        $('contactPanel').classList.remove('hidden');
+        $('contactPanel').scrollIntoView({behavior:'smooth',block:'start'});
+      }
+    }
+    function render(data){account=data.customer;$('customerName').textContent=account.name||'—';$('customerModel').textContent=account.model||'';$('customerQueue').textContent='คิว '+account.queue;$('customerStatus').textContent='สถานะ '+(account.status||'ใช้งาน');$('dueMessage').textContent=account.dueMessage||'ยังไม่มีวันครบกำหนด';$('fineMessage').textContent=account.lateFee>0?'ค่าปรับ '+money(account.lateFee):'ยังไม่มีค่าปรับ';$('statusPanel').classList.toggle('overdue',account.overdueDays>0);$('principal').textContent=money(account.principal);$('fee').textContent=money(account.fee);$('dueDate').textContent=account.dueDate||'—';$('lateFee').textContent=money(account.lateFee);$('closeAmount').textContent=money(account.closeAmount);$('updatedAt').textContent='อัปเดตล่าสุด '+new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});$('paymentBox').classList.add('hidden');document.querySelectorAll('.customer-btn').forEach(x=>x.classList.remove('active'));if(account.inactive)alertBox('appAlert','รายการนี้ปิดหรือไม่ใช้งานแล้ว ไม่สามารถแจ้งชำระเพิ่มได้');else alertBox('appAlert','');const items=data.history||[];$('history').innerHTML=items.length?items.map(x=>`<div class="history-item"><div><b>${escapeHtml(x.eventType||'รายการชำระ')}</b><small>${escapeHtml(x.dateTime||'')}</small></div><strong>${money(x.amount)}</strong></div>`).join(''):'<div class="empty">ยังไม่มีประวัติที่แสดงได้</div>';setView(true);const requested=actionFromLink();if(requested)selectAction(requested)}
     function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
     async function load(){try{const data=await api('/api/customer/session');render(data)}catch{setView(false)}}
     $('loginForm').addEventListener('submit',async e=>{e.preventDefault();alertBox('loginAlert','');busy($('loginBtn'),true,'กำลังตรวจสอบ');try{const data=await api('/api/customer/session',{method:'POST',body:JSON.stringify({queue:$('queue').value,firstName:$('firstName').value,lastName:$('lastName').value})});render(data)}catch(err){alertBox('loginAlert',err.message)}finally{busy($('loginBtn'),false,'ดูยอดของฉัน')}});
     $('logoutBtn').onclick=async()=>{await api('/api/customer/session',{method:'DELETE'}).catch(()=>{});location.reload()};document.querySelectorAll('.customer-btn').forEach(btn=>btn.onclick=()=>selectAction(btn.dataset.action));
+    $('contactAdminBtn').onclick=async()=>{const btn=$('contactAdminBtn');busy(btn,true,'กำลังส่งคำขอ');try{const data=await api('/api/customer/contact',{method:'POST',body:'{}'});alertBox('contactAlert',data.message,'success')}catch(err){alertBox('contactAlert',err.message)}finally{busy(btn,false,'ส่งคำขอติดต่อแอดมิน')}};
     $('qrBtn').onclick=()=>{const amount=Number($('amount').value);if(!(amount>0)){alertBox('payAlert','กรุณาระบุยอดก่อนสร้าง QR');return}$('qrImage').src='/api/customer/qr?amount='+encodeURIComponent(amount)+'&t='+Date.now();$('qrWrap').classList.remove('hidden');alertBox('payAlert','')};
     async function fileImage(file){if('createImageBitmap'in window)return createImageBitmap(file);return new Promise((resolve,reject)=>{const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('เปิดรูปสลิปไม่ได้'))};img.src=url})}
     async function compress(file){if(file.size>8*1024*1024)throw new Error('ไฟล์ใหญ่เกิน 8 MB');const img=await fileImage(file),width=img.width||img.naturalWidth,height=img.height||img.naturalHeight;if(!width||!height)throw new Error('เปิดรูปสลิปไม่ได้');const max=1600,scale=Math.min(1,max/Math.max(width,height));const canvas=document.createElement('canvas');canvas.width=Math.round(width*scale);canvas.height=Math.round(height*scale);canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);if(typeof img.close==='function')img.close();return canvas.toDataURL('image/jpeg',.78)}
