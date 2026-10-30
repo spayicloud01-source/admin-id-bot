@@ -20,6 +20,18 @@
   ],
   "rewrites": [
     {
+      "source": "/api/customer/session",
+      "destination": "/api/customer?route=session"
+    },
+    {
+      "source": "/api/customer/payment",
+      "destination": "/api/customer?route=payment"
+    },
+    {
+      "source": "/api/customer/qr",
+      "destination": "/api/customer?route=qr"
+    },
+    {
       "source": "/customer",
       "destination": "/customer.html"
     }
