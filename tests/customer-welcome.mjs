@@ -106,4 +106,22 @@ assert.ok(!menuLinks.some(url=>url.includes('/user/U-staff-customer/')));
 staffAccess={ok:true,allowed:false,message:'บัญชีเจ้าหน้าที่ถูกระงับ'};
 await send('U-disabled-staff-customer','สถานะ');
 assert.ok(!menuLinks.some(url=>url.includes('/user/U-disabled-staff-customer/')));
-console.log('PASS: verified overview card, exact fields, six buttons; rejected binding has no card');
+// With customer auto replies off, tapping the OLD LINE message menu must
+// refresh the verified customer's URI menu without replying or sending Push.
+process.env.LINE_CUSTOMER_AUTO_REPLY_ENABLED='false';
+staffAccess={ok:true,allowed:false,message:'บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID'};
+selfResult={bound:true,items:[{queue:'6121',status:'ใช้งาน',inactive:false}]};
+const replyBeforeSilent=replies.length;
+const pushBeforeSilent=progressMessages.length;
+await send('U-silent','สถานะ');
+assert.equal(replies.length,replyBeforeSilent,'no auto reply during LINE quota silence');
+assert.equal(progressMessages.length,pushBeforeSilent,'no LINE push during menu relink');
+assert.ok(menuLinks.some(url=>url.includes('/user/U-silent/')),'bound customer Rich Menu updates');
+selfResult={bound:true,items:[{queue:'6121',status:'ปิดยอดแล้ว',inactive:true}]};
+await send('U-closed','สถานะ');
+assert.ok(!menuLinks.some(url=>url.includes('/user/U-closed/')),'closed customer never receives payment menu');
+staffAccess={ok:true,allowed:false,message:'บัญชีเจ้าหน้าที่ถูกระงับ'};
+selfResult={bound:true,items:[{queue:'6121',status:'ใช้งาน'}]};
+await send('U-disabled-silent','สถานะ');
+assert.ok(!menuLinks.some(url=>url.includes('/user/U-disabled-silent/')),'disabled staff menu must not be replaced');
+console.log('PASS: verified welcome and silent, no-quota LINE Rich Menu migration; closed/staff customers excluded');
