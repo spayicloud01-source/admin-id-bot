@@ -52,6 +52,7 @@ function fixture(dueDate = '27 ก.ย. 26') {
       }
     },
     SpreadsheetApp: { getActiveSpreadsheet: () => ({ getSheetByName: () => notificationSheet }) },
+    LockService: {getScriptLock:()=>({tryLock:()=>true,releaseLock:()=>{}})},
     PropertiesService: { getScriptProperties: () => ({ getProperty: () => '' }) },
   });
   vm.runInContext(script, context);
@@ -60,6 +61,13 @@ function fixture(dueDate = '27 ก.ย. 26') {
     customerLineSheet_: () => ({ getLastRow: () => 2, getRange: () => ({ getDisplayValues: () => bindings }) }),
     getCustomerAutoReminderSheetKeys_: () => ['v1/v3|v3/10-69'],
     findCustomerIdentity_: () => customer,
+    // The v136 reminder path preloads both customer and payment state.
+    // Mock those dependencies, not the reminder eligibility logic itself.
+    customerReminderCustomerMaps_: () => ({
+      'v1/v3|v3/10-69': { '310-2': customer }
+    }),
+    customerReminderPaymentMap_: () => ({}),
+    backendSpreadsheet_: () => ({getSheetByName:()=>notificationSheet}),
     formatThaiDate_: (date) => date.toISOString().slice(0, 10),
     logAction_: () => {},
     paymentCycleKey_: () => 'cycle',
