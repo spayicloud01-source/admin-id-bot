@@ -202,7 +202,6 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   <div class="actionbuttons" id="webUserRights">
     <label><input type="checkbox" value="customers" checked> ดูข้อมูลลูกค้า</label>
     <label><input type="checkbox" value="history" checked> ดูประวัติ</label>
-    <label><input type="checkbox" value="review"> ตรวจสลิป</label>
     <label><input type="checkbox" value="payment"> รับยอด</label>
   </div>
   <br><button id="webCreateUser" class="btn green" type="button">สร้างบัญชีเว็บ</button>
@@ -953,7 +952,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         var rights=document.createElement("button");rights.className="btn soft";
         rights.textContent="แก้สิทธิ์";
         rights.onclick=async function(){
-          var input=prompt("ระบุสิทธิ์คั่นด้วยจุลภาค: customers,history,review,payment", (x.permissions||[]).join(","));
+          var input=prompt("ระบุสิทธิ์คั่นด้วยจุลภาค: customers,history,payment", (x.permissions||[]).join(","));
           if(input===null)return;
           var values=input.split(",").map(function(v){return v.trim();}).filter(Boolean);
           try{await ownerUsersRequest("setPermissions",{username:x.username,permissions:values});refreshWebUsers();}
@@ -993,7 +992,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   byId("webUserRole").onchange=function(){
     var staff=this.value==="พนักงาน";
     document.querySelectorAll("#webUserRights input").forEach(function(el){
-      if(el.value==="review"||el.value==="payment"){el.disabled=staff;if(staff)el.checked=false;}
+      if(el.value==="payment"){el.disabled=staff;if(staff)el.checked=false;}
     });
   };
 
