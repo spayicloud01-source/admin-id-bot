@@ -3,11 +3,14 @@ import sharp from 'sharp';
 import { customerMenuDefinition, linkVerifiedCustomerMenu } from '../lib/customerRichMenu.js';
 import { CUSTOMER_MENU_IMAGE_BASE64 } from '../lib/customerRichMenuImage.js';
 const definition = customerMenuDefinition();
-assert.equal(definition.name, 'admin-id-customer-v3');
+assert.equal(definition.name, 'admin-id-customer-v4-web');
 assert.equal(definition.selected, true);
 const labels = ['ชำระยอด','ยอดปิด','สถานะ','ข้อมูล','สิทธิ์ส่วนลด','ติดต่อแอดมิน'];
-assert.deepEqual(definition.areas.map(a=>a.action.text),labels);
-assert.ok(definition.areas.every(a=>a.action.type==='message'));
+assert.deepEqual(definition.areas.map(a=>a.action.label),labels);
+assert.ok(definition.areas.every(a=>a.action.type==='uri'));
+const actions=['payment','close','status','info','discount','admin'];
+assert.deepEqual(definition.areas.map(a=>a.action.uri),actions.map(a=>'https://admin-id-bot.vercel.app/customer?action='+a));
+assert.ok(definition.areas.every(a=>!Object.hasOwn(a.action,'text')));
 for (let row=0;row<2;row++) {
   const cells=definition.areas.slice(row*3,row*3+3).map(a=>a.bounds);
   assert.equal(cells[0].x,0); assert.equal(cells[2].x+cells[2].width,2500);
@@ -34,4 +37,4 @@ assert.equal(JSON.parse(calls.find(c=>c.url.endsWith('/richmenu')&&c.method==='P
 assert.ok(!calls.some(c=>c.url.includes('/user/all/')||c.method==='DELETE'));
 const count=calls.length;await linkVerifiedCustomerMenu('U-customer');assert.equal(calls.length,count);
 await linkVerifiedCustomerMenu('U-second');assert.equal(calls.at(-1).url,'https://api.line.me/v2/bot/user/U-second/richmenu/new');
-console.log('PASS: customer v3 layout, image upload, migration and per-user isolation');
+console.log('PASS: customer v4 URI links, image upload, migration and per-user isolation');
