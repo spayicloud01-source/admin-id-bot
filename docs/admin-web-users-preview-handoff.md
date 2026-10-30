@@ -15,7 +15,7 @@ This work is **Preview only** on branch `feature/admin-password-login-preview-20
 
 ## Configuration
 Preview branch-specific variables: `ADMIN_WEB_LOGIN_USERNAME`, `ADMIN_WEB_LOGIN_PASSWORD_HASH`, `ADMIN_AUTH_ENCRYPTION_KEY`; the existing Preview `OWNER_LINE_USER_ID` and `SHEETS_BRIDGE_SECRET` remain required. No plaintext passwords belong in the repo.
-- `@vercel/blob@2.8.2` uses the existing connected **public** Blob store for AES-GCM ciphertext only under `admin-id/preview-user-v1/`. Never store unencrypted user records there. A separate private store named `admin-id-preview-credentials-v2` has been created but is not connected: Vercel refused automatic project linking due to the existing `BLOB_READ_WRITE_TOKEN` variable. For Production, connect an independent private authentication store and use an isolated access token.
+- `@vercel/blob@2.8.2` uses the existing connected **public** Blob store for AES-GCM ciphertext only under `admin-id/preview-user-v1/` until a private connection is available; never store plaintext records there. A separate private store `admin-id-preview-credentials-v2` (`store_Q1OXUVyPTz5Zzd7g`) already exists but is not connected because the project has an existing `BLOB_READ_WRITE_TOKEN`. In Vercel Storage → private store → Connect Project choose only Preview and Advanced Options env-var prefix `ADMIN_AUTH`. This creates `ADMIN_AUTH_BLOB_READ_WRITE_TOKEN` without replacing the public uploads token. Code also supports a manually configured `ADMIN_AUTH_BLOB_TOKEN`. Do not connect to Production until the full auth test passes.
 - Best-effort IP rate limiting currently uses process memory. **Production must add a distributed limiter and/or WAF protection**.
 
 ## Routes
