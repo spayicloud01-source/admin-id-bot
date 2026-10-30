@@ -21,7 +21,7 @@
   </style>
 </head>
 <body>
-  <div class="web-version" aria-label="เวอร์ชันเว็บ">Web v2026.10.30.2</div>
+  <div class="web-version" aria-label="เวอร์ชันเว็บ">Web v2026.10.30.3</div>
   <main class="shell">
     <div class="brand"><div class="mark">ID</div><div><h1>Admin ID</h1><p>ดูยอดและแจ้งชำระเงิน</p></div></div>
 
@@ -57,6 +57,7 @@
         <div class="customer-actions">
           <button class="customer-btn" data-action="payment"><b>ชำระยอด</b><small>ดูยอดและรับ QR</small></button>
           <button class="customer-btn" data-action="close"><b>ยอดปิด</b><small>ดูยอดปิดและรับ QR</small></button>
+          <button class="customer-btn" data-action="fine"><b>ชำระค่าปรับ</b><small>ดูค่าปรับและแจ้งชำระ</small></button>
           <button class="customer-btn" data-action="info"><b>ข้อมูล</b><small>ดูข้อมูลรายการด้านบน</small></button>
           <button class="customer-btn" data-action="discount"><b>สิทธิ์ส่วนลด</b><small>ตรวจสอบยอดปิดโดยประมาณ</small></button>
           <button class="customer-btn" data-action="admin"><b>ติดต่อแอดมิน</b><small>ติดต่อเจ้าหน้าที่ผ่าน LINE OA</small></button>
@@ -69,6 +70,13 @@
           <div id="payAlert" class="alert hidden"></div>
           <button id="submitPayment" class="primary" type="button">ส่งหลักฐานให้แอดมินตรวจ</button>
           <div id="pendingBox" class="pending hidden"></div>
+        </div>
+        <div id="discountPanel" class="card payment-box hidden" aria-live="polite">
+          <h3>ตรวจสอบสิทธิ์ส่วนลด</h3>
+          <p class="lead">ขณะนี้เว็บยังไม่มีข้อมูลสิทธิ์ส่วนลดที่ยืนยันแล้วสำหรับรายการนี้ หากได้รับสิทธิ์ส่วนลดจากแอดมิน กรุณาตรวจสอบยอดใหม่ก่อนโอน</p>
+          <div class="metric wide"><span>ยอดปิดโดยประมาณ (ยังไม่หักส่วนลดที่อาจได้รับ)</span><strong id="discountCloseAmount">—</strong></div>
+          <p class="hint">ข้อมูลนี้ไม่ใช่การยืนยันสิทธิ์ส่วนลดและไม่ใช่ยอดชำระสุดท้าย</p>
+          <button id="discountContactBtn" class="secondary" type="button">สอบถามสิทธิ์กับแอดมิน</button>
         </div>
         <div id="contactPanel" class="card payment-box hidden">
           <h3>ติดต่อแอดมิน</h3>
@@ -89,8 +97,8 @@
     function busy(btn,on,label){btn.disabled=on;if(on){btn.dataset.label=btn.textContent;btn.innerHTML='<span class="loader"></span>'+label}else btn.textContent=btn.dataset.label||label}
     async function api(url,options={}){const res=await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(options.headers||{})},...options});let data={};try{data=await res.json()}catch{}if(!res.ok)throw new Error(data.error||'ระบบขัดข้อง กรุณาลองใหม่');return data}
     function setView(logged){$('loginView').classList.toggle('hidden',logged);$('appView').classList.toggle('hidden',!logged)}
-    function defaultAmount(){if(!account)return 0;return kind==='close'?account.closeAmount:account.paymentTotal}
-    const VALID_ACTIONS=['payment','close','status','info','discount','admin'];
+    function defaultAmount(){if(!account)return 0;return kind==='close'?account.closeAmount:kind==='fine'?account.lateFee:account.paymentTotal}
+    const VALID_ACTIONS=['payment','close','fine','status','info','discount','admin'];
     function actionFromLink(){
       const requested=new URLSearchParams(location.search).get('action')||'';
       return VALID_ACTIONS.includes(requested)?requested:'';
@@ -102,23 +110,31 @@
       $('pendingBox').classList.add('hidden');
       $('paymentBox').classList.add('hidden');
       $('contactPanel').classList.add('hidden');
+      $('discountPanel').classList.add('hidden');
       alertBox('payAlert','');
       alertBox('contactAlert','');
       alertBox('appAlert','');
-      if(['payment','close'].includes(action)){
+      if(['payment','close','fine'].includes(action)){
         kind=action;
         if(account.inactive){alertBox('appAlert','รายการนี้ปิดหรือไม่ใช้งานแล้ว ไม่สามารถแจ้งชำระเพิ่มได้');return}
+        if(action==='fine'&&!(Number(account.lateFee)>0)){
+          alertBox('appAlert','ยังไม่มีค่าปรับที่คำนวณได้จากวันครบกำหนด');
+          $('appAlert').scrollIntoView({behavior:'smooth',block:'center'});
+          return;
+        }
         $('paymentBox').classList.remove('hidden');
         $('amount').value=defaultAmount()||'';
-        $('amountLabel').textContent=action==='close'?'ยอดปิดที่ชำระ':'ยอดที่ชำระ';
+        $('amountLabel').textContent=action==='close'?'ยอดปิดที่ชำระ':action==='fine'?'ยอดชำระค่าปรับ':'ยอดที่ชำระ';
+        if(action==='fine') alertBox('payAlert','ยอดนี้คำนวณจากวันที่เกินกำหนด ยังไม่ยืนยันยอดค่าปรับคงค้างหลังหักที่เคยจ่าย กรุณาตรวจสอบกับแอดมินก่อนโอน');
         $('paymentBox').scrollIntoView({behavior:'smooth',block:'start'});
       }else if(action==='status'){
         $('statusPanel').scrollIntoView({behavior:'smooth',block:'start'});
       }else if(action==='info'){
         $('customerName').scrollIntoView({behavior:'smooth',block:'start'});
       }else if(action==='discount'){
-        alertBox('appAlert','ยอดปิดโดยประมาณ '+money(account.closeAmount)+' หากมีสิทธิ์ส่วนลด ระบบจะคำนวณในยอดปิด กรุณาตรวจสอบกับแอดมินก่อนโอน','success');
-        $('appAlert').scrollIntoView({behavior:'smooth',block:'start'});
+        $('discountCloseAmount').textContent=money(account.closeAmount);
+        $('discountPanel').classList.remove('hidden');
+        $('discountPanel').scrollIntoView({behavior:'smooth',block:'start'});
       }else if(action==='admin'){
         $('contactPanel').classList.remove('hidden');
         $('contactPanel').scrollIntoView({behavior:'smooth',block:'start'});
@@ -129,6 +145,7 @@
     async function load(){try{const data=await api('/api/customer/session');render(data)}catch{setView(false)}}
     $('loginForm').addEventListener('submit',async e=>{e.preventDefault();alertBox('loginAlert','');busy($('loginBtn'),true,'กำลังตรวจสอบ');try{const data=await api('/api/customer/session',{method:'POST',body:JSON.stringify({queue:$('queue').value,firstName:$('firstName').value,lastName:$('lastName').value})});render(data)}catch(err){alertBox('loginAlert',err.message)}finally{busy($('loginBtn'),false,'ดูยอดของฉัน')}});
     $('logoutBtn').onclick=async()=>{await api('/api/customer/session',{method:'DELETE'}).catch(()=>{});location.reload()};document.querySelectorAll('.customer-btn').forEach(btn=>btn.onclick=()=>selectAction(btn.dataset.action));
+    $('discountContactBtn').onclick=()=>selectAction('admin');
     $('contactAdminBtn').onclick=async()=>{const btn=$('contactAdminBtn');busy(btn,true,'กำลังส่งคำขอ');try{const data=await api('/api/customer/contact',{method:'POST',body:'{}'});alertBox('contactAlert',data.message,'success')}catch(err){alertBox('contactAlert',err.message)}finally{busy(btn,false,'ส่งคำขอติดต่อแอดมิน')}};
     $('qrBtn').onclick=()=>{const amount=Number($('amount').value);if(!(amount>0)){alertBox('payAlert','กรุณาระบุยอดก่อนสร้าง QR');return}$('qrImage').src='/api/customer/qr?amount='+encodeURIComponent(amount)+'&t='+Date.now();$('qrWrap').classList.remove('hidden');alertBox('payAlert','')};
     async function fileImage(file){if('createImageBitmap'in window)return createImageBitmap(file);return new Promise((resolve,reject)=>{const img=new Image(),url=URL.createObjectURL(file);img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('เปิดรูปสลิปไม่ได้'))};img.src=url})}
