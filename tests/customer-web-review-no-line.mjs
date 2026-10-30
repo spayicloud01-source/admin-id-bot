@@ -46,9 +46,9 @@ function response(){
   return {code:0,body:null,setHeader(){},status(n){this.code=n;return this;},json(v){this.body=v;return this;}};
 }
 const png=data=>"data:image/png;base64,"+Buffer.from(data).toString("base64");
-async function submit(slipData,authorized=true){
+async function submit(slipData,authorized=true,kind="payment",amount=900){
   const res=response();
-  await handler({method:"POST",headers:{authorized},body:{kind:"payment",amount:900,slipDataUrl:png(slipData)}},res);
+  await handler({method:"POST",headers:{authorized},body:{kind,amount,slipDataUrl:png(slipData)}},res);
   return res;
 }
 const blocked=await submit("one",false);
@@ -70,6 +70,14 @@ const blobs=calls.filter(x=>x.type==="blob");
 assert.equal(blobs.length,3);
 assert.equal(blobs[0].path,blobs[1].path);
 assert.notEqual(blobs[0].path,blobs[2].path);
+const fine=await submit("fine-only-slip",true,"fine",50);
+assert.equal(fine.code,200);
+assert.equal(fine.body.pending,true);
+const finePayload=calls.filter(x=>x.type==="bridge").at(-1).payload;
+assert.equal(finePayload.action,"queuePayment");
+assert.equal(finePayload.paymentKind,"fine");
+assert.equal(finePayload.amount,50);
+assert.equal(fine.body.notification.sent,0);
 assert.equal(fetchCalls,0);
-assert.equal(calls.filter(x=>x.type==="bridge").length,3);
+assert.equal(calls.filter(x=>x.type==="bridge").length,4);
 console.log("PASS customer website queues slips without LINE, retains duplicates and separate slips; admin web can inspect and approve");
