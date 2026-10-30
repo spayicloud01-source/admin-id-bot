@@ -24,13 +24,9 @@ button:disabled{opacity:.45;cursor:not-allowed}.alt{background:#e6edeb;color:#1f
     <div id="buttons">
       <button data-action="getCustomerInfo" data-right="customers">ข้อมูลลูกค้า</button>
       <button data-action="getHistory" data-right="history">ประวัติ</button>
-      <button data-action="listReviewQueue" data-right="review">ดูคิวตรวจสลิป</button>
-      <button data-action="getReviewQueueItem" data-right="review">ดูรายการสลิป</button>
-      <button data-action="resolveReviewQueue" data-right="review" data-decision="ผ่าน">อนุมัติสลิป</button>
-      <button data-action="resolveReviewQueue" data-right="review" data-decision="ไม่ผ่าน">ไม่ผ่าน</button>
       <button data-action="queuePayment" data-right="payment">บันทึกรับยอด</button>
     </div>
-    <p class="hint">สำหรับรายการสลิป ให้กรอกเลขแถวคิวตรวจสอบในช่องค้นหาแล้วเลือกดูหรืออนุมัติ</p>
+    <p class="hint">การดูและอนุมัติคิวสลิปผ่านเว็บยังจำกัดเฉพาะเจ้าของตาม Apps Script เดิม</p>
     <p id="notice" role="status"></p><pre id="output" aria-live="polite">—</pre>
   </div>
   <button class="alt" id="logout">ออกจากระบบ</button>
