@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {hashOwnerPassword,verifyOwnerPassword,configuredOwnerCredentials} from "../lib/adminPasswordAuth.js";
-import {createWebSession,verifyWebSession} from "../lib/webAuth.js";
+import {createWebSession,createStaffWebSession,verifyWebSession} from "../lib/webAuth.js";
 
 process.env.SHEETS_BRIDGE_SECRET="password-only-test-session-key";
 process.env.ADMIN_WEB_LOGIN_USERNAME="owner-preview";
@@ -17,13 +17,16 @@ assert.equal(configuredOwnerCredentials({...process.env,ADMIN_WEB_LOGIN_PASSWORD
 let staffResult={allowed:true,role:"เจ้าของ",staffName:"Test Owner"};
 let checked=[];
 globalThis.__mockAdminBridge=async payload=>{checked.push(payload);return staffResult;};
-globalThis.__mockAdminCreateSession=createWebSession;
+globalThis.__mockAdminCreateSession={createWebSession,createStaffWebSession};
+globalThis.__mockUserStore={getOwnerOverride:async()=>null,getUser:async()=>null};
 globalThis.__mockAdminCredentials={configuredOwnerCredentials,verifyOwnerPassword};
 let code=readFileSync(new URL("../lib/adminPasswordLoginApi.js",import.meta.url),"utf8")
   .replace('import { callSheetsBridge } from "./sheetsBridge.js";',
     'const callSheetsBridge=globalThis.__mockAdminBridge;')
-  .replace('import { createWebSession } from "./webAuth.js";',
-    'const createWebSession=globalThis.__mockAdminCreateSession;')
+  .replace('import { createWebSession, createStaffWebSession } from "./webAuth.js";',
+    'const {createWebSession,createStaffWebSession}=globalThis.__mockAdminCreateSession;')
+  .replace('import { getOwnerOverride,getUser } from "./adminAccountStore.js";',
+    'const {getOwnerOverride,getUser}=globalThis.__mockUserStore;')
   .replace('import { configuredOwnerCredentials, verifyOwnerPassword } from "./adminPasswordAuth.js";',
     'const {configuredOwnerCredentials,verifyOwnerPassword}=globalThis.__mockAdminCredentials;');
 const {default:handler}=await import("data:text/javascript;base64,"+Buffer.from(code).toString("base64"));
