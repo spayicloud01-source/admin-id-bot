@@ -6,7 +6,7 @@ const customer={source:"v1/v3",sheet:"v3/10-69",row:9,queue:"310-4",name:"สม
 let activeCustomer=customer;
 let result={ok:true,summary:{
   customer:{...customer},discountEligible:true,discountPercent:50,
-  discountAmount:400,accumulatedFee:800,feeApplied:400,
+  discountAmount:400,accumulatedFee:800,
   calculatedClose:4400,paidForCycle:100,
   discountStartDate:"25/10/2569",calculatedAt:"30/10/2569 20:00",
 }};
@@ -41,12 +41,14 @@ assert.equal(good.code,200);
 assert.equal(good.body.eligible,true);
 assert.equal(good.body.discountPercent,50);
 assert.equal(good.body.discountAmount,400);
+assert.equal(good.body.feeAfter,400);
+assert.equal(good.body.feeBefore,800);
 assert.equal(good.body.calculatedClose,4300);
 assert.equal(good.body.discountStartDate,"25/10/2569");
 assert.equal(Object.hasOwn(good.body,"customer"),false,"never leak full source customer data");
 assert.deepEqual(lookups,[{action:"getCalculatedSummary",query:"v1/v3:310-4"}]);
 result={ok:true,summary:{...result.summary,discountEligible:false,discountPercent:0,
-  discountAmount:0,feeApplied:800,calculatedClose:4800,
+  discountAmount:0,calculatedClose:4800,
   crossCycleOutstanding:true}};
 const noDiscount=await check();
 assert.equal(noDiscount.code,200);
