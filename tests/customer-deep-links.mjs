@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const html=readFileSync(new URL('../customer.html', import.meta.url),'utf8');
+const script=html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
+assert.ok(script,'customer inline script exists');
+new Function(script);
+assert.match(script,/function actionFromLink\(\)/);
+assert.match(script,/VALID_ACTIONS\.includes\(requested\)/);
+assert.match(script,/if\(requested\)selectAction\(requested\)/);
+assert.match(script,/action==='status'/);
+assert.match(script,/\['payment','close'\]/);
+assert.match(script,/action==='admin'/);
+const contactBlock=script.slice(script.indexOf('function selectAction('),script.indexOf('function render('));
+assert.doesNotMatch(contactBlock,/\/api\/customer\/contact/,'navigation must never send LINE automatically');
+assert.match(script,/contactAdminBtn'\)\.onclick=async/);
+assert.match(html,/id="contactPanel"/);
+console.log('PASS: all customer LINE deep links support authenticated navigation, without automatic LINE contact');
