@@ -35,7 +35,17 @@ assert.equal(verifyCustomerSession(token, now + 31 * 86400 * 1000), null);
 const view = safeCustomerView(customer);
 assert.equal(view.principal, 5000);
 assert.equal(view.closeAmount, 5900);
+assert.equal(view.paymentTotal, 800);
+assert.equal(view.lateFee, 0);
+assert.match(view.dueMessage, /ยังไม่มีวันครบกำหนด/);
 assert.equal(Object.hasOwn(view, "source"), false);
 assert.equal(Object.hasOwn(view, "sheet"), false);
+
+const overdue = safeCustomerView({ ...customer, dueDate: "24/10/2569", closeAmount: "" });
+assert.equal(overdue.overdueDays, 6);
+assert.equal(overdue.lateFee, 300);
+assert.equal(overdue.paymentTotal, 1100);
+assert.equal(overdue.closeAmount, 6100);
+assert.match(overdue.dueMessage, /เกินกำหนด 6 วัน/);
 
 console.log("PASS customer portal identity, session, and safe response");
