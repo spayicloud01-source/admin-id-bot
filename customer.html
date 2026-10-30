@@ -21,7 +21,7 @@
   </style>
 </head>
 <body>
-  <div class="web-version" aria-label="เวอร์ชันเว็บ">Web v2026.10.30.3</div>
+  <div class="web-version" aria-label="เวอร์ชันเว็บ">Web v2026.10.30.4</div>
   <main class="shell">
     <div class="brand"><div class="mark">ID</div><div><h1>Admin ID</h1><p>ดูยอดและแจ้งชำระเงิน</p></div></div>
 
@@ -73,9 +73,14 @@
         </div>
         <div id="discountPanel" class="card payment-box hidden" aria-live="polite">
           <h3>ตรวจสอบสิทธิ์ส่วนลด</h3>
-          <p class="lead">ขณะนี้เว็บยังไม่มีข้อมูลสิทธิ์ส่วนลดที่ยืนยันแล้วสำหรับรายการนี้ หากได้รับสิทธิ์ส่วนลดจากแอดมิน กรุณาตรวจสอบยอดใหม่ก่อนโอน</p>
-          <div class="metric wide"><span>ยอดปิดโดยประมาณ (ยังไม่หักส่วนลดที่อาจได้รับ)</span><strong id="discountCloseAmount">—</strong></div>
-          <p class="hint">ข้อมูลนี้ไม่ใช่การยืนยันสิทธิ์ส่วนลดและไม่ใช่ยอดชำระสุดท้าย</p>
+          <p class="lead" id="discountStatus">กำลังตรวจสอบสิทธิ์ส่วนลดจากระบบ…</p>
+          <div class="metric wide"><span>เริ่มนับสิทธิ์จากวันที่</span><strong id="discountStartDate">—</strong></div>
+          <div class="metric wide"><span>ค่าเช่าก่อนส่วนลด</span><strong id="discountFeeBefore">—</strong></div>
+          <div class="metric wide"><span>อัตราส่วนลดค่าเช่า</span><strong id="discountPercent">—</strong></div>
+          <div class="metric wide"><span>ส่วนลดที่ได้รับ</span><strong id="discountAmount">—</strong></div>
+          <div class="metric wide"><span>ยอดปิดหลังส่วนลดและหักค่าเช่าที่ชำระแล้ว</span><strong id="discountCloseAmount">—</strong></div>
+          <p class="hint" id="discountReason">เงื่อนไขเดิม: ปิดยอดภายใน 5 วัน ลดเฉพาะค่าเช่า 50% และไม่ได้รับสิทธิ์หากค้างข้ามรอบ</p>
+          <p class="hint">ยอดนี้เป็นผลคำนวณเบื้องต้นเพื่อการตรวจสอบ ไม่ใช่การยืนยันยอดปิดสุดท้าย กรุณาตรวจสอบกับแอดมินก่อนโอน</p>
           <button id="discountContactBtn" class="secondary" type="button">สอบถามสิทธิ์กับแอดมิน</button>
         </div>
         <div id="contactPanel" class="card payment-box hidden">
@@ -91,7 +96,7 @@
     <div class="footer">ข้อมูลการชำระจะสมบูรณ์เมื่อแอดมินตรวจผ่านแล้วเท่านั้น</div>
   </main>
   <script>
-    const $=id=>document.getElementById(id); let account=null,kind='payment',slipData='';
+    const $=id=>document.getElementById(id); let account=null,kind='payment',slipData='',discountRequest=0;
     const money=n=>Number(n||0).toLocaleString('th-TH',{minimumFractionDigits:0,maximumFractionDigits:2})+' บาท';
     function alertBox(id,text,type='error'){const el=$(id);el.textContent=text||'';el.className='alert '+(type==='success'?'success':'')+(text?'':' hidden')}
     function busy(btn,on,label){btn.disabled=on;if(on){btn.dataset.label=btn.textContent;btn.innerHTML='<span class="loader"></span>'+label}else btn.textContent=btn.dataset.label||label}
@@ -105,6 +110,7 @@
     }
     function selectAction(action){
       if(!account||!VALID_ACTIONS.includes(action))return;
+      discountRequest++;
       document.querySelectorAll('.customer-btn').forEach(x=>x.classList.toggle('active',x.dataset.action===action));
       $('qrWrap').classList.add('hidden');
       $('pendingBox').classList.add('hidden');
@@ -132,12 +138,35 @@
       }else if(action==='info'){
         $('customerName').scrollIntoView({behavior:'smooth',block:'start'});
       }else if(action==='discount'){
-        $('discountCloseAmount').textContent=money(account.closeAmount);
+        $('discountStatus').textContent='กำลังตรวจสอบสิทธิ์ส่วนลดจากระบบ…';
+        for(const id of ['discountStartDate','discountFeeBefore','discountPercent','discountAmount','discountCloseAmount']) $(id).textContent='—';
+        $('discountReason').textContent='เงื่อนไขเดิม: ปิดยอดภายใน 5 วัน ลดเฉพาะค่าเช่า 50% และไม่ได้รับสิทธิ์หากค้างข้ามรอบ';
         $('discountPanel').classList.remove('hidden');
         $('discountPanel').scrollIntoView({behavior:'smooth',block:'start'});
+        loadDiscount(discountRequest);
       }else if(action==='admin'){
         $('contactPanel').classList.remove('hidden');
         $('contactPanel').scrollIntoView({behavior:'smooth',block:'start'});
+      }
+    }
+    async function loadDiscount(requestId){
+      try{
+        const data=await api('/api/customer/discount');
+        if(requestId!==discountRequest||$('discountPanel').classList.contains('hidden'))return;
+        $('discountStatus').textContent=data.eligible?'มีสิทธิ์รับส่วนลดค่าเช่ารอบนี้':'ไม่มีสิทธิ์ส่วนลดค่าเช่ารอบนี้';
+        $('discountStartDate').textContent=data.discountStartDate||'ไม่มีข้อมูล';
+        $('discountFeeBefore').textContent=money(data.feeBefore);
+        $('discountPercent').textContent=Number(data.discountPercent||0).toLocaleString('th-TH')+'%';
+        $('discountAmount').textContent=money(data.discountAmount);
+        $('discountCloseAmount').textContent=money(data.calculatedClose);
+        $('discountReason').textContent=data.eligible?
+          'คำนวณตามกฎส่วนลดเดิมของ Admin ID: ลดเฉพาะค่าเช่า ไม่ลดเงินต้น':
+          data.crossCycleOutstanding?'ไม่ได้รับสิทธิ์ เพราะมีค่าเช่าค้างชำระข้ามรอบ':
+          'ไม่ได้รับสิทธิ์ตามเงื่อนไขระยะเวลา 5 วัน หรือยังไม่มีประวัติเริ่มนับสิทธิ์';
+      }catch(error){
+        if(requestId!==discountRequest||$('discountPanel').classList.contains('hidden'))return;
+        $('discountStatus').textContent='ยังตรวจสอบสิทธิ์ส่วนลดไม่ได้';
+        $('discountReason').textContent=error.message||'กรุณาลองใหม่หรือติดต่อแอดมิน';
       }
     }
     function render(data){account=data.customer;$('customerName').textContent=account.name||'—';$('customerModel').textContent=account.model||'';$('customerQueue').textContent='คิว '+account.queue;$('customerStatus').textContent='สถานะ '+(account.status||'ใช้งาน');$('dueCountdown').textContent=account.dueMessage||'ยังไม่มีวันครบกำหนด';$('dueMessage').textContent=account.dueDate?'วันครบกำหนด: '+account.dueDate+' • ตัดยอด 18:00 น.':'ยังไม่มีข้อมูลวันครบกำหนดในชีต';$('fineMessage').textContent=account.lateFee>0?'ค่าปรับ '+money(account.lateFee):'ยังไม่มีค่าปรับ';$('statusPanel').classList.toggle('overdue',account.overdueDays>0);$('principal').textContent=money(account.principal);$('fee').textContent=money(account.fee);$('dueDate').textContent=account.dueDate||'—';$('lateFee').textContent=money(account.lateFee);$('closeAmount').textContent=money(account.closeAmount);$('updatedAt').textContent='อัปเดตล่าสุด '+new Date().toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});$('paymentBox').classList.add('hidden');document.querySelectorAll('.customer-btn').forEach(x=>{x.classList.remove('active');if(x.dataset.action==='fine')x.disabled=account.inactive||!(Number(account.lateFee)>0)});if(account.inactive)alertBox('appAlert','รายการนี้ปิดหรือไม่ใช้งานแล้ว ไม่สามารถแจ้งชำระเพิ่มได้');else alertBox('appAlert','');const items=data.history||[];$('history').innerHTML=items.length?items.map(x=>`<div class="history-item"><div><b>${escapeHtml(x.eventType||'รายการชำระ')}</b><small>${escapeHtml(x.dateTime||'')}</small></div><strong>${money(x.amount)}</strong></div>`).join(''):'<div class="empty">ยังไม่มีประวัติที่แสดงได้</div>';setView(true);const requested=actionFromLink();if(requested)selectAction(requested)}
