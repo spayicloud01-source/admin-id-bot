@@ -424,6 +424,11 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       }).catch(function(e){byId("dueList").innerHTML='<div class="empty"><b>โหลดไม่สำเร็จ</b><p>'+escapeHtml(String((e&&e.message)||e))+'</p></div>';});
   }
 
+  function isCustomerSlipUrl(value){
+    try { var url=new URL(String(value||"")); return url.protocol==="https:" && /^[a-z0-9-]+\.public\.blob\.vercel-storage\.com$/i.test(url.hostname); }
+    catch(e){ return false; }
+  }
+
   function renderToolResult(boxId,data){
     var box=byId(boxId),items=[],head="",out="",i,x,keys,j;
     if(!box)return;
@@ -441,15 +446,25 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       x=items[i]||{};keys=Object.keys(x);out+='<div class="item"><div class="itemname">'+escapeHtml(x.name||x.staffName||x.queue||x.rowNo||("รายการ "+(i+1)))+'</div><div class="itemmeta">';
       for(j=0;j<keys.length;j++){
         if(x[keys[j]]==null||x[keys[j]]===""||typeof x[keys[j]]==="object")continue;
-        out+='<b>'+escapeHtml(keys[j])+'</b>: '+escapeHtml(x[keys[j]])+'<br>';
+        if(keys[j]==="slipRef" && isCustomerSlipUrl(x[keys[j]])){
+          var href=escapeHtml(x[keys[j]]);
+          out+='<b>สลิป</b>: <a href="'+href+'" target="_blank" rel="noopener noreferrer">เปิดสลิปเพื่อตรวจสอบ</a><br>';
+          out+='<a href="'+href+'" target="_blank" rel="noopener noreferrer"><img src="'+href+'" alt="สลิปรอการตรวจสอบ" loading="lazy" style="display:block;width:100%;max-width:260px;max-height:320px;object-fit:contain;margin:8px 0;border:1px solid #dbe6e3;border-radius:10px"></a>';
+        }else{
+          out+='<b>'+escapeHtml(keys[j])+'</b>: '+escapeHtml(x[keys[j]])+'<br>';
+        }
       }
       out+='</div>';
-      if(x.rowNo)out+='<button class="btn soft itembtn" data-pick-review="'+escapeHtml(x.rowNo)+'">เลือกคิว #'+escapeHtml(x.rowNo)+'</button>';
+      if(x.rowNo)out+='<button class="btn soft itembtn" data-pick-review="'+escapeHtml(x.rowNo)+'"'+(x.type?' data-queue-review="1"':'')+'>เลือกคิว #'+escapeHtml(x.rowNo)+'</button>';
       out+='</div>';
     }
     box.innerHTML=head+out;
     var picks=box.querySelectorAll("[data-pick-review]");
-    for(i=0;i<picks.length;i++)picks[i].onclick=function(){var row=this.getAttribute("data-pick-review");byId("reviewRow").value=row;byId("customerBindingRow").value=row;};
+    for(i=0;i<picks.length;i++)picks[i].onclick=function(){
+      var row=this.getAttribute("data-pick-review");
+      byId("reviewRow").value=row;byId("customerBindingRow").value=row;
+      if(boxId==="reviewToolResult" && this.getAttribute("data-queue-review")==="1")runWebAction({action:"getReviewQueueItem",query:row},"reviewToolResult",null);
+    };
   }
 
   function runWebAction(payload,boxId,button){
@@ -697,6 +712,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     var all=document.querySelectorAll(".tab,.view"),j;
     for(j=0;j<all.length;j++)all[j].classList.remove("active");
     this.classList.add("active");byId(this.getAttribute("data-view")).classList.add("active");
+    if(this.getAttribute("data-view")==="reviewTools")byId("refreshReview").click();
   };}
   byId("cardCustomers").onclick=openCustomers;
   byId("cardToday").onclick=function(){openDue("today");};
