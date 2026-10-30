@@ -38,6 +38,7 @@ const customer={
   principal:4000,fee:1000,overdueDays:3,inactive:false,
 };
 render({customer,history:[]});
+assert.equal(buttons.find(x=>x.dataset.action==="fine").disabled,false,"fine payment available when calculated fine exists");
 selectAction("discount");
 assert.equal(els.get("discountPanel").classList.contains("hidden"),false,"discount panel must appear");
 assert.equal(els.get("discountCloseAmount").textContent,"5,300 บาท");
@@ -53,6 +54,7 @@ assert.equal(els.get("amount").value,150);
 assert.equal(els.get("amountLabel").textContent,"ยอดชำระค่าปรับ");
 assert.match(els.get("payAlert").textContent,/ยังไม่ยืนยันยอดค่าปรับคงค้าง/);
 render({customer:{...customer,lateFee:0},history:[]});
+assert.equal(buttons.find(x=>x.dataset.action==="fine").disabled,true,"fine payment disabled when no calculated fine exists");
 selectAction("fine");
 assert.equal(els.get("paymentBox").classList.contains("hidden"),true);
 assert.match(els.get("appAlert").textContent,/ยังไม่มีค่าปรับ/);
