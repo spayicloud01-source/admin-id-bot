@@ -4,6 +4,8 @@ import { Readable } from 'node:stream';
 import handler from '../api/line/webhook.js';
 process.env.LINE_CHANNEL_SECRET='test-secret';
 process.env.LINE_CHANNEL_ACCESS_TOKEN='test-token';
+// This suite covers the legacy welcome/reply flow, which Production intentionally disables.
+process.env.LINE_CUSTOMER_AUTO_REPLY_ENABLED='true';
 process.env.SHEETS_BRIDGE_SECRET='bridge-secret';
 process.env.GOOGLE_APPS_SCRIPT_URL='https://example.test/bridge';
 process.env.PUBLIC_BASE_URL='https://admin-id-bot.example';
