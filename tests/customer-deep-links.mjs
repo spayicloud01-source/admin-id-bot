@@ -14,4 +14,8 @@ const contactBlock=script.slice(script.indexOf('function selectAction('),script.
 assert.doesNotMatch(contactBlock,/\/api\/customer\/contact/,'navigation must never send LINE automatically');
 assert.match(script,/contactAdminBtn'\)\.onclick=async/);
 assert.match(html,/id="contactPanel"/);
+assert.match(html,/id="dueCountdown"/);
+assert.match(script,/dueCountdown\x27\)\.textContent=account\.dueMessage/);
+assert.match(html,/status-panel strong/);
+assert.match(script,/action===\x27status\x27/);
 console.log('PASS: all customer LINE deep links support authenticated navigation, without automatic LINE contact');
