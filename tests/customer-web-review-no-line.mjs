@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 const source = readFileSync(new URL("../lib/customerPaymentApi.js", import.meta.url), "utf8");
 const adminPage = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 
-assert.doesNotMatch(source, /api\\.line\\.me|notifyReviewers|pushLine\\(/);
+assert.doesNotMatch(source, /api\.line\.me|notifyReviewers|pushLine\(/);
 assert.match(adminPage, /เปิดสลิปเพื่อตรวจสอบ/);
 assert.match(adminPage, /getReviewQueueItem/);
 assert.match(adminPage, /resolveReviewQueue/);
@@ -39,8 +39,8 @@ globalThis.fetch=async()=>{fetchCalls++;throw Error("Unexpected outbound network
 const injected=source
   .replace('import { put } from "@vercel/blob";','const put=globalThis.__putMock;')
   .replace('import { callSheetsBridge } from "./sheetsBridge.js";','const callSheetsBridge=globalThis.__bridgeMock;')
-  .replace(/import \\{\\s*customerExactPayload,[\\s\\S]*?\\} from "\\.\\/customerPortal\\.js";/, 'const {customerExactPayload,money,revalidatePortalCustomer,sessionFromCustomerRequest}=globalThis.__portalMock;');
-assert.doesNotMatch(injected, /from "\\.\\/customerPortal\\.js"/);
+  .replace(/import \{\s*customerExactPayload,[\s\S]*?\} from "\.\/customerPortal\.js";/, 'const {customerExactPayload,money,revalidatePortalCustomer,sessionFromCustomerRequest}=globalThis.__portalMock;');
+assert.doesNotMatch(injected, /from "\.\/customerPortal\.js"/);
 const {default: handler}=await import("data:text/javascript;base64,"+Buffer.from(injected).toString("base64"));
 function response(){
   return {code:0,body:null,setHeader(){},status(n){this.code=n;return this;},json(v){this.body=v;return this;}};
