@@ -32,6 +32,10 @@
       "destination": "/api/web/send?customerRoute=qr"
     },
     {
+      "source": "/api/customer/contact",
+      "destination": "/api/web/send?customerRoute=contact"
+    },
+    {
       "source": "/customer",
       "destination": "/customer.html"
     }

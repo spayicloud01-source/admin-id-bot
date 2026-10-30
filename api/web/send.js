@@ -4,6 +4,7 @@ import { paymentQrUrl } from "../../lib/paymentQr.js";
 import customerSessionHandler from "../../lib/customerSessionApi.js";
 import customerPaymentHandler from "../../lib/customerPaymentApi.js";
 import customerQrHandler from "../../lib/customerQrApi.js";
+import customerContactHandler from "../../lib/customerContactApi.js";
 import crypto from "node:crypto";
 
 export const maxDuration = 60;
@@ -12,6 +13,7 @@ const CUSTOMER_HANDLERS = {
   session: customerSessionHandler,
   payment: customerPaymentHandler,
   qr: customerQrHandler,
+  contact: customerContactHandler,
 };
 
 const ALLOWED_ADMIN_ACTIONS = new Set([
