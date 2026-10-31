@@ -25,19 +25,14 @@ globalThis.fetch=async(url, options={})=>{
     }
 
     if(body.action==='searchCustomer') {
-      if(body.query==='v6:101') {
-        data={ok:true,matches:[{
-          source:'v6',sheet:'V6/10-69',row:3,queue:'101',name:'ลูกค้า A',
-          phone:'0811111111',appleId:'a@example.com'
-        }]};
-      } else if(body.query==='v1/v3:101' && duplicateAcrossAllowedTabs) {
-        data={ok:true,matches:[{
-          source:'v1/v3',sheet:'v3/10-69',row:3,queue:'101',name:'ลูกค้า B',
-          phone:'0822222222',appleId:'b@example.com'
-        }]};
-      } else {
-        data={ok:true,matches:[]};
-      }
+      const v6={source:'v6',sheet:'V6/10-69',row:3,queue:'101',name:'ลูกค้า A',
+        phone:'0811111111',appleId:'a@example.com'};
+      const v3={source:'v1/v3',sheet:'v3/10-69',row:3,queue:'101',name:'ลูกค้า B',
+        phone:'0822222222',appleId:'b@example.com'};
+      // One unqualified GAS search now scans BOTH allowed tabs in one invocation.
+      data={ok:true,matches:body.query==='v6:101'?[v6]:
+        body.query==='v1/v3:101'?(duplicateAcrossAllowedTabs?[v3]:[]):
+        body.query==='101'?(duplicateAcrossAllowedTabs?[v6,v3]:[v6]):[]};
     }
 
     if(body.action==='queuePayment') data=allowed
@@ -94,8 +89,8 @@ for(role of ['เจ้าของ','แอดมิน','พนักงาน
 
   await send('รับชำระ 101 500');
   const searches=calls.filter(x=>x.action==='searchCustomer');
-  assert.equal(searches.length,2);
-  assert.deepEqual(searches.map(x=>x.query).sort(),['v1/v3:101','v6:101']);
+  assert.equal(searches.length,1,'unqualified lookup scans two allowed tabs in one GAS request');
+  assert.deepEqual(searches.map(x=>x.query),['101']);
 
   const payments=calls.filter(x=>x.action==='queuePayment');
   assert.equal(payments.length,1);
