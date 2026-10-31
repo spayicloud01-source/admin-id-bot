@@ -1184,7 +1184,7 @@ async function handleEvent(event) {
     // input. Convert it before customer binding so it can never become a
     // name-binding attempt, even if the short-lived button mode expired.
     if (!command && sourceType === "user" && lineUserId &&
-        /^\\S+\\s+[0-9,]+(?:\\.[0-9]{1,2})?(?:\\s+(?:(?:ค่าปรับ|ปรับ)\\s*[0-9,]+(?:\\.[0-9]{1,2})?))?(?:\\s+\\d{1,2}\\/\\d{1,2}\\/\\d{4})?$/u.test(text)) {
+        /^\S+\s+[0-9,]+(?:\.[0-9]{1,2})?(?:\s+(?:(?:ค่าปรับ|ปรับ)\s*[0-9,]+(?:\.[0-9]{1,2})?))?(?:\s+\d{1,2}\/\d{1,2}\/\d{4})?$/u.test(text)) {
       const barePayment = parseCommand(`รับยอด ${text}`);
       if (barePayment?.action === "queuePayment" && barePayment.query &&
           Number.isFinite(barePayment.amount) && barePayment.amount > 0) command = barePayment;
