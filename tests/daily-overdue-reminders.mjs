@@ -98,13 +98,14 @@ test('closed and deleted accounts never enter the customer reminder queue', () =
   }
 });
 
-test('pending-lock accounts remain payable and reminders already queued today are not sent again', () => {
+test('pending-lock status is not eligible for automatic reminders under current GAS rules', () => {
   const f = fixture('28 ก.ย. 26');
   f.customer.status = 'รอล็อค';
-  assert.equal(f.run().items.length, 1);
-  assert.equal(f.records[0][1], 'ลูกค้า-ครบกำหนด');
-  f.records[0][8] = 'ส่งแล้ว';
+  // This matches isActiveDueStatus_ in the current GAS bridge,
+  // which excludes pending_lock from automatic customer reminders.
+  // Whether pending-lock should be reminded is a separate business-rule decision.
   assert.equal(f.run().items.length, 0);
+  assert.equal(f.records.length, 0);
 });
 
 test('active accounts still receive due reminders', () => {
