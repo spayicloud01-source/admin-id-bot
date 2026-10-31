@@ -39,11 +39,12 @@ globalThis.fetch=async(url, options={})=>{
       ? {ok:true,...paymentResult}
       : {ok:true,queued:false,message:'บัญชีนี้ไม่มีสิทธิ์ บันทึกชำระ'};
 
-    if(body.action==='rollbackReviewQueue') {
-      data={
-        ok:true,rolledBack:true,rowNo:2,queue:'101',name:'ลูกค้า A',amount:500,
-        message:'ยกเลิกรายการ #2 แล้ว และคืนค่าชีตต้นทางกลับก่อนกดผ่าน'
-      };
+    if(body.action==='getReviewQueueItem') {
+      data={ok:true,item:{rowNo:2,type:'บันทึกชำระ',queue:'101',name:'ลูกค้า A',amount:500}};
+    }
+    if(body.action==='rollbackReviewGroup') {
+      data={ok:true,rolledBack:true,rowNos:[2],
+        message:'ยกเลิกรายการ #2 แล้ว และคืนค่าชีตต้นทาง'};
     }
   }
 
@@ -136,9 +137,16 @@ assert.ok(!calls.some(x=>x.action==='queuePayment'));
 duplicateAcrossAllowedTabs=false;
 
 const cancelReply=await send('ยกเลิกรายการ 2');
-assert.ok(calls.some(x=>x.action==='rollbackReviewQueue'&&x.query==='2'));
-assert.match(cancelReply[0].text,/ยกเลิกรายการ #2/);
-assert.equal(cancelReply[0].quickReply.items[0].action.label,'รับชำระใหม่');
-assert.equal(cancelReply[0].quickReply.items[0].action.text,'รับชำระ');
+assert.ok(calls.some(x=>x.action==='getReviewQueueItem'&&x.query==='2'),
+  'cancel preview must read the queued item before asking for confirmation');
+assert.ok(!calls.some(x=>x.action==='rollbackReviewGroup'),
+  'cancel preview must NEVER write or roll back automatically');
+assert.match(cancelReply[0].text,/ตรวจสอบก่อนยกเลิก/);
+assert.equal(cancelReply[0].quickReply.items[0].action.label,'ยืนยันยกเลิก');
+assert.equal(cancelReply[0].quickReply.items[0].action.text,'ยืนยันยกเลิก 2');
+const confirmed=await send('ยืนยันยกเลิก 2');
+assert.ok(calls.some(x=>x.action==='rollbackReviewGroup'&&x.query==='2'),
+  'only the confirmation command may roll back a payment');
+assert.match(confirmed[0].text,/ยกเลิกรายการ #2/);
 
 console.log('Staff payment tests passed');
