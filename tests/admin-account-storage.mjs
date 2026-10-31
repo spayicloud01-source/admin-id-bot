@@ -44,6 +44,8 @@ const good=process.env.ADMIN_AUTH_ENCRYPTION_KEY;
 process.env.ADMIN_AUTH_ENCRYPTION_KEY="cd".repeat(32);
 await assert.rejects(()=>api.getUser("staff-test"),"ciphertext cannot be decrypted without separate key");
 process.env.ADMIN_AUTH_ENCRYPTION_KEY=good;
+const configuredPrivateToken=process.env.ADMIN_AUTH_BLOB_READ_WRITE_TOKEN;
+delete process.env.ADMIN_AUTH_BLOB_READ_WRITE_TOKEN;
 process.env.VERCEL_ENV="production";
 await assert.rejects(()=>api.listUsers(),/Private authentication storage required/);
 // With a dedicated private token configured, all account operations must target
@@ -52,4 +54,6 @@ process.env.ADMIN_AUTH_BLOB_READ_WRITE_TOKEN="preview-private-test-token";
 assert.equal(await api.getUser("private-user"),null);
 assert.equal(privateOptions.access,"private");
 assert.equal(privateOptions.token,"preview-private-test-token");
+if(configuredPrivateToken)process.env.ADMIN_AUTH_BLOB_READ_WRITE_TOKEN=configuredPrivateToken;
+else delete process.env.ADMIN_AUTH_BLOB_READ_WRITE_TOKEN;
 console.log("PASS encrypted account storage, no plaintext credentials, conditional writes, key isolation and production guard");
