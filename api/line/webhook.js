@@ -1741,6 +1741,7 @@ async function handleEvent(event) {
     }
 
     if (text === "เมนู" || text === "คำสั่ง") {
+      console.info("DEBUG owner menu", JSON.stringify({role:access.role,isOwner:access.role==="เจ้าของ",sourceType}));
       const messages = [];
       if (sourceType === "user") {
         const paymentAccess = await callSheetsBridge({
