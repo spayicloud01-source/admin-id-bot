@@ -52,7 +52,7 @@ test('closed and deleted rows are excluded from overdue while status buckets sta
   const context = makeContext();
   const base = { lineUserId: 'Uowner', sourceType: 'user' };
   const overdue = context.listDueCustomers_({ ...base, dueMode: 'overdue' });
-  assert.deepEqual(Array.from(overdue.items, (x) => x.queue), ['A-1', 'A-4']);
+  assert.deepEqual(Array.from(overdue.items, (x) => x.queue), ['A-1']); // pending-lock has its own bucket, not overdue
 
   const deleted = context.listDueCustomers_({ ...base, dueMode: 'deleted' });
   assert.deepEqual(Array.from(deleted.items, (x) => x.queue), ['A-3']);
