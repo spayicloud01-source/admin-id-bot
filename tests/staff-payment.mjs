@@ -21,6 +21,7 @@ globalThis.fetch=async(url, options={})=>{
     calls.push(body);
 
     if(body.action==='checkAccess') {
+      console.info('GAS checkAccess mock identity',JSON.stringify({mockRole:role,roleType:typeof role,userId:body.lineUserId,permission:body.permission}));
       data={ok:true,allowed:body.permission==='บันทึกชำระ'?allowed:true,role,staffName:'staff'};
     }
 
