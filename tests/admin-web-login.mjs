@@ -16,7 +16,7 @@ const storage=data=>({
   removeItem:k=>data.delete(k),
 });
 const ctx=vm.createContext({
-  TOKEN:"",
+  TOKEN:"",PASSWORD_LOGIN:false,
   sessionStorage:storage(session),localStorage:storage(local),
   location:{href:"https://admin-id-bot.vercel.app/?token=signed-owner-token&view=review"},
   history:{replaceState:(...args)=>visits.push(args)},
@@ -30,6 +30,13 @@ assert.equal(JSON.parse(local.get("adminIdVerifiedOwner")).token,"signed-owner-t
 assert.equal(visits.at(-1)[2],"/?view=review","token removed after verified");
 session.clear();
 assert.equal(ctx.restoreOwnerToken(),"signed-owner-token","new tab restores prior valid owner token");
+// Password sessions remain session-only; never write a bearer token to localStorage.
+ctx.PASSWORD_LOGIN=true;
+ctx.TOKEN="password-session-token";
+ctx.rememberVerifiedOwner();
+assert.equal(session.get("adminIdWebToken"),"password-session-token");
+assert.equal(local.has("adminIdVerifiedOwner"),false);
+assert.equal(session.get("adminIdWebPasswordMode"),"yes");
 ctx.forgetOwnerToken();
 assert.equal(local.has("adminIdVerifiedOwner"),false);
 assert.equal(session.has("adminIdWebToken"),false);
@@ -38,13 +45,13 @@ local.set("adminIdVerifiedOwner",JSON.stringify({token:"stale",savedAt:Date.now(
 assert.equal(ctx.restoreOwnerToken(),"","old saved auth expires after 30 days");
 assert.equal(local.has("adminIdVerifiedOwner"),false);
 const badStorage=vm.createContext({
- TOKEN:"",sessionStorage:{getItem(){throw Error("blocked")},setItem(){throw Error("blocked")},removeItem(){}},
+ TOKEN:"",PASSWORD_LOGIN:false,sessionStorage:{getItem(){throw Error("blocked")},setItem(){throw Error("blocked")},removeItem(){}},
  localStorage:{getItem(){throw Error("blocked")},setItem(){throw Error("blocked")},removeItem(){}},
  location:{href:"https://admin-id-bot.vercel.app/?token=signed"},history:{replaceState(){}},Date,URL,JSON,Number,
 });
 vm.runInContext(helper,badStorage);
 const start=src.indexOf("  try{\n    var qs=new URLSearchParams(location.search)");
-const end=src.indexOf("\n  byId(\"source\").addEventListener",start);
+const end=src.indexOf("\n  byId(\"passwordLoginForm\").addEventListener",start);
 assert.ok(start>=0&&end>start,"startup token bootstrap found");
 badStorage.URLSearchParams=URLSearchParams;
 badStorage.location.search="?token=signed";

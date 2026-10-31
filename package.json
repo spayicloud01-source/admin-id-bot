@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "postinstall": "node scripts/financial-command-selftest.mjs && node tests/financial-date-static.mjs && node --check api/line/webhook.js && node --check lib/staffRichMenu.js && node tests/customer-web-review-no-line.mjs && node tests/customer-rich-menu.mjs && node tests/customer-deep-links.mjs && node tests/customer-session-refresh.mjs && node tests/customer-closed-access.mjs && node tests/customer-portal.mjs && node tests/web-version-label.mjs && node tests/customer-menu-interaction.mjs && node tests/customer-discount.mjs && node tests/admin-web-login.mjs",
+    "postinstall": "node scripts/financial-command-selftest.mjs && node tests/financial-date-static.mjs && node --check api/line/webhook.js && node --check lib/staffRichMenu.js && node tests/customer-web-review-no-line.mjs && node tests/customer-rich-menu.mjs && node tests/customer-deep-links.mjs && node tests/customer-session-refresh.mjs && node tests/customer-closed-access.mjs && node tests/customer-portal.mjs && node tests/web-version-label.mjs && node tests/customer-menu-interaction.mjs && node tests/customer-discount.mjs && node tests/admin-web-login.mjs && node tests/admin-password-login.mjs && node tests/admin-managed-users.mjs && node tests/admin-account-storage.mjs",
     "test": "node tests/run-all.mjs"
   },
   "dependencies": {
-    "@vercel/blob": "2.0.0",
+    "@vercel/blob": "2.8.2",
     "qrcode": "1.5.4",
     "sharp": "0.35.4"
   }

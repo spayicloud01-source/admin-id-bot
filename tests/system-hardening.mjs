@@ -5,8 +5,12 @@ const bridge = readFileSync("lib/sheetsBridge.js", "utf8");
 const apps = readFileSync("apps-script/AdminIdBridge.gs", "utf8");
 const health = readFileSync("api/health.js", "utf8");
 
-assert.match(apps, /VERSION: '2026\.10\.03-131'/);
-assert.match(health, /EXPECTED_BRIDGE_VERSION = "2026\.10\.03-131"/);
+const sourceVersion=apps.match(/VERSION:\s*'(\d{4}\.\d{2}\.\d{2}-\d+)'/)?.[1];
+const expectedLiveVersion=health.match(/EXPECTED_BRIDGE_VERSION\s*=\s*"(\d{4}\.\d{2}\.\d{2}-\d+)"/)?.[1];
+assert.ok(sourceVersion && expectedLiveVersion,"GAS and health must declare explicit bridge versions");
+// Source can be newer than the pinned live GAS deployment; do not require historical v131.
+assert.ok(Number(sourceVersion.split("-")[1]) >= Number(expectedLiveVersion.split("-")[1]),
+  "GAS source is older than the health service live-version expectation");
 assert.match(bridge, /"markCustomerReminderSent", "markReminderSent", "buildCustomerNotificationBatch"/);
 assert.doesNotMatch(bridge, /customerNotificationBatch \? 2/);
 

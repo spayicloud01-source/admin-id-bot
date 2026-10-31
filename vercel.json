@@ -20,6 +20,18 @@
   ],
   "rewrites": [
     {
+      "source": "/api/web/password-login",
+      "destination": "/api/web/send?adminAuth=password"
+    },
+    {
+      "source": "/api/web/users",
+      "destination": "/api/web/send?adminAuth=users"
+    },
+    {
+      "source": "/api/web/staff",
+      "destination": "/api/web/send?adminAuth=staff"
+    },
+    {
       "source": "/api/customer/session",
       "destination": "/api/web/send?customerRoute=session"
     },

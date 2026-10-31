@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="referrer" content="no-referrer"><title>Admin ID — เจ้าหน้าที่</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Noto Sans Thai",sans-serif;color:#172c3a;background:#f4f8f6}
+*{box-sizing:border-box}body{margin:0}.top{background:#0e554e;color:#fff;padding:18px}
+.wrap{max-width:850px;margin:24px auto;padding:0 14px}.card{background:#fff;border:1px solid #dfe8e5;border-radius:16px;padding:20px;margin:12px 0}
+h1{font-size:22px;margin:0}h2{font-size:18px}p{line-height:1.6}
+input,button,select{font:inherit}input,select{display:block;width:100%;height:43px;border:1px solid #cbd5d3;border-radius:9px;padding:0 12px;margin:7px 0 14px}
+button{background:#115c52;color:#fff;border:0;border-radius:10px;padding:11px 17px;cursor:pointer;margin-right:7px;margin-top:6px}
+button:disabled{opacity:.45;cursor:not-allowed}.alt{background:#e6edeb;color:#1f3b39}
+.hint{color:#647875;font-size:13px}pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:420px;overflow:auto;background:#f4f7f6;padding:12px;border-radius:10px;font-size:12px}
+.hidden{display:none!important}.cols{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:620px){.cols{grid-template-columns:1fr}}
+</style></head><body>
+<header class="top"><div class="wrap" style="margin:0 auto"><h1>Admin ID — ระบบเจ้าหน้าที่</h1><p id="profile" style="margin:5px 0 0">กำลังตรวจสอบสิทธิ์…</p></div></header>
+<main class="wrap">
+<section class="card" id="accessError" hidden><h2>ต้องเข้าสู่ระบบ</h2><p id="accessMessage">เข้าสู่ระบบใหม่ด้วยชื่อผู้ใช้และรหัสผ่านของคุณ</p><a href="/">กลับหน้าเข้าสู่ระบบ</a></section>
+<div id="staffApp" class="hidden">
+  <div class="card"><h2>จัดการข้อมูลตามสิทธิ์ของคุณ</h2><p class="hint">เว็บจะแสดงเฉพาะเมนูที่เจ้าของอนุญาต และระบบจะตรวจสิทธิ์จากชีตเจ้าหน้าที่อีกชั้นหนึ่ง</p>
+    <div class="cols">
+      <div><label for="lookup">ค้นหา / คิวลูกค้า</label><input id="lookup" placeholder="เช่น 310-4" autocomplete="off"></div>
+      <div><label for="paymentAmount">ยอดรับชำระ (เฉพาะผู้มีสิทธิ์)</label><input id="paymentAmount" type="number" min="1" step=".01"></div>
+    </div>
+    <div id="buttons">
+      <button data-action="getCustomerInfo" data-right="customers">ข้อมูลลูกค้า</button>
+      <button data-action="getHistory" data-right="history">ประวัติ</button>
+      <button data-action="queuePayment" data-right="payment">ส่งรับยอดเข้าคิวตรวจสอบ</button>
+    </div>
+    <p class="hint">การรับยอดจากบัญชีแอดมินเป็นเพียงการส่งรายการเข้าคิว ยังไม่ถือว่ารับชำระสำเร็จจนเจ้าของอนุมัติ การอนุมัติคิวสลิปผ่านเว็บยังจำกัดเฉพาะเจ้าของ</p>
+    <p id="notice" role="status"></p><pre id="output" aria-live="polite">—</pre>
+  </div>
+  <button class="alt" id="logout">ออกจากระบบ</button>
+</div></main>
+<script>
+(function(){
+  var token="";
+  try{token=sessionStorage.getItem("adminIdStaffToken")||"";}catch(e){}
+  var profile=document.getElementById("profile");
+  function el(id){return document.getElementById(id);}
+  function deny(reason){
+    el("staffApp").classList.add("hidden");
+    el("accessError").hidden=false;
+    el("accessMessage").textContent=reason||"กรุณาเข้าสู่ระบบอีกครั้ง";
+    profile.textContent="ยังไม่ได้เข้าสู่ระบบ";
+    try{sessionStorage.removeItem("adminIdStaffToken");}catch(e){}
+  }
+  async function request(payload){
+    var res=await fetch("/api/web/staff",{method:"POST",headers:{"Content-Type":"application/json",Authorization:"Bearer "+token},body:JSON.stringify(payload),cache:"no-store"});
+    var data=await res.json();
+    if(res.status===401){deny(data.error);throw Error(data.error||"ต้องเข้าสู่ระบบใหม่");}
+    if(!res.ok||data.ok===false)throw Error(data.error||data.message||"ดำเนินการไม่ได้");
+    return data;
+  }
+  if(!token){deny("กรุณาเข้าสู่ระบบที่หน้าแรก");return;}
+  request({action:"whoami"}).then(function(data){
+    profile.textContent=data.profile.name+" • "+data.profile.role+" • "+data.profile.username;
+    el("staffApp").classList.remove("hidden");
+    document.querySelectorAll("#buttons button").forEach(function(button){
+      button.hidden=!data.profile.permissions.includes(button.dataset.right);
+      button.addEventListener("click",async function(){
+        var action=button.dataset.action,query=el("lookup").value.trim();
+        var p={action,query};
+        if(action==="resolveReviewQueue"){
+          if(!confirm("ยืนยันดำเนินการคิว #"+query+" ?"))return;
+          p.decision=button.dataset.decision;
+        }
+        if(action==="queuePayment"){
+          if(!confirm("ยืนยันบันทึกรับยอดคิว "+query+" ?"))return;
+          p.amount=Number(el("paymentAmount").value);
+        }
+        button.disabled=true;el("notice").textContent="กำลังดำเนินการ…";
+        try{var out=await request(p);el("output").textContent=JSON.stringify(out,null,2);el("notice").textContent="ดำเนินการแล้ว";}
+        catch(e){el("notice").textContent=e.message;}
+        finally{button.disabled=false;}
+      });
+    });
+  }).catch(function(e){deny(e.message);});
+  el("logout").onclick=function(){deny("ออกจากระบบแล้ว");location.assign("/");};
+})();
+</script></body></html>

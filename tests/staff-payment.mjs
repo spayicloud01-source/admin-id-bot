@@ -25,35 +25,31 @@ globalThis.fetch=async(url, options={})=>{
     }
 
     if(body.action==='searchCustomer') {
-      if(body.query==='v6:101') {
-        data={ok:true,matches:[{
-          source:'v6',sheet:'V6/10-69',row:3,queue:'101',name:'ลูกค้า A',
-          phone:'0811111111',appleId:'a@example.com'
-        }]};
-      } else if(body.query==='v1/v3:101' && duplicateAcrossAllowedTabs) {
-        data={ok:true,matches:[{
-          source:'v1/v3',sheet:'v3/10-69',row:3,queue:'101',name:'ลูกค้า B',
-          phone:'0822222222',appleId:'b@example.com'
-        }]};
-      } else {
-        data={ok:true,matches:[]};
-      }
+      const v6={source:'v6',sheet:'V6/10-69',row:3,queue:'101',name:'ลูกค้า A',
+        phone:'0811111111',appleId:'a@example.com'};
+      const v3={source:'v1/v3',sheet:'v3/10-69',row:3,queue:'101',name:'ลูกค้า B',
+        phone:'0822222222',appleId:'b@example.com'};
+      // One unqualified GAS search now scans BOTH allowed tabs in one invocation.
+      data={ok:true,matches:body.query==='v6:101'?[v6]:
+        body.query==='v1/v3:101'?(duplicateAcrossAllowedTabs?[v3]:[]):
+        body.query==='101'?(duplicateAcrossAllowedTabs?[v6,v3]:[v6]):[]};
     }
 
     if(body.action==='queuePayment') data=allowed
       ? {ok:true,...paymentResult}
       : {ok:true,queued:false,message:'บัญชีนี้ไม่มีสิทธิ์ บันทึกชำระ'};
 
-    if(body.action==='rollbackReviewQueue') {
-      data={
-        ok:true,rolledBack:true,rowNo:2,queue:'101',name:'ลูกค้า A',amount:500,
-        message:'ยกเลิกรายการ #2 แล้ว และคืนค่าชีตต้นทางกลับก่อนกดผ่าน'
-      };
+    if(body.action==='getReviewQueueItem') {
+      data={ok:true,item:{rowNo:2,type:'บันทึกชำระ',queue:'101',name:'ลูกค้า A',amount:500}};
+    }
+    if(body.action==='rollbackReviewGroup') {
+      data={ok:true,rolledBack:true,rowNos:[2],
+        message:'ยกเลิกรายการ #2 แล้ว และคืนค่าชีตต้นทาง'};
     }
   }
 
   if(url.endsWith('/message/reply')) replies.push(body.messages);
-  return {ok:true,status:200,text:async()=>JSON.stringify(data)};
+  return {ok:true,status:200,text:async()=>JSON.stringify(data),json:async()=>data};
 };
 
 async function send(text, type='user') {
@@ -63,7 +59,7 @@ async function send(text, type='user') {
       type:'message',
       message:{type:'text',text},
       replyToken:'test',
-      source:{type,userId:'U-test'}
+      source:{type,userId:'U-test-'+role+'-'+(allowed?'permitted':'denied')}
     }]
   }));
   const req=Readable.from([raw]);
@@ -94,8 +90,8 @@ for(role of ['เจ้าของ','แอดมิน','พนักงาน
 
   await send('รับชำระ 101 500');
   const searches=calls.filter(x=>x.action==='searchCustomer');
-  assert.equal(searches.length,2);
-  assert.deepEqual(searches.map(x=>x.query).sort(),['v1/v3:101','v6:101']);
+  assert.equal(searches.length,1,'unqualified lookup scans two allowed tabs in one GAS request');
+  assert.deepEqual(searches.map(x=>x.query),['101']);
 
   const payments=calls.filter(x=>x.action==='queuePayment');
   assert.equal(payments.length,1);
@@ -141,9 +137,16 @@ assert.ok(!calls.some(x=>x.action==='queuePayment'));
 duplicateAcrossAllowedTabs=false;
 
 const cancelReply=await send('ยกเลิกรายการ 2');
-assert.ok(calls.some(x=>x.action==='rollbackReviewQueue'&&x.query==='2'));
-assert.match(cancelReply[0].text,/ยกเลิกรายการ #2/);
-assert.equal(cancelReply[0].quickReply.items[0].action.label,'รับชำระใหม่');
-assert.equal(cancelReply[0].quickReply.items[0].action.text,'รับชำระ');
+assert.ok(calls.some(x=>x.action==='getReviewQueueItem'&&x.query==='2'),
+  'cancel preview must read the queued item before asking for confirmation');
+assert.ok(!calls.some(x=>x.action==='rollbackReviewGroup'),
+  'cancel preview must NEVER write or roll back automatically');
+assert.match(cancelReply[0].text,/ตรวจสอบก่อนยกเลิก/);
+assert.equal(cancelReply[0].quickReply.items[0].action.label,'ยืนยันยกเลิก');
+assert.equal(cancelReply[0].quickReply.items[0].action.text,'ยืนยันยกเลิก 2');
+const confirmed=await send('ยืนยันยกเลิก 2');
+assert.ok(calls.some(x=>x.action==='rollbackReviewGroup'&&x.query==='2'),
+  'only the confirmation command may roll back a payment');
+assert.match(confirmed[0].text,/ยกเลิกรายการ #2/);
 
 console.log('Staff payment tests passed');

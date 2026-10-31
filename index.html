@@ -93,10 +93,24 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 </style>
 </head>
 <body>
-<div class="web-version" aria-label="เวอร์ชันเว็บ">Web v2026.10.30.5</div>
+<div class="web-version" aria-label="เวอร์ชันเว็บ">Web v2026.10.31.1</div>
 <header class="top"><div class="topin"><div class="brand"><div class="logo">ID</div><div><h1>Admin ID — หลังบ้าน</h1><p>LINE OA → Vercel → Apps Script → Google Sheets</p></div></div><div class="status"><span id="dot" class="dot"></span><span id="sys">กำลังตรวจระบบ…</span></div></div></header>
 <main class="wrap">
-<section id="login" class="login hidden"><h2>ต้องยืนยันสิทธิ์เจ้าของก่อน</h2><p>เปิด LINE OA Admin ID แล้วพิมพ์คำสั่งด้านล่าง ระบบจะตรวจว่าบัญชี LINE เป็น “เจ้าของ” และส่งลิงก์เข้าเว็บกลับมา</p><span class="cmd">เข้าเว็บ</span></section>
+<section id="login" class="login hidden">
+  <div style="max-width:410px;margin:0 auto">
+    <h2>Admin ID — เข้าสู่ระบบเจ้าของ</h2>
+    <p>กรอกชื่อผู้ใช้และรหัสผ่านของเจ้าของเพื่อเข้าสู่ระบบหลังบ้าน</p>
+    <form id="passwordLoginForm" autocomplete="on" style="text-align:left;display:grid;gap:12px">
+      <label for="ownerUsername" style="font-size:13px;font-weight:700">ชื่อผู้ใช้</label>
+      <input id="ownerUsername" type="text" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="64" required placeholder="ชื่อผู้ใช้" style="width:100%;height:44px;padding:0 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:16px">
+      <label for="ownerPassword" style="font-size:13px;font-weight:700">รหัสผ่าน</label>
+      <input id="ownerPassword" type="password" name="password" autocomplete="current-password" minlength="12" maxlength="128" required placeholder="รหัสผ่าน" style="width:100%;height:44px;padding:0 12px;border:1px solid #cbd5e1;border-radius:10px;font-size:16px">
+      <button id="passwordLoginButton" class="btn primary" type="submit">เข้าสู่ระบบ</button>
+      <p id="passwordLoginError" role="alert" aria-live="polite" style="margin:0;min-height:20px;color:#b91c1c;text-align:left"></p>
+    </form>
+    <p style="margin-top:18px">เข้าไม่ได้? ใช้ LINE OA Admin ID บัญชีเจ้าของ พิมพ์ <strong>เข้าเว็บ</strong> เพื่อรับลิงก์สำรอง</p>
+  </div>
+</section>
 
 <div id="app" class="hidden">
 <section class="source">
@@ -175,6 +189,37 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 <div class="sectionhead"><h2>เจ้าหน้าที่และสิทธิ์</h2><div class="actionbuttons"><button id="listStaffBtn" class="btn soft">รายชื่อทั้งหมด</button><button id="pendingStaffBtn" class="btn soft">รออนุมัติ</button></div></div>
 <div class="action"><div class="field"><label>ชื่อเจ้าหน้าที่</label><input id="staffName" placeholder="ระบุชื่อตรงกับในชีต"></div><br><div class="actionbuttons"><button class="btn green" data-staff-action="approveStaff">อนุมัติ</button><button class="btn red" data-staff-action="rejectStaff">ไม่อนุมัติ</button><button class="btn green" data-staff-action="setStaffEnabled" data-enabled="true">เปิดใช้</button><button class="btn red" data-staff-action="setStaffEnabled" data-enabled="false">ระงับ</button></div><br><div class="row"><div class="field"><label>สิทธิ์</label><select id="staffPermission"><option>ดูข้อมูลลูกค้า</option><option>ดูประวัติ</option><option>บันทึกโน้ต</option><option>บันทึกชำระ</option><option>ยืนยันสลิป</option><option>ปิดยอด</option><option>ดูรายงาน</option><option>จัดการเจ้าหน้าที่</option></select></div><div class="actionbuttons" style="align-items:end"><button class="btn green" data-permission-enabled="true">ให้สิทธิ์</button><button class="btn red" data-permission-enabled="false">ถอนสิทธิ์</button></div></div></div>
 <div id="staffToolResult" class="toolresult"></div>
+<div class="action" style="margin-top:18px">
+  <div class="sectionhead"><h2>บัญชีเข้าเว็บแอดมิน</h2><button id="webUsersRefresh" class="btn soft" type="button">โหลดบัญชี</button></div>
+  <p class="hint">เพิ่มบัญชีแอดมิน/พนักงานได้เฉพาะผู้ที่มี LINE User ID และได้รับอนุมัติในระบบเจ้าหน้าที่เดิมแล้ว</p>
+  <div class="row">
+    <div class="field"><label for="webNewUser">ชื่อผู้ใช้ (ภาษาอังกฤษ)</label><input id="webNewUser" autocomplete="off" placeholder="เช่น admin-lopburi"></div>
+    <div class="field"><label for="webDisplayName">ชื่อเจ้าหน้าที่</label><input id="webDisplayName" placeholder="ชื่อสำหรับแสดงในระบบ"></div>
+    <div class="field"><label for="webLineId">LINE User ID ที่อนุมัติแล้ว</label><input id="webLineId" autocomplete="off" placeholder="U..."></div>
+    <div class="field"><label for="webUserRole">ประเภทบัญชี</label><select id="webUserRole"><option value="แอดมิน">แอดมิน</option><option value="พนักงาน">พนักงาน</option></select></div>
+  </div>
+  <p class="hint">สิทธิ์เว็บ (ต้องมีสิทธิ์ในชีตเจ้าหน้าที่เดิมด้วย)</p>
+  <div class="actionbuttons" id="webUserRights">
+    <label><input type="checkbox" value="customers" checked> ดูข้อมูลลูกค้า</label>
+    <label><input type="checkbox" value="history" checked> ดูประวัติ</label>
+    <label><input type="checkbox" value="payment"> รับยอด</label>
+  </div>
+  <br><button id="webCreateUser" class="btn green" type="button">สร้างบัญชีเว็บ</button>
+  <p id="webUsersNotice" role="status" class="hint"></p>
+  <div id="webTemporaryPassword" class="toolresult hidden" style="padding:12px;border:1px solid #f59e0b;border-radius:10px"></div>
+  <div id="webUserList" class="toolresult"></div>
+</div>
+<div class="action" style="margin-top:18px">
+  <h2>เปลี่ยนรหัสผ่านเจ้าของ</h2>
+  <p class="hint">ต้องทราบรหัสผ่านปัจจุบัน ระบบจะให้ทุกเซสชันที่เข้าด้วยรหัสผ่านเดิมหมดสิทธิ์ทันทีหลังเปลี่ยน</p>
+  <form id="ownerChangePasswordForm" class="row">
+    <div class="field"><label for="ownerCurrentPassword">รหัสผ่านปัจจุบัน</label><input id="ownerCurrentPassword" type="password" autocomplete="current-password" required></div>
+    <div class="field"><label for="ownerNewPassword">รหัสผ่านใหม่ (12 ตัวขึ้นไป รวมตัวเลข)</label><input id="ownerNewPassword" type="password" autocomplete="new-password" minlength="12" maxlength="128" required></div>
+    <div class="field"><label for="ownerConfirmPassword">ยืนยันรหัสผ่านใหม่</label><input id="ownerConfirmPassword" type="password" autocomplete="new-password" required></div>
+    <div class="field" style="align-self:end"><button class="btn primary" type="submit">บันทึกรหัสผ่านใหม่</button></div>
+  </form>
+  <p id="ownerPasswordNotice" role="status" class="hint"></p>
+</div>
 </div>
 
 <div id="system" class="view"><div class="sectionhead"><h2>สถานะระบบ</h2><button class="btn soft" onclick="loadConfig()">ตรวจใหม่</button></div><div class="grid2"><div class="action"><b>Vercel API</b><p id="healthText">กำลังตรวจ…</p></div><div class="action"><b>สิทธิ์เว็บ</b><p id="authText">ตรวจจาก LINE OA</p></div></div><div class="action" style="margin-top:12px"><b>ตรวจและตั้งค่าระบบ</b><p>ปุ่มตรวจสอบเป็นแบบอ่านข้อมูล ส่วนติดตั้งแจ้งเตือนจะถามยืนยันก่อนดำเนินการ</p><div class="actionbuttons"><button class="btn soft" data-system-action="dailyOwnerReport">รายงานวันนี้</button><button class="btn soft" data-system-action="systemStatus">สถานะระบบ</button><button class="btn soft" data-system-action="getReminderTriggerStatus">สถานะแจ้งเตือน</button><button class="btn green" data-system-action="installReminderTrigger" data-confirm="ติดตั้ง Trigger แจ้งเตือนรายวันใหม่?">ติดตั้งแจ้งเตือน</button><button class="btn soft" data-system-action="auditSourceSchemas">ตรวจชีตต้นทาง</button><button class="btn soft" data-system-action="auditSourceWriteCapabilities">ตรวจช่องเขียนข้อมูล</button></div></div><div id="systemToolResult" class="toolresult"></div></div>
@@ -193,6 +238,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 <script>
 (function(){
   var TOKEN = "";
+  var PASSWORD_LOGIN = false;
   var ITEMS = [];
   var SELECTED = null;
   var SELECTED_TARGETS = [];
@@ -208,7 +254,8 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   var OWNER_TOKEN_KEY="adminIdVerifiedOwner";
   var OWNER_TOKEN_TTL=30*24*60*60*1000;
   function forgetOwnerToken(){
-    try{sessionStorage.removeItem("adminIdWebToken");}catch(e){}
+    try{sessionStorage.removeItem("adminIdWebToken");sessionStorage.removeItem("adminIdWebPasswordMode");}catch(e){}
+    PASSWORD_LOGIN=false;
     try{localStorage.removeItem(OWNER_TOKEN_KEY);}catch(e){}
     TOKEN="";
   }
@@ -228,7 +275,13 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   function rememberVerifiedOwner(){
     if(!TOKEN)return;
     try{sessionStorage.setItem("adminIdWebToken",TOKEN);}catch(e){}
-    try{localStorage.setItem(OWNER_TOKEN_KEY,JSON.stringify({token:TOKEN,savedAt:Date.now()}));}catch(e){}
+    if(PASSWORD_LOGIN){
+      try{sessionStorage.setItem("adminIdWebPasswordMode","yes");}catch(e){}
+      try{localStorage.removeItem(OWNER_TOKEN_KEY);}catch(e){}
+    }else{
+      try{sessionStorage.removeItem("adminIdWebPasswordMode");}catch(e){}
+      try{localStorage.setItem(OWNER_TOKEN_KEY,JSON.stringify({token:TOKEN,savedAt:Date.now()}));}catch(e){}
+    }
     // Remove the confidential LINE login token from the address bar.
     try{
       var url=new URL(location.href);
@@ -727,12 +780,49 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     var incoming=qs.get("token");
     if(incoming){
       TOKEN=incoming;
-      try{sessionStorage.setItem("adminIdWebToken",incoming);}catch(e){}
+      PASSWORD_LOGIN=false;
+      try{sessionStorage.setItem("adminIdWebToken",incoming);sessionStorage.removeItem("adminIdWebPasswordMode");}catch(e){}
     }else{
-      try{TOKEN=sessionStorage.getItem("adminIdWebToken")||"";}catch(e){}
-      if(!TOKEN)TOKEN=restoreOwnerToken();
+      try{
+        TOKEN=sessionStorage.getItem("adminIdWebToken")||"";
+        PASSWORD_LOGIN=sessionStorage.getItem("adminIdWebPasswordMode")==="yes";
+      }catch(e){}
+      if(!TOKEN){TOKEN=restoreOwnerToken();PASSWORD_LOGIN=false;}
     }
   }catch(e){ TOKEN=""; }
+
+  byId("passwordLoginForm").addEventListener("submit",async function(event){
+    event.preventDefault();
+    var button=byId("passwordLoginButton"),error=byId("passwordLoginError");
+    var username=byId("ownerUsername").value.trim();
+    var password=byId("ownerPassword").value;
+    button.disabled=true;button.textContent="กำลังตรวจสอบ…";error.textContent="";
+    try{
+      var response=await fetch("/api/web/password-login",{
+        method:"POST",headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({username:username,password:password}),
+        credentials:"same-origin",cache:"no-store"
+      });
+      var data=await response.json();
+      if(!response.ok||!data.ok||typeof data.token!=="string")throw new Error(data.error||"เข้าสู่ระบบไม่สำเร็จ");
+      if(data.role&&data.role!=="เจ้าของ"){
+        try{sessionStorage.setItem("adminIdStaffToken",data.token);}catch(e){}
+        byId("ownerPassword").value="";
+        location.assign("/staff.html");return;
+      }
+      TOKEN=data.token;
+      PASSWORD_LOGIN=true;
+      byId("ownerPassword").value="";
+      try{sessionStorage.setItem("adminIdWebToken",TOKEN);sessionStorage.setItem("adminIdWebPasswordMode","yes");}catch(e){}
+      try{localStorage.removeItem(OWNER_TOKEN_KEY);}catch(e){}
+      loadConfig();
+    }catch(e){
+      error.textContent=String((e&&e.message)||"เข้าสู่ระบบไม่สำเร็จ");
+    }finally{
+      button.disabled=false;button.textContent="เข้าสู่ระบบ";
+      byId("ownerPassword").value="";
+    }
+  });
 
   byId("source").addEventListener("change",fillSheets);
   byId("sheet").addEventListener("change",function(){byId("use").disabled=!byId("sheet").value;syncButtons();});
@@ -811,6 +901,101 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     if(!confirm("ยืนยัน"+decision+"ลูกค้าแถว #"+row+" ?"))return;
     runWebAction({action:"resolveCustomerBinding",query:row,decision:decision},"reviewToolResult",this);
   };
+
+  async function ownerUsersRequest(action,args){
+    var url="/api/web/users",options={headers:authHeaders(),cache:"no-store"};
+    if(action!=="list"){
+      options.method="POST";
+      options.headers["Content-Type"]="application/json";
+      options.body=JSON.stringify(Object.assign({action:action},args||{}));
+    }
+    var response=await fetch(url,options),data=await response.json();
+    if(!response.ok||!data.ok)throw Error(data.error||"จัดการบัญชีไม่สำเร็จ");
+    return data;
+  }
+  function setWebUsersNotice(value){byId("webUsersNotice").textContent=String(value||"");}
+  function showGeneratedPassword(data){
+    var el=byId("webTemporaryPassword");
+    el.classList.remove("hidden");el.textContent="";
+    var note=document.createElement("p");
+    note.textContent="รหัสเริ่มต้นสำหรับ "+data.user.username+" — แสดงเพียงครั้งเดียว โปรดส่งให้เจ้าหน้าที่ผ่านช่องทางส่วนตัว";
+    var code=document.createElement("code");code.style.userSelect="all";code.style.overflowWrap="anywhere";
+    code.textContent=data.temporaryPassword;
+    el.appendChild(note);el.appendChild(code);
+  }
+  async function refreshWebUsers(){
+    var box=byId("webUserList");box.textContent="กำลังโหลดบัญชี…";
+    try{
+      var data=await ownerUsersRequest("list");
+      box.textContent="";
+      if(!data.users.length){box.textContent="ยังไม่มีบัญชีแอดมินเพิ่มเติม";return;}
+      data.users.forEach(function(x){
+        var row=document.createElement("div");row.className="item";
+        var title=document.createElement("b");title.textContent=x.displayName+" ("+x.username+")";
+        var detail=document.createElement("p");detail.className="hint";
+        detail.textContent=x.role+" • "+(x.enabled?"ใช้งาน":"ระงับ")+" • สิทธิ์: "+(x.permissions||[]).join(", ");
+        var buttons=document.createElement("div");buttons.className="actionbuttons";
+        var toggle=document.createElement("button");toggle.className="btn soft";
+        toggle.textContent=x.enabled?"ระงับบัญชี":"เปิดบัญชี";
+        toggle.onclick=async function(){
+          if(!confirm("ยืนยันเปลี่ยนสถานะบัญชี "+x.username+" ?"))return;
+          try{await ownerUsersRequest("toggle",{username:x.username,enabled:!x.enabled});setWebUsersNotice("บันทึกแล้ว");refreshWebUsers();}
+          catch(e){setWebUsersNotice(e.message);}
+        };
+        var reset=document.createElement("button");reset.className="btn soft";
+        reset.textContent="ออกรหัสใหม่";
+        reset.onclick=async function(){
+          if(!confirm("ยืนยันออกรหัสใหม่สำหรับ "+x.username+" ? เซสชันเดิมจะถูกยกเลิก"))return;
+          try{showGeneratedPassword(await ownerUsersRequest("resetPassword",{username:x.username}));refreshWebUsers();}
+          catch(e){setWebUsersNotice(e.message);}
+        };
+        var rights=document.createElement("button");rights.className="btn soft";
+        rights.textContent="แก้สิทธิ์";
+        rights.onclick=async function(){
+          var input=prompt("ระบุสิทธิ์คั่นด้วยจุลภาค: customers,history,payment", (x.permissions||[]).join(","));
+          if(input===null)return;
+          var values=input.split(",").map(function(v){return v.trim();}).filter(Boolean);
+          try{await ownerUsersRequest("setPermissions",{username:x.username,permissions:values});refreshWebUsers();}
+          catch(e){setWebUsersNotice(e.message);}
+        };
+        buttons.appendChild(toggle);buttons.appendChild(reset);buttons.appendChild(rights);
+        row.appendChild(title);row.appendChild(detail);row.appendChild(buttons);box.appendChild(row);
+      });
+    }catch(e){box.textContent=e.message;}
+  }
+  byId("webUsersRefresh").onclick=refreshWebUsers;
+  byId("webCreateUser").onclick=async function(){
+    var username=byId("webNewUser").value.trim(),displayName=byId("webDisplayName").value.trim(),
+      role=byId("webUserRole").value,lineUserId=byId("webLineId").value.trim();
+    var permissions=Array.from(document.querySelectorAll("#webUserRights input:checked")).map(function(x){return x.value;});
+    if(!confirm("สร้างบัญชีเว็บ "+username+" ให้ "+displayName+" ?"))return;
+    try{
+      this.disabled=true;setWebUsersNotice("กำลังสร้างบัญชี…");
+      var data=await ownerUsersRequest("create",{username,displayName,role,lineUserId,permissions});
+      showGeneratedPassword(data);setWebUsersNotice("สร้างบัญชีสำเร็จ");refreshWebUsers();
+    }catch(e){setWebUsersNotice(e.message);}finally{this.disabled=false;}
+  };
+  byId("ownerChangePasswordForm").onsubmit=async function(ev){
+    ev.preventDefault();
+    var msg=byId("ownerPasswordNotice"),old=byId("ownerCurrentPassword").value,
+      fresh=byId("ownerNewPassword").value,again=byId("ownerConfirmPassword").value;
+    if(fresh!==again){msg.textContent="รหัสผ่านใหม่ไม่ตรงกัน";return;}
+    try{
+      var result=await ownerUsersRequest("changeOwnerPassword",{currentPassword:old,newPassword:fresh});
+      TOKEN=result.token;PASSWORD_LOGIN=true;
+      try{sessionStorage.setItem("adminIdWebToken",TOKEN);sessionStorage.setItem("adminIdWebPasswordMode","yes");}catch(e){}
+      try{localStorage.removeItem(OWNER_TOKEN_KEY);}catch(e){}
+      msg.textContent="เปลี่ยนรหัสผ่านสำเร็จ เซสชันเดิมที่เข้าด้วยรหัสผ่านเก่าจะใช้งานไม่ได้แล้ว";
+    }catch(e){msg.textContent=e.message;}
+    finally{byId("ownerCurrentPassword").value="";byId("ownerNewPassword").value="";byId("ownerConfirmPassword").value="";}
+  };
+  byId("webUserRole").onchange=function(){
+    var staff=this.value==="พนักงาน";
+    document.querySelectorAll("#webUserRights input").forEach(function(el){
+      if(el.value==="payment"){el.disabled=staff;if(staff)el.checked=false;}
+    });
+  };
+
   byId("listStaffBtn").onclick=function(){runWebAction({action:"listStaff"},"staffToolResult",this);};
   byId("pendingStaffBtn").onclick=function(){runWebAction({action:"listPendingStaff"},"staffToolResult",this);};
   var staffButtons=document.querySelectorAll("[data-staff-action]"),sb;

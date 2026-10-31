@@ -1,11 +1,14 @@
 import { callSheetsBridge } from "../../lib/sheetsBridge.js";
-import { sessionFromRequest } from "../../lib/webAuth.js";
+import { currentOwnerSessionFromRequest } from "../../lib/webAuth.js";
 import { paymentQrUrl } from "../../lib/paymentQr.js";
 import customerSessionHandler from "../../lib/customerSessionApi.js";
 import customerPaymentHandler from "../../lib/customerPaymentApi.js";
 import customerQrHandler from "../../lib/customerQrApi.js";
 import customerContactHandler from "../../lib/customerContactApi.js";
 import customerDiscountHandler from "../../lib/customerDiscountApi.js";
+import adminPasswordLoginHandler from "../../lib/adminPasswordLoginApi.js";
+import adminAccountsHandler from "../../lib/adminAccountsApi.js";
+import staffWebHandler from "../../lib/adminStaffPortalApi.js";
 import crypto from "node:crypto";
 
 export const maxDuration = 60;
@@ -258,6 +261,9 @@ function paymentFlex(summary = {}, field = "payment") {
 }
 
 export default async function handler(req, res) {
+  if (req.query?.adminAuth === "password") return adminPasswordLoginHandler(req, res);
+  if (req.query?.adminAuth === "users") return adminAccountsHandler(req, res);
+  if (req.query?.adminAuth === "staff") return staffWebHandler(req, res);
   const customerRoute = String(req.query?.customerRoute || "");
   if (CUSTOMER_HANDLERS[customerRoute]) return CUSTOMER_HANDLERS[customerRoute](req, res);
   if (req.method !== "POST") {
@@ -265,7 +271,7 @@ export default async function handler(req, res) {
     return res.status(405).json({ ok: false, error: "Method Not Allowed" });
   }
   try {
-    const session = sessionFromRequest(req);
+    const session = await currentOwnerSessionFromRequest(req);
     if (!session) return res.status(401).json({ ok: false, error: "กรุณาเข้าเว็บผ่าน LINE OA ใหม่" });
 
     const body = typeof req.body === "object" && req.body ? req.body : {};
