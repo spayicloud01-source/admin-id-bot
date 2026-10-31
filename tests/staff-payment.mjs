@@ -21,7 +21,6 @@ globalThis.fetch=async(url, options={})=>{
     calls.push(body);
 
     if(body.action==='checkAccess') {
-      console.info('GAS checkAccess mock identity',JSON.stringify({mockRole:role,roleType:typeof role,userId:body.lineUserId,permission:body.permission}));
       data={ok:true,allowed:body.permission==='บันทึกชำระ'?allowed:true,role,staffName:'staff'};
     }
 
@@ -87,7 +86,6 @@ for(role of ['เจ้าของ','แอดมิน','พนักงาน
   const expected=role==='เจ้าของ'
     ? oldBase.concat(['ส่งแจ้งเตือนทันที','จัดการระบบ','ลูกค้ารออนุมัติ','กิจกรรมวันนี้','สถานะระบบ'])
     : oldBase;
-  console.info('Payment menu fixture role and checks',JSON.stringify({role, checkAccess:calls.filter(x=>x.action==='checkAccess').map(x=>({lineUserId:x.lineUserId,permission:x.permission})),menuText:menu.at(-1).text,buttonCount:menu.at(-1).quickReply.items.length}));
   assert.deepEqual(menu.at(-1).quickReply.items.map(x=>x.action.text),expected);
 
   const help=await send('รับชำระ');
