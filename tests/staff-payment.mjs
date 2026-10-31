@@ -53,7 +53,7 @@ globalThis.fetch=async(url, options={})=>{
   }
 
   if(url.endsWith('/message/reply')) replies.push(body.messages);
-  return {ok:true,status:200,text:async()=>JSON.stringify(data)};
+  return {ok:true,status:200,text:async()=>JSON.stringify(data),json:async()=>data};
 };
 
 async function send(text, type='user') {
