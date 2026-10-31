@@ -82,7 +82,7 @@ test('invalid dates, future dates, zero amounts and changed identities do not wr
 });
 test('fine history uses the actual receipt date and a distinct fine event',()=>{
  const f=fixture(), rows=[];
- f.context.SpreadsheetApp.getActiveSpreadsheet=()=>({getSheetByName:()=>({appendRow:r=>rows.push(r)})});
+ f.context.backendSpreadsheet_=()=>({getSheetByName:()=>({getLastRow:()=>rows.length+1,appendRow:r=>rows.push(r)})});
  assert.equal(f.context.appendHistoryFromApprovedReview_(f.review,6,'ภาณุพันธ์',true),true);
  assert.equal(f.context.dateKey_(rows[0][0]),'2026-09-29');assert.equal(rows[0][8],'ค่าปรับ');assert.equal(rows[0][13],100);
 });
