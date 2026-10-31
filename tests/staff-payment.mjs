@@ -63,7 +63,7 @@ async function send(text, type='user') {
       type:'message',
       message:{type:'text',text},
       replyToken:'test',
-      source:{type,userId:'U-test'}
+      source:{type,userId:'U-test-'+role+'-'+(allowed?'permitted':'denied')}
     }]
   }));
   const req=Readable.from([raw]);
