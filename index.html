@@ -91,6 +91,40 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 @media(max-width:390px){.card .metric{font-size:25px}.card{padding:12px 10px}.actionbuttons{grid-template-columns:1fr}}
 
 .web-version{position:fixed;right:9px;bottom:calc(9px + env(safe-area-inset-bottom,0px));z-index:30;padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.82);color:#64748b;font-size:10px;font-weight:500;line-height:1.2;letter-spacing:.01em;pointer-events:none;user-select:none;box-shadow:0 1px 4px rgba(15,23,42,.08)}
+
+/* Customer directory — owner-only, read-only */
+.dir-toolbar{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:10px;margin-top:14px}
+.dir-stats{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
+.dir-stat{flex:1;min-width:120px;background:#eff7f4;border:1px solid #d8ece5;border-radius:14px;padding:12px}
+.dir-stat strong{display:block;font-size:22px;color:#075e4f}
+.dir-notice{font-size:12px;color:#735b16;background:#fff9e6;border:1px solid #f1e5b3;padding:10px 12px;border-radius:12px;margin:10px 0}
+.dir-list{display:grid;gap:9px;margin-top:12px}
+.dir-person{padding:12px 14px;background:#fff;border:1px solid #e4e9e7;border-radius:15px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 2px 8px rgba(4,60,48,.04)}
+.dir-person small{display:block;color:#64748b;font-size:12px;margin-top:3px}
+.dir-name-link{font:inherit;font-weight:800;cursor:pointer;border:0;background:none;padding:0;color:#08745e;text-align:left;text-decoration:underline;text-decoration-color:rgba(8,116,94,.28);text-underline-offset:3px}
+.dir-name-link:hover{color:#064639;text-decoration-color:currentColor}
+.dir-status{padding:5px 9px;border-radius:999px;background:#e8f6ef;color:#087257;font-size:11px;white-space:nowrap}
+.dir-status.late{background:#fff1e6;color:#a85b10}
+.dir-status.closed{background:#f1f5f9;color:#526173}
+.dir-more{text-align:center;padding:8px;color:#64748b;font-size:12px}
+.dir-modal{position:fixed;inset:0;z-index:1200;background:rgba(14,35,32,.64);padding:18px;display:flex;align-items:center;justify-content:center}
+.dir-modal.hidden{display:none!important}
+.dir-dialog{background:#f5f9f7;border-radius:22px;max-width:620px;width:100%;max-height:92vh;overflow:auto;box-shadow:0 28px 70px rgba(0,0,0,.22);padding:18px}
+.dir-dialog-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+.dir-hero{background:linear-gradient(140deg,#0b765f,#064b43);color:#fff;padding:20px;border-radius:20px}
+.dir-hero h2{font-size:23px;margin:5px 0}
+.dir-hero small{color:#d4f5e8}
+.dir-metrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:12px 0}
+.dir-metric{background:#fff;border-radius:14px;padding:13px;box-shadow:0 3px 8px rgba(9,59,50,.04)}
+.dir-metric small{display:block;color:#667782;font-size:12px}
+.dir-metric strong{display:block;margin-top:5px;font-size:17px;color:#075e4f}
+.dir-history{display:grid;gap:9px;margin-top:12px}
+.dir-hitem{background:#fff;border-radius:12px;padding:12px;display:flex;justify-content:space-between;gap:12px}
+.dir-hitem small{display:block;color:#667782}
+.dir-hitem strong{color:#075e4f;white-space:nowrap}
+@media(max-width:780px){.dir-toolbar{grid-template-columns:1fr 1fr}.dir-person{align-items:flex-start}.dir-metrics{grid-template-columns:1fr 1fr}}
+@media(max-width:460px){.dir-toolbar{grid-template-columns:1fr}.dir-modal{padding:7px}.dir-dialog{max-height:96vh;padding:12px}.dir-person{gap:6px}}
+
 </style>
 </head>
 <body>
@@ -146,6 +180,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 <section class="panel">
 <div class="tabs">
 <button class="tab active" data-view="customers">ภาพรวมชีต</button>
+<button class="tab" data-view="customerDirectory">รายชื่อลูกค้า</button>
 <button class="tab" data-view="notify">ส่งแจ้งเตือน</button>
 <button class="tab" data-view="customerTools">ลูกค้า</button>
 <button class="tab" data-view="reviewTools">คิวตรวจสอบ</button>
@@ -155,6 +190,31 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 </div>
 <div class="content">
 <div id="customers" class="view active"><div class="sectionhead"><h2>ชีตที่กำลังใช้งาน</h2><span id="chosen" class="pill">ยังไม่ได้เลือกชีต</span></div><div class="empty"><b id="sheetTitle">เลือกแหล่งข้อมูลและชีตก่อน</b><p id="sheetDesc">รายชื่อชีตดึงจาก Apps Script จริง รายการที่ถูกซ่อนหรือถูกยกเว้นจะไม่แสดง</p></div></div>
+
+
+<div id="customerDirectory" class="view">
+  <div class="sectionhead"><h2>รายชื่อลูกค้าและตัวกรอง</h2><button id="dirRefresh" class="btn soft" type="button">รีเฟรชรายชื่อ</button></div>
+  <p class="hint">กดที่ชื่อลูกค้าเพื่อดูรายละเอียดแบบเว็บลูกค้า โดยไม่ต้องล็อกอินแทนลูกค้า</p>
+  <div class="dir-stats">
+    <div class="dir-stat"><small>รายชื่อที่ผูก LINE</small><strong id="dirAllCount">—</strong></div>
+    <div class="dir-stat"><small>ตรงตามตัวกรอง</small><strong id="dirMatchCount">—</strong></div>
+  </div>
+  <div class="dir-toolbar">
+    <div class="field"><label>ค้นหาเลขคิวหรือชื่อ</label><input id="dirSearch" placeholder="เช่น 310-5 หรือชื่อลูกค้า" autocomplete="off"></div>
+    <div class="field"><label>แหล่งข้อมูล</label><select id="dirSource"><option value="all">ทุกแหล่ง</option><option value="v3">V3</option><option value="v6">V6</option></select></div>
+    <div class="field"><label>กลุ่มสถานะ</label><select id="dirMode">
+      <option value="all">ทั้งหมดที่ผูก LINE</option><option value="closed">ปิดยอด</option><option value="deleted">ลบ</option>
+      <option value="pending_lock">รอล็อค</option><option value="sold">ขาย</option>
+      <option value="fraud">โกง</option><option value="installment">ผ่อน</option></select></div>
+    <div class="field"><label>วันครบกำหนด</label><select id="dirDue"><option value="all">ทุกวัน</option>
+      <option value="today">ครบกำหนดวันนี้</option><option value="upcoming">ยังไม่ถึงกำหนด</option>
+      <option value="overdue">เกินกำหนด</option><option value="unknown">ไม่มีวันครบกำหนด</option></select></div>
+  </div>
+  <div id="dirWarning" class="dir-notice">อ่านเฉพาะ v3/10-69 และ V6/10-69 ที่ผูก LINE แล้ว รวมคิวปิดยอดที่ยังมีการผูกบัญชี แต่ยังไม่รวมลูกค้าที่ยังไม่ได้ผูก LINE</div>
+  <div id="dirInfo" class="hint" role="status">กดรีเฟรชเพื่อโหลดรายชื่อ</div>
+  <div id="dirRows" class="dir-list"></div>
+  <div id="dirMore" class="dir-more"></div>
+</div>
 
 <div id="notify" class="view">
 <div class="sectionhead"><h2>ส่งแจ้งเตือนลูกค้า</h2><span class="hint">ใช้ระบบคิวเดิม + กันส่งซ้ำ</span></div>
@@ -253,6 +313,14 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   <div class="sheetmodal">
     <div class="modalhead"><h3 id="dueTitle">รายละเอียด</h3><button id="closeDue" class="closex">×</button></div>
     <div id="dueList" class="list"><div class="empty"><b>กำลังโหลด…</b></div></div>
+  </div>
+</div>
+
+
+<div id="dirDetailModal" class="dir-modal hidden" role="dialog" aria-modal="true" aria-label="รายละเอียดลูกค้า">
+  <div class="dir-dialog">
+    <div class="dir-dialog-head"><strong>รายละเอียดลูกค้า · มุมมองเจ้าของ</strong><button id="dirDetailClose" class="closex" type="button" aria-label="ปิดรายละเอียด">×</button></div>
+    <div id="dirDetailBody" role="status"><div class="empty">กำลังโหลดข้อมูล…</div></div>
   </div>
 </div>
 
@@ -502,12 +570,12 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
           if(mode==="today"||mode==="upcoming"){
             out+='<div class="item duecompact"><div class="duegrid">'
               +'<div><span>คิว</span><b>'+escapeHtml(item.queue||"-")+'</b></div>'
-              +'<div><span>ชื่อ</span><b>'+escapeHtml(item.name||"-")+'</b></div>'
+              +'<div><span>ชื่อ</span><button type="button" class="dir-name-link" data-dir-source="'+escapeHtml(item.source||"")+'" data-dir-sheet="'+escapeHtml(item.sheet||"")+'" data-dir-queue="'+escapeHtml(item.queue||"")+'">'+escapeHtml(item.name||"-")+'</button></div>'
               +'<div><span>ยอด</span><b>'+escapeHtml(amountText)+'</b></div>'
               +'<div><span>วันครบกำหนด</span><b>'+escapeHtml(item.dueDate||"-")+'</b></div>'
               +'</div><div class="itemmeta">'+escapeHtml(item.source||"-")+' / '+escapeHtml(item.sheet||"-")+' • '+escapeHtml(deltaText)+'</div>';
           }else{
-            out+='<div class="item"><div class="itemtop"><div><div class="itemname">'+escapeHtml(item.name||"-")+'</div><div class="itemmeta">คิว '+escapeHtml(item.queue||"-")+' • '+escapeHtml(item.source||"-")+' / '+escapeHtml(item.sheet||"-")+'<br>วันครบกำหนด '+escapeHtml(item.dueDate||"-")+' • '+escapeHtml(deltaText)+(item.fee?'<br>ค่าเช่า '+escapeHtml(item.fee):'')+(item.status?'<br>สถานะ '+escapeHtml(item.status):'')+'</div></div></div>';
+            out+='<div class="item"><div class="itemtop"><div><button type="button" class="dir-name-link itemname" data-dir-source="'+escapeHtml(item.source||"")+'" data-dir-sheet="'+escapeHtml(item.sheet||"")+'" data-dir-queue="'+escapeHtml(item.queue||"")+'">'+escapeHtml(item.name||"-")+'</button><div class="itemmeta">คิว '+escapeHtml(item.queue||"-")+' • '+escapeHtml(item.source||"-")+' / '+escapeHtml(item.sheet||"-")+'<br>วันครบกำหนด '+escapeHtml(item.dueDate||"-")+' • '+escapeHtml(deltaText)+(item.fee?'<br>ค่าเช่า '+escapeHtml(item.fee):'')+(item.status?'<br>สถานะ '+escapeHtml(item.status):'')+'</div></div></div>';
           }
           if(item.queue&&item.source&&item.sheet){
             out+='<button class="btn soft itembtn" data-source="'+escapeHtml(item.source)+'" data-sheet="'+escapeHtml(item.sheet)+'" data-queue="'+escapeHtml(item.queue)+'">ไปส่งแจ้งเตือนรายนี้</button><button class="btn green itembtn paybtn" data-payqueue="'+escapeHtml(item.queue)+'">รับชำระ</button>';
@@ -650,7 +718,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       amountText=item.fee||item.principal||"-";
       out+='<div class="duerow">'
         +'<div><span>คิว</span><b>'+escapeHtml(item.queue||"-")+'</b></div>'
-        +'<div><span>ชื่อ</span><b>'+escapeHtml(item.name||"-")+'</b></div>'
+        +'<div><span>ชื่อ</span><button type="button" class="dir-name-link" data-dir-source="'+escapeHtml(item.source||"")+'" data-dir-sheet="'+escapeHtml(item.sheet||"")+'" data-dir-queue="'+escapeHtml(item.queue||"")+'">'+escapeHtml(item.name||"-")+'</button></div>'
         +'<div><span>ยอด</span><b>'+escapeHtml(amountText)+'</b></div>'
         +'<div><span>วันครบกำหนด</span><b>'+escapeHtml(item.dueDate||"-")+'</b></div>'
         +'</div>';
@@ -916,6 +984,125 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     if(tab&&tab.classList.contains("active")&&document.visibilityState==="visible")loadCustomerActivity();
   },30000);
 
+
+  // Read-only owner customer directory and detail view.
+  var DIR_ITEMS=[],DIR_LOADED=false,DIR_REQUEST=0,DIR_DETAIL_REQUEST=0;
+  function dirStatusText(x){return String(x&&x.status||"").trim()||"ไม่ระบุ";}
+  function dirMoney(value){var n=Number(String(value||"0").replace(/[,฿\s]|บาท/g,""));return Number.isFinite(n)?n.toLocaleString("th-TH",{maximumFractionDigits:2})+" บาท":"—";}
+  function dirCategory(item){
+    var s=String(item.source||"").toLowerCase(),sh=String(item.sheet||"").toLowerCase();
+    return s.indexOf("v6")>=0||sh.indexOf("v6")>=0?"v6":"v3";
+  }
+  function renderDirectory(){
+    var search=byId("dirSearch").value.trim().toLowerCase(),source=byId("dirSource").value,due=byId("dirDue").value;
+    var filtered=DIR_ITEMS.filter(function(x){
+      if(source!=="all"&&dirCategory(x)!==source)return false;
+      if(search && (String(x.queue||"")+" "+String(x.name||"")).toLowerCase().indexOf(search)<0)return false;
+      var delta=x.daysDelta;
+      if(due==="today"&&delta!==0)return false;
+      if(due==="upcoming"&&!(Number.isFinite(delta)&&delta>0))return false;
+      if(due==="overdue"&&!(Number.isFinite(delta)&&delta<0))return false;
+      if(due==="unknown"&&delta!==null)return false;
+      return true;
+    });
+    byId("dirAllCount").textContent=DIR_ITEMS.length;
+    byId("dirMatchCount").textContent=filtered.length;
+    var box=byId("dirRows");box.replaceChildren();
+    if(!filtered.length){var empty=document.createElement("div");empty.className="empty";empty.textContent=DIR_LOADED?"ไม่พบรายชื่อตามตัวกรอง":"ยังไม่ได้โหลดข้อมูล";box.appendChild(empty);}
+    filtered.forEach(function(item){
+      var row=document.createElement("div");row.className="dir-person";
+      var left=document.createElement("div");
+      var name=document.createElement("button");name.type="button";name.className="dir-name-link";
+      name.textContent=item.name||"ไม่ระบุชื่อ";
+      name.onclick=function(){openCustomerDetail(item.source,item.sheet,item.queue);};
+      left.appendChild(name);
+      var detail=document.createElement("small");
+      detail.textContent="คิว "+(item.queue||"-")+" · "+(item.sheet||item.source||"-")+" · ครบกำหนด "+(item.dueDate||"ไม่ระบุ");
+      left.appendChild(detail);row.appendChild(left);
+      var tag=document.createElement("span");tag.className="dir-status";
+      if(Number.isFinite(item.daysDelta)&&item.daysDelta<0)tag.classList.add("late");
+      tag.textContent=dirStatusText(item);row.appendChild(tag);
+      box.appendChild(row);
+    });
+    byId("dirMore").textContent=DIR_LOADED?"แสดง "+filtered.length+" จาก "+DIR_ITEMS.length+" รายการที่อ่านได้":"";
+  }
+  async function loadDirectory(){
+    var request=++DIR_REQUEST,button=byId("dirRefresh");
+    button.disabled=true;byId("dirInfo").textContent="กำลังโหลดรายชื่อจาก Google Sheets…";
+    try{
+      var params=new URLSearchParams({mode:byId("dirMode").value});
+      var response=await fetch("/api/web/customer-directory?"+params,{headers:authHeaders(),cache:"no-store"});
+      var data=await response.json();
+      if(request!==DIR_REQUEST)return;
+      if(!response.ok||!data.ok)throw new Error(data.error||"โหลดรายชื่อไม่สำเร็จ");
+      DIR_ITEMS=Array.isArray(data.items)?data.items:[];DIR_LOADED=true;
+      byId("dirInfo").textContent="โหลดล่าสุด "+new Date(data.asOf||Date.now()).toLocaleTimeString("th-TH")+" · สามารถกดชื่อเพื่อดูรายละเอียด";
+      byId("dirWarning").textContent=data.partialNote||"";
+      byId("dirWarning").classList.toggle("hidden",!data.partialNote);
+      renderDirectory();
+    }catch(error){if(request===DIR_REQUEST){byId("dirInfo").textContent="ผิดพลาด: "+String(error.message||error);DIR_LOADED=false;DIR_ITEMS=[];renderDirectory();}}
+    finally{if(request===DIR_REQUEST)button.disabled=false;}
+  }
+  function dirMetric(label,value){
+    return '<div class="dir-metric"><small>'+escapeHtml(label)+'</small><strong>'+escapeHtml(String(value==null?"—":value))+'</strong></div>';
+  }
+  async function openCustomerDetail(source,sheet,queue){
+    if(!source||!sheet||!queue)return;
+    var request=++DIR_DETAIL_REQUEST;
+    var modal=byId("dirDetailModal");
+    byId("dirDetailBody").innerHTML='<div class="empty">กำลังโหลดข้อมูลลูกค้า…</div>';
+    modal.classList.remove("hidden");
+    try{
+      var params=new URLSearchParams({source:source,sheet:sheet,queue:queue});
+      var response=await fetch("/api/web/customer-directory?"+params,{headers:authHeaders(),cache:"no-store"});
+      var data=await response.json();
+      if(request!==DIR_DETAIL_REQUEST)return;
+      if(!response.ok||!data.ok)throw new Error(data.error||"ไม่สามารถโหลดข้อมูลลูกค้า");
+      var customer=data.customer||{},history=Array.isArray(data.history)?data.history:[];
+      var html='<div class="dir-hero"><small>ข้อมูลลูกค้า · '+escapeHtml(data.source||"-")+'</small>'
+        +'<h2>'+escapeHtml(customer.name||"ไม่ระบุชื่อ")+'</h2>'
+        +'<small>คิว '+escapeHtml(customer.queue||queue)+' · '+escapeHtml(customer.model||"-")+'</small>'
+        +'<div style="margin-top:14px;font-weight:700">'+escapeHtml("สถานะ "+(customer.status||"-"))+'</div>'
+        +'<div style="margin-top:6px;color:#ffe16b;font-size:17px;font-weight:800">'+escapeHtml(customer.dueMessage||"")+'</div>'
+        +'</div><div class="dir-metrics">'
+        +dirMetric("เงินต้นคงเหลือ",dirMoney(customer.principal))
+        +dirMetric("ค่าเช่ารอบนี้",dirMoney(customer.fee))
+        +dirMetric("วันครบกำหนด",customer.dueDate||"—")
+        +dirMetric("ค่าปรับปัจจุบัน",dirMoney(customer.lateFee))
+        +dirMetric("ยอดปิดโดยประมาณ",dirMoney(customer.closeAmount))
+        +dirMetric("สถานะ",customer.status||"—")
+        +'</div><div class="sectionhead"><h3>ประวัติล่าสุด</h3><span class="hint">'+history.length+' รายการ</span></div>'
+        +'<div class="dir-history">';
+      if(!history.length)html+='<div class="empty">ยังไม่มีประวัติที่อ่านได้</div>';
+      history.forEach(function(item){
+        html+='<div class="dir-hitem"><div><b>'+escapeHtml(item.eventType||"รายการชำระ")+'</b>'
+          +'<small>'+escapeHtml(item.dateTime||"-")+'</small>'
+          +(item.sourceNote?'<small style="color:#996515">บันทึกจากชีตต้นทาง (ยังไม่อยู่ในประวัติอนุมัติ)</small>':'')
+          +(item.detail?'<small>'+escapeHtml(item.detail)+'</small>':'')
+          +'</div><strong>'+escapeHtml(dirMoney(item.amount))+'</strong></div>';
+      });
+      html+='</div><p class="dir-notice">'+escapeHtml(data.historyWarning||data.historyNote||"")+'</p>';
+      byId("dirDetailBody").innerHTML=html;
+    }catch(error){if(request===DIR_DETAIL_REQUEST)byId("dirDetailBody").innerHTML='<div class="warning">โหลดข้อมูลไม่ได้: '+escapeHtml(String(error.message||error))+'</div>';}
+  }
+  function closeCustomerDetail(){
+    DIR_DETAIL_REQUEST++;byId("dirDetailModal").classList.add("hidden");
+  }
+  byId("dirDetailClose").onclick=closeCustomerDetail;
+  byId("dirDetailModal").onclick=function(event){if(event.target===this)closeCustomerDetail();};
+  byId("dirRefresh").onclick=loadDirectory;
+  byId("dirMode").onchange=loadDirectory;
+  byId("dirSearch").oninput=renderDirectory;
+  byId("dirSource").onchange=renderDirectory;
+  byId("dirDue").onchange=renderDirectory;
+  function dirDetailDelegated(event){
+    var btn=event.target.closest?event.target.closest("[data-dir-queue]"):null;
+    if(!btn)return;
+    event.preventDefault();
+    openCustomerDetail(btn.getAttribute("data-dir-source"),btn.getAttribute("data-dir-sheet"),btn.getAttribute("data-dir-queue"));
+  }
+  ["dueList","todayInlineList","upcomingInlineList"].forEach(function(id){byId(id).addEventListener("click",dirDetailDelegated);});
+
   var tabs=document.querySelectorAll(".tab"), i;
   for(i=0;i<tabs.length;i++){tabs[i].onclick=function(){
     var all=document.querySelectorAll(".tab,.view"),j;
@@ -923,6 +1110,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     this.classList.add("active");byId(this.getAttribute("data-view")).classList.add("active");
     if(this.getAttribute("data-view")==="reviewTools")byId("refreshReview").click();
     if(this.getAttribute("data-view")==="activityTools")loadCustomerActivity();
+    if(this.getAttribute("data-view")==="customerDirectory"&&!DIR_LOADED)loadDirectory();
   };}
   byId("cardCustomers").onclick=openCustomers;
   byId("cardToday").onclick=function(){openDue("today");};
