@@ -18,9 +18,12 @@ globalThis.__sessionPortalMock = {
   revalidatePortalCustomer: async () => portal.isPortalCustomerInactive(currentCustomer) ? null : currentCustomer,
   findPortalCustomer: async () => ({customer:currentCustomer,reason:""}),
 };
+globalThis.__historyMergeMock = await import("../lib/customerHistoryMerge.js");
 const code = readFileSync(new URL("../lib/customerSessionApi.js", import.meta.url), "utf8")
   .replace('import { callSheetsBridge } from "./sheetsBridge.js";',
     'const callSheetsBridge=globalThis.__sessionBridgeMock;')
+  .replace('import { mergeCustomerHistory } from "./customerHistoryMerge.js";',
+    'const { mergeCustomerHistory } = globalThis.__historyMergeMock;')
   .replace(/import \{\s*clearCustomerSessionCookie,[\s\S]*?\} from "\.\/customerPortal\.js";/,
     "const {clearCustomerSessionCookie,clientIp,customerSessionToken,isPortalCustomerInactive,findPortalCustomer,normalizeCustomerName,normalizeQueue,revalidatePortalCustomer,safeCustomerView,sessionFromCustomerRequest,setCustomerSessionCookie}=globalThis.__sessionPortalMock;");
 assert.doesNotMatch(code,/from "\.\/customerPortal\.js"/);
