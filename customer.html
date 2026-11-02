@@ -105,17 +105,17 @@
     let activityId='';
     try {activityId=sessionStorage.getItem('aid-activity-id')||'';}catch{}
     if(!/^[a-f0-9-]{36}$/.test(activityId)){
-      activityId=crypto.randomUUID();
+      activityId=window.crypto&&typeof window.crypto.randomUUID==='function'?window.crypto.randomUUID():'';
       try{sessionStorage.setItem('aid-activity-id',activityId)}catch{}
     }
     function trackActivity(action){
-      if(!account || !activityId)return;
+      if(!account || !activityId || typeof window.setInterval!=='function')return;
       fetch('/api/customer/activity',{method:'POST',credentials:'same-origin',keepalive:true,
         headers:{'Content-Type':'application/json'},
         body:JSON.stringify({action,sessionId:activityId})}).catch(()=>{});
     }
-    setInterval(()=>{if(account && document.visibilityState==='visible')trackActivity('heartbeat')},60000);
-    document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&account)trackActivity('heartbeat')});
+    if(typeof window.setInterval==='function')window.setInterval(()=>{if(account && document.visibilityState==='visible')trackActivity('heartbeat')},60000);
+    if(typeof document.addEventListener==='function')document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&account)trackActivity('heartbeat')});
     function setView(logged){$('loginView').classList.toggle('hidden',logged);$('appView').classList.toggle('hidden',!logged)}
     function defaultAmount(){if(!account)return 0;return kind==='close'?account.closeAmount:kind==='fine'?account.lateFee:account.paymentTotal}
     const VALID_ACTIONS=['payment','close','fine','status','info','discount','admin'];
