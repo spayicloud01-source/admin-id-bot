@@ -43,7 +43,7 @@ const env={
  SpreadsheetApp:{openById:mockBook},
  detectHeaders_:()=>({headerRow:2,queue:1,name:7,status:3,dueDate:13,fee:11}),
  getCell_:(row,col)=>col?String(row[col-1]||""):"",
- CONFIG:{MAX_ROWS_PER_TAB:3000},
+ CONFIG:{MAX_ROWS_PER_TAB:3000,SOURCE_SHEET:"ลิ้งชีต"},
 };
 const list=vm.runInNewContext(body+"\nlistAllCustomers_",env);
 let result=list({lineUserId:"Uowner",page:0});
