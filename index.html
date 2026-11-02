@@ -149,6 +149,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 <button class="tab" data-view="customerTools">ลูกค้า</button>
 <button class="tab" data-view="reviewTools">คิวตรวจสอบ</button>
 <button class="tab" data-view="staffTools">เจ้าหน้าที่</button>
+<button class="tab" data-view="activityTools">ติดตามการเข้าเว็บ</button>
 <button class="tab" data-view="system">สถานะระบบ</button>
 </div>
 <div class="content">
@@ -183,6 +184,25 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 <div class="action"><div class="field"><label>เลขแถวคิวตรวจสอบ</label><input id="reviewRow" inputmode="numeric" placeholder="เช่น 2"></div><br><div class="actionbuttons"><button class="btn soft" data-review-action="getReviewQueueItem">ดูคิว</button><button class="btn green" data-review-action="resolveReviewQueue" data-decision="ผ่าน">ผ่าน</button><button class="btn red" data-review-action="resolveReviewQueue" data-decision="ไม่ผ่าน">ไม่ผ่าน</button><button class="btn red" data-review-action="cancelReviewQueue">ยกเลิกคิวรอตรวจ</button><button class="btn red" data-review-action="rollbackReviewQueue">ยกเลิกรายการที่ผ่านแล้ว</button></div></div>
 <div class="action" style="margin-top:12px"><div class="sectionhead"><b>ลูกค้ารออนุมัติผูก LINE</b><button id="pendingCustomerBtn" class="btn soft">โหลดรายการ</button></div><div class="field"><label>เลขแถวคำขอ</label><input id="customerBindingRow" inputmode="numeric" placeholder="เลือกจากรายการหรือระบุเลขแถว"></div><br><div class="actionbuttons"><button class="btn green" data-binding-decision="อนุมัติ">อนุมัติลูกค้า</button><button class="btn red" data-binding-decision="ไม่อนุมัติ">ไม่อนุมัติลูกค้า</button></div></div>
 <div id="reviewToolResult" class="toolresult"></div>
+</div>
+
+<div id="activityTools" class="view">
+  <div class="sectionhead"><h2>ติดตามการเข้าเว็บลูกค้า</h2><button id="activityRefresh" class="btn soft" type="button">โหลดข้อมูลล่าสุด</button></div>
+  <p class="hint">เฉพาะเจ้าของ • ออนไลน์ = กำลังใช้งานภายใน 2 นาที • เก็บชื่อ/คิวและเมนูที่เปิด ไม่เก็บรหัสผ่าน ยอดที่กรอก หรือรายละเอียดสลิป</p>
+  <div class="cards" style="grid-template-columns:repeat(3,minmax(0,1fr));margin:12px 0">
+    <div class="card"><div class="label">ออนไลน์</div><div class="metric" id="activityOnlineCount">—</div></div>
+    <div class="card"><div class="label">คนที่เข้าชม</div><div class="metric" id="activityVisitorCount">—</div></div>
+    <div class="card"><div class="label">กิจกรรมที่บันทึก</div><div class="metric" id="activityEventCount">—</div></div>
+  </div>
+  <div class="row">
+    <div class="field"><label>ค้นหาตามเลขคิว</label><input id="activityQueue" placeholder="เช่น 610-4" autocomplete="off"></div>
+    <div class="field"><label>ระยะเวลาที่ดู</label><select id="activityDays"><option value="1">วันนี้ / 24 ชั่วโมง</option><option value="7" selected>7 วัน</option><option value="30">30 วัน</option></select></div>
+  </div>
+  <p id="activityNotice" class="hint" role="status">ยังไม่โหลดข้อมูล</p>
+  <div class="sectionhead" style="margin-top:16px"><h2>ลูกค้าที่ออนไลน์</h2></div>
+  <div id="activityLiveList" class="toolresult"></div>
+  <div class="sectionhead" style="margin-top:16px"><h2>ประวัติการเข้าใช้</h2></div>
+  <div id="activityHistoryList" class="toolresult"></div>
 </div>
 
 <div id="staffTools" class="view">
@@ -840,12 +860,68 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     SELECTED_TARGETS=[];SELECTED=null;
     renderSelectedTargets();updateSelectedSummary();updateCustomerCount();syncButtons();saveDashboardCache();
   };
+
+  // Owner-only customer activity dashboard: this view is read-only and never mutates payment records.
+  var activityLoading=false;
+  var activityLabels={login:"เข้าสู่ระบบ",overview:"เปิดหน้าเว็บ",payment:"ชำระยอด",close:"ยอดปิด",fine:"ค่าปรับ",
+    status:"สถานะ",info:"ข้อมูล",discount:"สิทธิ์ส่วนลด",admin:"ติดต่อแอดมิน",
+    qr:"สร้าง QR",contact_request:"ขอให้แอดมินติดต่อ",payment_submit:"ส่งหลักฐานการชำระ",logout:"ออกจากระบบ"};
+  function activityText(value){return String(value==null?"":value);}
+  function activityTime(value){var d=new Date(value);return isNaN(d.getTime())?"—":d.toLocaleString("th-TH",{timeZone:"Asia/Bangkok",day:"2-digit",month:"2-digit",year:"numeric",hour:"2-digit",minute:"2-digit"});}
+  function activityItem(title,subtitle,onClick){
+    var box=document.createElement("div");box.className="item";
+    var name=document.createElement("div");name.className="itemname";name.textContent=title;box.appendChild(name);
+    var description=document.createElement("div");description.className="itemmeta";description.textContent=subtitle;box.appendChild(description);
+    if(onClick){var b=document.createElement("button");b.type="button";b.className="btn soft mini";b.style.marginTop="8px";b.textContent="ดูประวัติรายคิว";b.onclick=onClick;box.appendChild(b);}
+    return box;
+  }
+  async function loadCustomerActivity(){
+    if(activityLoading||!TOKEN)return;
+    activityLoading=true;
+    var notice=byId("activityNotice");notice.textContent="กำลังโหลดประวัติ...";
+    try {
+      var p=new URLSearchParams({days:byId("activityDays").value,queue:byId("activityQueue").value.trim()});
+      var resp=await fetch("/api/web/customer-activity?"+p.toString(),{headers:authHeaders(),cache:"no-store"});
+      var data=await resp.json();
+      if(!resp.ok||!data.ok)throw new Error(data.error||"โหลดข้อมูลไม่ได้");
+      var online=Array.isArray(data.online)?data.online:[];
+      var events=Array.isArray(data.events)?data.events:[];
+      var users=new Set(events.map(function(x){return [x.source,x.sheet,x.queue].join("|")}));
+      byId("activityOnlineCount").textContent=data.onlineCount||0;
+      byId("activityVisitorCount").textContent=users.size;
+      byId("activityEventCount").textContent=events.length;
+      var live=byId("activityLiveList");live.replaceChildren();
+      if(!online.length)live.appendChild(activityItem("ไม่มีลูกค้าออนไลน์","นับจากการใช้งานภายใน 2 นาทีล่าสุด"));
+      online.forEach(function(x){
+        live.appendChild(activityItem("คิว "+activityText(x.queue)+" — "+activityText(x.name),
+          "ใช้งานล่าสุด "+activityTime(x.at)+" · "+activityText(x.source),
+          function(){byId("activityQueue").value=x.queue;loadCustomerActivity();}));
+      });
+      var history=byId("activityHistoryList");history.replaceChildren();
+      if(!events.length)history.appendChild(activityItem("ยังไม่มีประวัติ","ระบบเริ่มบันทึกหลังนำฟีเจอร์นี้ไปเปิดใช้งาน"));
+      events.slice(0,250).forEach(function(x){
+        history.appendChild(activityItem("คิว "+activityText(x.queue)+" · "+(activityLabels[x.action]||"กิจกรรม"),
+          activityText(x.name)+" · "+activityTime(x.at)+" · "+activityText(x.source)));
+      });
+      notice.textContent="แสดง "+events.length+" กิจกรรมล่าสุด (สูงสุด 500 รายการ) • อัปเดตเมื่อ "+new Date().toLocaleTimeString("th-TH");
+    }catch(error){notice.textContent="โหลดประวัติไม่ได้: "+error.message;}
+    finally{activityLoading=false;}
+  }
+  byId("activityRefresh").onclick=loadCustomerActivity;
+  byId("activityDays").onchange=loadCustomerActivity;
+  byId("activityQueue").onchange=loadCustomerActivity;
+  setInterval(function(){
+    var tab=document.querySelector('.tab[data-view="activityTools"]');
+    if(tab&&tab.classList.contains("active")&&document.visibilityState==="visible")loadCustomerActivity();
+  },30000);
+
   var tabs=document.querySelectorAll(".tab"), i;
   for(i=0;i<tabs.length;i++){tabs[i].onclick=function(){
     var all=document.querySelectorAll(".tab,.view"),j;
     for(j=0;j<all.length;j++)all[j].classList.remove("active");
     this.classList.add("active");byId(this.getAttribute("data-view")).classList.add("active");
     if(this.getAttribute("data-view")==="reviewTools")byId("refreshReview").click();
+    if(this.getAttribute("data-view")==="activityTools")loadCustomerActivity();
   };}
   byId("cardCustomers").onclick=openCustomers;
   byId("cardToday").onclick=function(){openDue("today");};
