@@ -32,7 +32,7 @@ function mockBook(id){
          const row=Array(width).fill("");row[0]=q;row[2]=s;row[6]=n;row[10]=f;row[12]=d;return row;
        })};
      }};
- }}};
+ }};
 }
 const env={
  checkAccess_:()=>({allowed:true,role:"เจ้าของ"}),
