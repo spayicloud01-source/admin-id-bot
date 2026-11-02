@@ -196,21 +196,21 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   <div class="sectionhead"><h2>รายชื่อลูกค้าและตัวกรอง</h2><button id="dirRefresh" class="btn soft" type="button">รีเฟรชรายชื่อ</button></div>
   <p class="hint">กดที่ชื่อลูกค้าเพื่อดูรายละเอียดแบบเว็บลูกค้า โดยไม่ต้องล็อกอินแทนลูกค้า</p>
   <div class="dir-stats">
-    <div class="dir-stat"><small>รายการที่โหลดมา</small><strong id="dirAllCount">—</strong></div>
+    <div class="dir-stat"><small>รายชื่อที่ผูก LINE</small><strong id="dirAllCount">—</strong></div>
     <div class="dir-stat"><small>ตรงตามตัวกรอง</small><strong id="dirMatchCount">—</strong></div>
   </div>
   <div class="dir-toolbar">
     <div class="field"><label>ค้นหาเลขคิวหรือชื่อ</label><input id="dirSearch" placeholder="เช่น 310-5 หรือชื่อลูกค้า" autocomplete="off"></div>
     <div class="field"><label>แหล่งข้อมูล</label><select id="dirSource"><option value="all">ทุกแหล่ง</option><option value="v3">V3</option><option value="v6">V6</option></select></div>
     <div class="field"><label>กลุ่มสถานะ</label><select id="dirMode">
-      <option value="all">กำลังใช้งานทั้งหมด</option><option value="deleted">ลบ</option>
+      <option value="all">ทั้งหมดที่ผูก LINE</option><option value="closed">ปิดยอด</option><option value="deleted">ลบ</option>
       <option value="pending_lock">รอล็อค</option><option value="sold">ขาย</option>
       <option value="fraud">โกง</option><option value="installment">ผ่อน</option></select></div>
     <div class="field"><label>วันครบกำหนด</label><select id="dirDue"><option value="all">ทุกวัน</option>
       <option value="today">ครบกำหนดวันนี้</option><option value="upcoming">ยังไม่ถึงกำหนด</option>
       <option value="overdue">เกินกำหนด</option><option value="unknown">ไม่มีวันครบกำหนด</option></select></div>
   </div>
-  <div id="dirWarning" class="dir-notice">รายการนี้อ่านจากระบบลูกค้าที่ยังใช้งานและกลุ่มสถานะที่เลือก ยังไม่ครอบคลุมคิวปิดยอดเก่าทั้งหมดจนกว่าจะปรับการอ่าน GAS</div>
+  <div id="dirWarning" class="dir-notice">อ่านเฉพาะ v3/10-69 และ V6/10-69 ที่ผูก LINE แล้ว รวมคิวปิดยอดที่ยังมีการผูกบัญชี แต่ยังไม่รวมลูกค้าที่ยังไม่ได้ผูก LINE</div>
   <div id="dirInfo" class="hint" role="status">กดรีเฟรชเพื่อโหลดรายชื่อ</div>
   <div id="dirRows" class="dir-list"></div>
   <div id="dirMore" class="dir-more"></div>
