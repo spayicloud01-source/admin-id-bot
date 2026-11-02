@@ -6,6 +6,7 @@ import customerPaymentHandler from "../../lib/customerPaymentApi.js";
 import customerQrHandler from "../../lib/customerQrApi.js";
 import customerContactHandler from "../../lib/customerContactApi.js";
 import customerDiscountHandler from "../../lib/customerDiscountApi.js";
+import customerActivityHandler from "../../lib/customerActivityApi.js";
 import adminPasswordLoginHandler from "../../lib/adminPasswordLoginApi.js";
 import adminAccountsHandler from "../../lib/adminAccountsApi.js";
 import staffWebHandler from "../../lib/adminStaffPortalApi.js";
@@ -19,6 +20,7 @@ const CUSTOMER_HANDLERS = {
   qr: customerQrHandler,
   contact: customerContactHandler,
   discount: customerDiscountHandler,
+  activity: customerActivityHandler,
 };
 
 const ALLOWED_ADMIN_ACTIONS = new Set([
@@ -264,6 +266,8 @@ export default async function handler(req, res) {
   if (req.query?.adminAuth === "password") return adminPasswordLoginHandler(req, res);
   if (req.query?.adminAuth === "users") return adminAccountsHandler(req, res);
   if (req.query?.adminAuth === "staff") return staffWebHandler(req, res);
+  if (req.query?.adminAuth === "activity") return customerActivityHandler(req, res);
+  if (req.query?.adminAuth === "activity-maintenance") return customerActivityHandler(req, res);
   const customerRoute = String(req.query?.customerRoute || "");
   if (CUSTOMER_HANDLERS[customerRoute]) return CUSTOMER_HANDLERS[customerRoute](req, res);
   if (req.method !== "POST") {
