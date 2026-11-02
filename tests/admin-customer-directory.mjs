@@ -24,7 +24,10 @@ const api=readFileSync(new URL("../lib/adminCustomerDirectoryApi.js",import.meta
 assert.match(api,/validOwnerSession\(req\)/);
 assert.match(api,/safeCustomerView\(customer\)/);
 assert.match(api,/mergeCustomerHistory\(approved,customer\)/);
-assert.match(api,/partial:true/,"not misleading user about limited listing completeness");
+assert.match(api,/action:"listAllCustomers"/,"must not depend on LINE binding roster");
+assert.match(api,/partial:batch\.errors\.length>0/,"must flag incomplete roster pages");
+assert.match(index,/var seen=new Set\(\),warnings=\[\],page=0/,"must iterate every roster page");
+assert.match(index,/x\.statusClass!==byId\("dirMode"\)\.value/,"status filter client-side");
 assert.doesNotMatch(api,/appendRow|setValue|sendNotification|pushMessages|resolveReviewQueue|writePaymentCycle/);
 function res(){const result={headers:{},status:200};return {result,setHeader(k,v){result.headers[k]=v;return this;},status(v){result.status=v;return this;},json(v){result.payload=v;return this;}}}
 let r=res();await handler({method:"POST",headers:{}},r);assert.equal(r.result.status,405);
