@@ -51,6 +51,10 @@
       "destination": "/api/web/send?adminAuth=activity"
     },
     {
+      "source": "/api/web/customer-directory",
+      "destination": "/api/web/send?adminAuth=customer-directory"
+    },
+    {
       "source": "/api/web/activity-maintenance",
       "destination": "/api/web/send?adminAuth=activity-maintenance"
     },
