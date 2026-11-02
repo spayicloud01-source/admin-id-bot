@@ -51,6 +51,10 @@
       "destination": "/api/web/send?adminAuth=activity"
     },
     {
+      "source": "/api/web/activity-maintenance",
+      "destination": "/api/web/send?adminAuth=activity-maintenance"
+    },
+    {
       "source": "/api/customer/session",
       "destination": "/api/web/send?customerRoute=session"
     },
@@ -77,6 +81,12 @@
     {
       "source": "/customer",
       "destination": "/customer.html"
+    }
+  ],
+  "crons": [
+    {
+      "path": "/api/web/activity-maintenance",
+      "schedule": "10 20 * * *"
     }
   ]
 }
