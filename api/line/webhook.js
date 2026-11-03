@@ -6,6 +6,7 @@ import { callSheetsBridge, formatCustomerMatches } from "../../lib/sheetsBridge.
 import { parseCommand, formatCustomerInfo, formatHistory } from "../../lib/commands.js";
 import { parseCloseoutCommand, isCloseoutRoleAllowed } from "../../lib/closeoutCommand.js";
 import { linkVerifiedCustomerMenu } from "../../lib/customerRichMenu.js";
+import { activateCustomerMenuTest, restoreCustomerMenuTest, isAuthorizedCustomerMenuTester } from "../../lib/customerMenuTest.js";
 import { paymentQrUrl } from "../../lib/paymentQr.js";
 import { createWebSession } from "../../lib/webAuth.js";
 import {
@@ -1063,6 +1064,37 @@ async function handleEvent(event) {
     const lineUserId = event.source?.userId || "";
     const sourceType = event.source?.type || "";
     const groupId = event.source?.groupId || "";
+
+    if (sourceType === "user" && lineUserId &&
+        (text === "ทดลองเมนูลูกค้า" || text === "กลับเมนูแอดมิน")) {
+      if (!isAuthorizedCustomerMenuTester(lineUserId)) {
+        await replyMessage(event.replyToken, [{type:"text",text:"บัญชีนี้ไม่ได้เปิดใช้โหมดทดสอบเมนูลูกค้า"}]);
+        return;
+      }
+      const staff = await callSheetsBridge({
+        action: "checkAccess", lineUserId, sourceType: "user", groupId: "",
+        permission: "ดูข้อมูลลูกค้า",
+      });
+      if (!staff?.allowed) {
+        await replyMessage(event.replyToken, [{type:"text",text:"ไม่พบสิทธิ์เจ้าหน้าที่สำหรับทดสอบเมนู"}]);
+        return;
+      }
+      try {
+        const outcome = text === "ทดลองเมนูลูกค้า"
+          ? await activateCustomerMenuTest(lineUserId)
+          : await restoreCustomerMenuTest(lineUserId);
+        await replyMessage(event.replyToken, [{
+          type:"text",
+          text: text === "ทดลองเมนูลูกค้า"
+            ? "เปิดเมนูลูกค้าทดสอบ 6 ปุ่มให้แล้ว (เฉพาะ LINE นี้)\nเมื่อทดสอบเสร็จพิมพ์: กลับเมนูแอดมิน\nระหว่างทดสอบอย่าส่งข้อมูลชำระเงินจริง"
+            : "คืนเมนูแอดมินเดิมแล้ว สามารถใช้งานต่อได้",
+        }]);
+      } catch (error) {
+        console.warn("Staff customer-menu trial failed", String(error?.message || error).slice(0,100));
+        await replyMessage(event.replyToken, [{type:"text",text:"สลับเมนูไม่สำเร็จ กรุณาติดต่อเจ้าของระบบ"}]);
+      }
+      return;
+    }
 
     const resumeCustomerMatch = text.match(/^เปิดบอตลูกค้า\s+(\S+)$/);
     if (sourceType === "user" && lineUserId && resumeCustomerMatch) {
