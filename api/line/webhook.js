@@ -15,10 +15,7 @@ import {
   runCustomerAgentAudit,
   runSystemAgentAudit,
 } from "../../lib/systemAgent.js";
-import {
-  tryAdminManualBindingEvent,
-  tryEnqueueFailedAutoBind,
-} from "../../lib/manualBindingIntegration.js";
+import { tryAdminManualBindingEvent } from "../../lib/manualBindingIntegration.js";
 import { parseCustomerBindingInput } from "../../lib/customerBindingParser.js";
 
 function getRawBody(req) {
@@ -867,6 +864,18 @@ async function handleStaffInputPostback(event) {
   return true;
 }
 
+// Only a signed, individual customer's complete queue + Thai full name may
+// bypass the quota-saving customer-chat silence. This does not grant staff access.
+export function isSilentCustomerBindingRequest(event, staffLookup) {
+  if (event?.type !== "message" || event?.source?.type !== "user" ||
+      event?.message?.type !== "text" ||
+      staffLookup?.allowed !== false ||
+      staffLookup?.message !== "บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID") return false;
+  const incoming = String(event.message.text || "").trim().replace(/^คิว\s*/u, "");
+  const parsed = parseCustomerBindingInput(incoming);
+  return Boolean(parsed && /^[ก-๙]+(?:\s+[ก-๙]+)+$/u.test(parsed.name));
+}
+
 async function handleEvent(event) {
 
   // CUSTOMER_CHAT_SILENCE_20261020
@@ -923,7 +932,7 @@ async function handleEvent(event) {
           console.warn("Customer slip forwarding failed during chat silence", error?.message);
         }
       }
-      return;
+      if (!isSilentCustomerBindingRequest(event, staffLookup)) return;
     }
   }
   if (await handleSlipResendPostback(event)) return;
@@ -1251,7 +1260,7 @@ async function handleEvent(event) {
         const fullName = bindingInput.name;
 
         await startLoading(lineUserId, 60);
-        const progressPromise = showCustomerProgress(lineUserId);
+        const progressPromise = process.env.LINE_CUSTOMER_AUTO_REPLY_ENABLED === "true" ? showCustomerProgress(lineUserId) : Promise.resolve();
 
         // If this LINE account is already bound, lock it to that customer before any new lookup.
         const [result] = await Promise.all([callSheetsBridge({
@@ -1291,24 +1300,8 @@ async function handleEvent(event) {
           String(overview.queue || "").trim() === queue &&
           String(overview.name || "").trim().replace(/\s+/g, " ") === fullName.replace(/\s+/g, " ")
           ? overview : null;
-        if (!confirmed && result?.ok && !result?.locked && !result?.alreadyBound &&
-            !result?.rejectedNewIdentity && !result?.suspended) {
-          const pending = await tryEnqueueFailedAutoBind({
-            event,
-            signatureVerified: true,
-            autoAttempted: true,
-            autoSucceeded: false,
-            bridge: (action, payload) => callSheetsBridge({ action, ...payload }),
-            replyCustomer: (message) => replyMessage(event.replyToken, [{ type: "text", text: message }]),
-            notifyStaff: async (message, recipients) => {
-              await Promise.all((recipients || []).map((id) =>
-                pushMessage(id, [{ type: "text", text: message }]).catch(() => null)
-              ));
-            },
-          });
-          if (pending.handled) return;
-        }
-
+        // A mismatched or ambiguous identity never enters a manual approval queue.
+        // Only GAS's exact, unique match may bind this LINE account.
         await replyMessage(event.replyToken, confirmed && verifiedOverview
           ? [customerWelcomeMessage(verifiedOverview), customerTermsImageMessage(), customerTermsAckMessage()]
           : [
