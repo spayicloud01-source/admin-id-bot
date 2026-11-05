@@ -73,6 +73,33 @@ assert.equal(auditLogs.at(-1).status,'รูปแบบไม่ถูกต้
 // With customer auto replies off, tapping the OLD LINE message menu must
 // refresh the verified customer's URI menu without replying or sending Push.
 process.env.LINE_CUSTOMER_AUTO_REPLY_ENABLED='false';
+
+selfResult={bound:true,items:[{queue:'310-13',status:'ใช้งาน',inactive:false}]};
+staffAccess={ok:true,allowed:false,message:'บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID'};
+binding={bound:true,autoApproved:true,message:'ผูกบัญชีสำเร็จ',customerOverview:{name:'นพณัฐ ธำรงเกตุ',queue:'310-13',model:'14Promax',principal:'5000',fee:'1000',saleDate:'26/10/2026'}};
+const bindingsBeforeQuiet=bindingRequests.length;
+const repliesBeforeQuiet=replies.length;
+const progressBeforeQuiet=progressMessages.length;
+await send('U-exact-quiet','310-13 นพณัฐ ธำรงเกตุ');
+assert.equal(bindingRequests.length,bindingsBeforeQuiet+1,'exact queue + name reaches GAS despite ordinary chat silence');
+assert.equal(bindingRequests.at(-1).queue,'310-13');
+assert.equal(bindingRequests.at(-1).fullName,'นพณัฐ ธำรงเกตุ');
+assert.equal(replies.length,repliesBeforeQuiet+1,'successful binding can reply within silent mode');
+assert.equal(replies.at(-1)[0].type,'flex','matching customer receives existing welcome details');
+assert.equal(progressMessages.length,progressBeforeQuiet,'silent-mode binding must not create extra LINE push messages');
+
+binding={bound:false,message:'ข้อมูลไม่ตรง'};
+const rejectedBeforeQuiet=replies.length;
+await send('U-bad-quiet','310-99 นพณัฐ ธำรงเกตุ');
+assert.equal(replies.length,rejectedBeforeQuiet+1,'mismatched queue must be rejected immediately');
+assert.equal(replies.at(-1)[0].text,'ข้อมูลไม่ตรง');
+
+staffAccess={ok:true,allowed:false,message:'บัญชีเจ้าหน้าที่ถูกระงับ'};
+const beforeDisabledBinding=bindingRequests.length;
+await send('U-disabled-binding','310-13 นพณัฐ ธำรงเกตุ');
+assert.equal(bindingRequests.length,beforeDisabledBinding,'disabled staff must not enter customer auto binding');
+staffAccess={ok:true,allowed:false,message:'บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID'};
+
 staffAccess={ok:true,allowed:false,message:'บัญชี LINE นี้ยังไม่มีสิทธิ์ใช้งาน Admin ID'};
 selfResult={bound:true,items:[{queue:'6121',status:'ใช้งาน',inactive:false}]};
 const replyBeforeSilent=replies.length;
