@@ -78,6 +78,11 @@ function customerReminderMessage(item) {
 }
 
 async function sendCustomerReminders() {
+  // Binding may be enabled without restarting outbound customer reminders.
+  // An explicit independent opt-in is required for any customer reminder push.
+  if (process.env.LINE_CUSTOMER_AUTO_REMINDERS_ENABLED !== "true") {
+    return { sent: 0, failed: 0, total: 0, skipped: true, reason: "customer-reminders-disabled" };
+  }
   let batch;
   try {
     batch = await callSheetsBridge({ action: "getCustomerReminderBatch" });
