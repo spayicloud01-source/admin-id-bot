@@ -27,7 +27,7 @@ assert.deepEqual(visibleDueItems("today", records).map(x=>x.queue),records.filte
 assert.equal(visibleDueItems("overdue",null).length,0);
 const endpoint=readFileSync(new URL("../api/web/summary.js",import.meta.url),"utf8");
 assert.match(endpoint,/const items = visibleDueItems\(mode,result\?\.items\)/);
-assert.match(endpoint,/totalShown: mode === "overdue" \? items.length/,
+assert.match(endpoint,/totalShown: mode === "overdue" \|\| mode === "locked" \? items.length/,
  "backend overdue total must be recalculated after locked rows are filtered");
 const html=readFileSync(new URL("../index.html",import.meta.url),"utf8");
 assert.ok((html.match(/ไม่รวม ล็อค \/ รอล็อค/g)||[]).length===2,
