@@ -79,6 +79,11 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   .toolresult{max-height:none}
 }
 .dueoverview{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 18px}
+.dueoverviewbox.overdue-inline{grid-column:1/-1}
+.overdue-inline .duetable{max-height:430px;overflow-y:auto;overscroll-behavior:contain;padding-right:4px}
+.due-days-late{display:block;margin-top:3px;font-size:11px;color:#b45309;font-weight:750}
+.overdue-inline .duerow{border-left:3px solid #f59e0b}
+.due-overview-hint{font-size:11px;color:#64748b;margin:6px 0 0}
 .dueoverviewbox{background:#fff;border-radius:18px;padding:16px;box-shadow:0 5px 18px rgba(15,23,42,.055)}
 .dueoverviewhead{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
 .dueoverviewhead h3{margin:0;font-size:15px}
@@ -177,6 +182,11 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   <div class="dueoverviewbox">
     <div class="dueoverviewhead"><h3>ใกล้ครบกำหนด</h3><span id="upcomingInlineCount" class="pill">0 ราย</span></div>
     <div id="upcomingInlineList" class="duetable"><div class="empty"><b>กำลังโหลด…</b></div></div>
+  </div>
+  <div class="dueoverviewbox overdue-inline">
+    <div class="dueoverviewhead"><h3>ค้างชำระ</h3><span id="overdueInlineCount" class="pill">กำลังโหลด…</span></div>
+    <div id="overdueInlineList" class="duetable"><div class="empty"><b>กำลังโหลดรายชื่อลูกค้าค้างชำระ…</b></div></div>
+    <p class="due-overview-hint">แสดงคิวที่เกินกำหนดและยังใช้งานอยู่ · กดชื่อเพื่อดูรายละเอียด · ไม่รวม ปิด / ลบ / ขาย / โกง / ผ่อน</p>
   </div>
 </section>
 
@@ -562,7 +572,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         var items=x.j.items||[];
         var countIds={today:"todayCount",upcoming:"upcomingCount",overdue:"overdueCount",deleted:"deletedCount",pending_lock:"pendingLockCount",sold:"soldCount",fraud:"fraudCount",installment:"installmentCount"};
         if(countIds[mode]&&byId(countIds[mode]))byId(countIds[mode]).textContent=items.length;
-        if(mode==="today"||mode==="upcoming")renderInlineDue(mode,items);
+        if(mode==="today"||mode==="upcoming"||mode==="overdue")renderInlineDue(mode,items);
         saveDashboardCache();
         if(!items.length){byId("dueList").innerHTML='<div class="empty"><b>ไม่มีรายการ</b><p>ยังไม่มีลูกค้าในหมวดนี้</p></div>';return;}
         var out="",i,item,deltaText;
@@ -705,28 +715,35 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     });
   }
   function renderInlineDue(mode,items){
-    var listId=mode==="today"?"todayInlineList":"upcomingInlineList";
-    var countId=mode==="today"?"todayInlineCount":"upcomingInlineCount";
-    var box=byId(listId),badge=byId(countId);
+    var ids={today:["todayInlineList","todayInlineCount"],upcoming:["upcomingInlineList","upcomingInlineCount"],overdue:["overdueInlineList","overdueInlineCount"]};
+    var target=ids[mode];
+    if(!target)return;
+    var box=byId(target[0]),badge=byId(target[1]);
     if(!box||!badge)return;
     items=Array.isArray(items)?items:[];
     badge.textContent=items.length+" ราย";
     if(!items.length){
-      box.innerHTML='<div class="empty"><b>ไม่มีรายการ</b><p>'+(mode==="today"?"วันนี้ยังไม่มีรายการครบกำหนด":"ยังไม่มีรายการใกล้ครบกำหนด")+'</p></div>';
+      var emptyMessage=mode==="today"?"วันนี้ยังไม่มีรายการครบกำหนด":mode==="upcoming"?"ยังไม่มีรายการใกล้ครบกำหนด":"ไม่มีลูกค้าที่ค้างชำระ";
+      box.innerHTML='<div class="empty"><b>ไม่มีรายการ</b><p>'+emptyMessage+'</p></div>';
       return;
     }
-    var out="",i,item,amountText,limit=Math.min(items.length,8);
+    // Show every overdue record returned by the existing summary endpoint
+    // inside a scrollable panel. The backend currently caps each mode at 50.
+    var out="",i,item,amountText,limit=mode==="overdue"?items.length:Math.min(items.length,8);
     for(i=0;i<limit;i++){
       item=items[i]||{};
       amountText=item.fee||item.principal||"-";
+      var lateDays=mode==="overdue"&&Number(item.daysDelta)<0?Math.abs(Number(item.daysDelta)):0;
       out+='<div class="duerow">'
         +'<div><span>คิว</span><b>'+escapeHtml(item.queue||"-")+'</b></div>'
         +'<div><span>ชื่อ</span><button type="button" class="dir-name-link" data-dir-source="'+escapeHtml(item.source||"")+'" data-dir-sheet="'+escapeHtml(item.sheet||"")+'" data-dir-queue="'+escapeHtml(item.queue||"")+'">'+escapeHtml(item.name||"-")+'</button></div>'
         +'<div><span>ยอด</span><b>'+escapeHtml(amountText)+'</b></div>'
-        +'<div><span>วันครบกำหนด</span><b>'+escapeHtml(item.dueDate||"-")+'</b></div>'
-        +'</div>';
+        +'<div><span>วันครบกำหนด</span><b>'+escapeHtml(item.dueDate||"-")+'</b>'
+        +(lateDays?'<small class="due-days-late">เกินกำหนด '+escapeHtml(lateDays)+' วัน</small>':'')
+        +'</div></div>';
     }
     if(items.length>limit)out+='<div class="duemore">และอีก '+(items.length-limit)+' ราย</div>';
+    if(mode==="overdue"&&items.length>=50)out+='<div class="duemore">ระบบแสดงได้สูงสุด 50 รายต่อครั้ง</div>';
     box.innerHTML=out;
   }
 
@@ -735,7 +752,8 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     // competing with eight long Google Sheets scans.
     var modes=[
       {mode:"today",id:"todayCount"},
-      {mode:"upcoming",id:"upcomingCount"}
+      {mode:"upcoming",id:"upcomingCount"},
+      {mode:"overdue",id:"overdueCount"}
     ];
     function next(i){
       if(i>=modes.length){saveDashboardCache();return;}
@@ -749,7 +767,12 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
             renderInlineDue(x.mode,items);
             saveDashboardCache();
           }
-        }).catch(function(){})
+        }).catch(function(){
+          if(x.mode==="overdue"){
+            byId("overdueInlineCount").textContent="โหลดไม่สำเร็จ";
+            byId("overdueInlineList").innerHTML='<div class="empty"><b>โหลดรายชื่อค้างชำระไม่สำเร็จ</b><p>รีเฟรชหน้าเว็บเพื่อลองอีกครั้ง</p></div>';
+          }
+        })
         .then(function(){setTimeout(function(){next(i+1);},500);});
     }
     next(0);
@@ -1172,7 +1195,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     event.preventDefault();
     openCustomerDetail(btn.getAttribute("data-dir-source"),btn.getAttribute("data-dir-sheet"),btn.getAttribute("data-dir-queue"));
   }
-  ["dueList","todayInlineList","upcomingInlineList"].forEach(function(id){byId(id).addEventListener("click",dirDetailDelegated);});
+  ["dueList","todayInlineList","upcomingInlineList","overdueInlineList"].forEach(function(id){byId(id).addEventListener("click",dirDetailDelegated);});
 
   var tabs=document.querySelectorAll(".tab"), i;
   for(i=0;i<tabs.length;i++){tabs[i].onclick=function(){
