@@ -97,6 +97,19 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 
 .web-version{position:fixed;right:9px;bottom:calc(9px + env(safe-area-inset-bottom,0px));z-index:30;padding:3px 6px;border-radius:6px;background:rgba(255,255,255,.82);color:#64748b;font-size:10px;font-weight:500;line-height:1.2;letter-spacing:.01em;pointer-events:none;user-select:none;box-shadow:0 1px 4px rgba(15,23,42,.08)}
 
+
+/* Main navigation is always the first control below the owner header. */
+.dashboard-tabs{position:sticky;top:72px;z-index:4;display:flex;gap:6px;margin:0 0 15px;
+  background:rgba(255,255,255,.97);border:1px solid #e5eaf1;border-radius:16px;
+  padding:9px;box-shadow:0 6px 20px rgba(15,23,42,.06);
+  overflow-x:auto;overscroll-behavior-x:contain;-webkit-overflow-scrolling:touch;
+  scrollbar-width:none;backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px)}
+.dashboard-tabs::-webkit-scrollbar{display:none}
+.dashboard-tabs .tab{flex:0 0 auto;min-height:40px}
+#mainContentPanel.hidden{display:none!important}
+#overview{min-width:0}
+@media(max-width:760px){.dashboard-tabs{top:64px;margin-bottom:10px;padding:7px;border-radius:13px}.dashboard-tabs .tab{padding:10px 12px}}
+
 /* Customer directory — owner-only, read-only */
 .dir-toolbar{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:10px;margin-top:14px}
 .dir-stats{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
@@ -162,6 +175,17 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 <button id="use" class="btn primary" disabled>เพิ่มชีต</button><div class="selectedbar"><div id="selectedTargets" class="chips"><span class="hint">ยังไม่ได้เลือกชีต</span></div><button id="selectAll" class="btn soft mini">เลือกทั้งหมด</button><button id="clearAll" class="btn red mini">ล้างทั้งหมด</button></div>
 </section>
 
+<nav class="tabs dashboard-tabs" aria-label="เมนูหลัก Admin ID">
+<button class="tab active" type="button" data-view="overview" aria-current="page">ภาพรวม</button>
+<button class="tab" type="button" data-view="customerDirectory">รายชื่อลูกค้า</button>
+<button class="tab" type="button" data-view="notify">ส่งแจ้งเตือน</button>
+<button class="tab" type="button" data-view="customerTools">ลูกค้า</button>
+<button class="tab" type="button" data-view="reviewTools">คิวตรวจสอบ</button>
+<button class="tab" type="button" data-view="staffTools">เจ้าหน้าที่</button>
+<button class="tab" type="button" data-view="activityTools">ติดตามการเข้าเว็บ</button>
+<button class="tab" type="button" data-view="system">สถานะระบบ</button>
+</nav>
+<div id="overview" class="view active">
 <section class="cards">
 <div class="card clickable" id="cardCustomers"><div class="label">ลูกค้าที่ผูก LINE</div><div id="customerCount" class="metric">—</div><div id="customerSub" class="sub">รวมทุกชีต</div></div>
 <div class="card clickable" id="cardToday"><div class="label">ครบกำหนดวันนี้</div><div id="todayCount" class="metric">0</div><div class="sub">ทุกแหล่งที่ระบบอ่านได้</div></div>
@@ -187,20 +211,11 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     <p class="due-overview-hint">แสดงคิวที่เกินกำหนดและยังใช้งานอยู่ · กดชื่อเพื่อดูรายละเอียด · ไม่รวม ล็อค / รอล็อค / ปิด / ลบ / ขาย / โกง / ผ่อน</p>
   </div>
 </section>
-
-<section class="panel">
-<div class="tabs">
-<button class="tab active" data-view="customers">ภาพรวมชีต</button>
-<button class="tab" data-view="customerDirectory">รายชื่อลูกค้า</button>
-<button class="tab" data-view="notify">ส่งแจ้งเตือน</button>
-<button class="tab" data-view="customerTools">ลูกค้า</button>
-<button class="tab" data-view="reviewTools">คิวตรวจสอบ</button>
-<button class="tab" data-view="staffTools">เจ้าหน้าที่</button>
-<button class="tab" data-view="activityTools">ติดตามการเข้าเว็บ</button>
-<button class="tab" data-view="system">สถานะระบบ</button>
 </div>
+
+<section id="mainContentPanel" class="panel hidden">
 <div class="content">
-<div id="customers" class="view active"><div class="sectionhead"><h2>ชีตที่กำลังใช้งาน</h2><span id="chosen" class="pill">ยังไม่ได้เลือกชีต</span></div><div class="empty"><b id="sheetTitle">เลือกแหล่งข้อมูลและชีตก่อน</b><p id="sheetDesc">รายชื่อชีตดึงจาก Apps Script จริง รายการที่ถูกซ่อนหรือถูกยกเว้นจะไม่แสดง</p></div></div>
+<div id="customers" hidden aria-hidden="true"><div class="sectionhead"><h2>ชีตที่กำลังใช้งาน</h2><span id="chosen" class="pill">ยังไม่ได้เลือกชีต</span></div><div class="empty"><b id="sheetTitle">เลือกแหล่งข้อมูลและชีตก่อน</b><p id="sheetDesc">รายชื่อชีตดึงจาก Apps Script จริง รายการที่ถูกซ่อนหรือถูกยกเว้นจะไม่แสดง</p></div></div>
 
 
 <div id="customerDirectory" class="view">
@@ -1194,14 +1209,26 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   }
   ["dueList","todayInlineList","upcomingInlineList","overdueInlineList"].forEach(function(id){byId(id).addEventListener("click",dirDetailDelegated);});
 
-  var tabs=document.querySelectorAll(".tab"), i;
+  var tabs=document.querySelectorAll(".dashboard-tabs .tab"), i;
   for(i=0;i<tabs.length;i++){tabs[i].onclick=function(){
-    var all=document.querySelectorAll(".tab,.view"),j;
-    for(j=0;j<all.length;j++)all[j].classList.remove("active");
-    this.classList.add("active");byId(this.getAttribute("data-view")).classList.add("active");
-    if(this.getAttribute("data-view")==="reviewTools")byId("refreshReview").click();
-    if(this.getAttribute("data-view")==="activityTools")loadCustomerActivity();
-    if(this.getAttribute("data-view")==="customerDirectory"&&!DIR_LOADED)loadDirectory();
+    var viewId=this.getAttribute("data-view"),target=byId(viewId);
+    if(!target)return;
+    var views=document.querySelectorAll("#app .view"),j;
+    for(j=0;j<views.length;j++)views[j].classList.remove("active");
+    for(j=0;j<tabs.length;j++){
+      tabs[j].classList.remove("active");
+      tabs[j].removeAttribute("aria-current");
+    }
+    this.classList.add("active");
+    this.setAttribute("aria-current","page");
+    target.classList.add("active");
+    byId("mainContentPanel").classList.toggle("hidden",viewId==="overview");
+    // Start every selected section at the navigation, instead of below
+    // the former always-visible overview cards.
+    window.scrollTo(0,0);
+    if(viewId==="reviewTools")byId("refreshReview").click();
+    if(viewId==="activityTools")loadCustomerActivity();
+    if(viewId==="customerDirectory"&&!DIR_LOADED)loadDirectory();
   };}
   byId("cardCustomers").onclick=openCustomers;
   byId("cardToday").onclick=function(){openDue("today");};
