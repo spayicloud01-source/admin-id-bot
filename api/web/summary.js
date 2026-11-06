@@ -4,6 +4,25 @@ import { currentOwnerSessionFromRequest } from "../../lib/webAuth.js";
 const summaryCache = new Map();
 const SUMMARY_CACHE_MS = 90 * 1000;
 
+/** Treat locked/awaiting-lock devices as separate statuses, not overdue debt.
+ * This is intentionally status-only: never hide an active customer's overdue
+ * entry just because their note or name happens to contain the word "ล็อค".
+ */
+export function isLockedCustomerStatus(value) {
+  const text = String(value ?? "").toLocaleLowerCase("th-TH")
+    .replace(/\s+/g,"").replace(/[()\[\]{}]/g,"");
+  return text.split(/[,/|;]+/).some(part =>
+    /^(?:สถานะ)?(?:รอ)?(?:ล็อค|ล็อก|lock|locked)(?:แล้ว|อยู่|เครื่อง)?$/iu.test(part)
+  );
+}
+
+export function visibleDueItems(mode, items) {
+  const named = (Array.isArray(items) ? items : []).filter(item =>
+    String(item?.name || "").trim()
+  );
+  return mode === "overdue" ? named.filter(item => !isLockedCustomerStatus(item?.status)) : named;
+}
+
 function cachedMode(mode) {
   const hit = summaryCache.get(mode);
   if (!hit || Date.now() - hit.at > SUMMARY_CACHE_MS) return null;
@@ -36,11 +55,12 @@ export default async function handler(req, res) {
         lineUserId: session.sub,
         dueMode: mode,
       });
+      const items = visibleDueItems(mode,result?.items);
       const value = {
         ok: true,
         mode,
-        items: Array.isArray(result?.items) ? result.items.filter((item) => String(item?.name || "").trim()) : [],
-        totalShown: Number(result?.totalShown || 0),
+        items,
+        totalShown: mode === "overdue" ? items.length : Number(result?.totalShown || 0),
         message: result?.message || "",
       };
       storeMode(mode, value);
