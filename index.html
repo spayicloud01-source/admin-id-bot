@@ -106,6 +106,9 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 .dir-status{padding:5px 9px;border-radius:999px;background:#e8f6ef;color:#087257;font-size:11px;white-space:nowrap}
 .dir-status.late{background:#fff1e6;color:#a85b10}
 .dir-status.closed{background:#f1f5f9;color:#526173}
+.dir-row-actions{display:flex;align-items:center;gap:8px;flex-shrink:0}
+.dir-open-detail{min-height:34px;padding:6px 11px;font-size:12px;font-weight:750;white-space:nowrap}
+@media(max-width:460px){.dir-row-actions{flex-direction:column;align-items:flex-end;gap:5px}.dir-open-detail{min-height:32px;padding:5px 8px}}
 .dir-more{text-align:center;padding:8px;color:#64748b;font-size:12px}
 .dir-modal{position:fixed;inset:0;z-index:1200;background:rgba(14,35,32,.64);padding:18px;display:flex;align-items:center;justify-content:center}
 .dir-modal.hidden{display:none!important}
@@ -986,7 +989,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 
 
   // Read-only owner customer directory and detail view.
-  var DIR_ITEMS=[],DIR_LOADED=false,DIR_REQUEST=0,DIR_DETAIL_REQUEST=0;
+  var DIR_ITEMS=[],DIR_LOADED=false,DIR_REQUEST=0,DIR_DETAIL_REQUEST=0,DIR_DETAIL_CACHE=new Map();
   function dirStatusText(x){return String(x&&x.status||"").trim()||"ไม่ระบุ";}
   function dirMoney(value){var n=Number(String(value||"0").replace(/[,฿\s]|บาท/g,""));return Number.isFinite(n)?n.toLocaleString("th-TH",{maximumFractionDigits:2})+" บาท":"—";}
   function dirCategory(item){
@@ -1022,14 +1025,21 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
       left.appendChild(detail);row.appendChild(left);
       var tag=document.createElement("span");tag.className="dir-status";
       if(Number.isFinite(item.daysDelta)&&item.daysDelta<0)tag.classList.add("late");
-      tag.textContent=dirStatusText(item);row.appendChild(tag);
+      tag.textContent=dirStatusText(item);
+      var actions=document.createElement("div");actions.className="dir-row-actions";
+      actions.appendChild(tag);
+      var openBtn=document.createElement("button");openBtn.type="button";openBtn.className="btn soft dir-open-detail";
+      openBtn.textContent="ดูรายละเอียด";
+      openBtn.setAttribute("aria-label","ดูรายละเอียด "+(item.name||item.queue||"ลูกค้า"));
+      openBtn.onclick=function(){openCustomerDetail(item.source,item.sheet,item.queue);};
+      actions.appendChild(openBtn);row.appendChild(actions);
       box.appendChild(row);
     });
     byId("dirMore").textContent=DIR_LOADED?"แสดง "+filtered.length+" จาก "+DIR_ITEMS.length+" รายการที่อ่านได้":"";
   }
   async function loadDirectory(){
     var request=++DIR_REQUEST,button=byId("dirRefresh");
-    button.disabled=true;DIR_ITEMS=[];DIR_LOADED=false;
+    button.disabled=true;DIR_ITEMS=[];DIR_LOADED=false;DIR_DETAIL_CACHE.clear();
     byId("dirInfo").textContent="กำลังโหลดรายชื่อจาก V3 และ V6…";
     var seen=new Set(),warnings=[],page=0,finished=false;
     try{
@@ -1074,12 +1084,39 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   function dirMetric(label,value){
     return '<div class="dir-metric"><small>'+escapeHtml(label)+'</small><strong>'+escapeHtml(String(value==null?"—":value))+'</strong></div>';
   }
+  function dirDetailKey(source,sheet,queue){
+    return [source,sheet,queue].map(function(x){return String(x||"").trim().toLowerCase();}).join("|");
+  }
+  function dirInstantDetail(source,sheet,queue){
+    // First paint uses the already-authenticated directory row; never invent a balance.
+    var key=dirDetailKey(source,sheet,queue);
+    var item=DIR_ITEMS.find(function(x){return dirDetailKey(x.source,x.sheet,x.queue)===key;});
+    var name=item&&item.name||"ข้อมูลลูกค้า";
+    var due=item&&item.dueDate||"กำลังโหลด…";
+    var status=item?dirStatusText(item):"กำลังโหลด…";
+    var fee=item&&String(item.fee==null?"":item.fee).trim()!==""?dirMoney(item.fee):"กำลังโหลด…";
+    return '<div class="dir-hero"><small>ข้อมูลลูกค้า · '+escapeHtml(source)+'</small>'
+      +'<h2>'+escapeHtml(name)+'</h2><small>คิว '+escapeHtml(queue)+'</small>'
+      +'<div style="margin-top:12px;font-weight:700">สถานะ '+escapeHtml(status)+'</div>'
+      +'</div><div class="dir-metrics">'
+      +dirMetric("เงินต้นคงเหลือ","กำลังโหลด…")
+      +dirMetric("ค่าเช่ารอบนี้",fee)
+      +dirMetric("วันครบกำหนด",due)
+      +dirMetric("ค่าปรับปัจจุบัน","กำลังโหลด…")
+      +dirMetric("ยอดปิดโดยประมาณ","กำลังโหลด…")
+      +dirMetric("สถานะ",status)
+      +'</div><div class="sectionhead"><h3>ประวัติล่าสุด</h3><span class="hint">กำลังโหลด</span></div>'
+      +'<div class="dir-history"><div class="empty" role="status">กำลังตรวจยอดและประวัติล่าสุดจากชีต…</div></div>';
+  }
   async function openCustomerDetail(source,sheet,queue){
     if(!source||!sheet||!queue)return;
     var request=++DIR_DETAIL_REQUEST;
-    var modal=byId("dirDetailModal");
-    byId("dirDetailBody").innerHTML='<div class="empty">กำลังโหลดข้อมูลลูกค้า…</div>';
+    var modal=byId("dirDetailModal"),body=byId("dirDetailBody");
+    var cacheKey=dirDetailKey(source,sheet,queue),cached=DIR_DETAIL_CACHE.get(cacheKey);
+    // Open synchronously: repeated clicks use short-lived complete detail cache.
+    body.innerHTML=cached&&Date.now()-cached.at<30000?cached.html:dirInstantDetail(source,sheet,queue);
     modal.classList.remove("hidden");
+    if(cached&&Date.now()-cached.at<30000)return;
     try{
       var params=new URLSearchParams({source:source,sheet:sheet,queue:queue});
       var response=await fetch("/api/web/customer-directory?"+params,{headers:authHeaders(),cache:"no-store"});
@@ -1110,8 +1147,14 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
           +'</div><strong>'+escapeHtml(dirMoney(item.amount))+'</strong></div>';
       });
       html+='</div><p class="dir-notice">'+escapeHtml(data.historyWarning||data.historyNote||"")+'</p>';
-      byId("dirDetailBody").innerHTML=html;
-    }catch(error){if(request===DIR_DETAIL_REQUEST)byId("dirDetailBody").innerHTML='<div class="warning">โหลดข้อมูลไม่ได้: '+escapeHtml(String(error.message||error))+'</div>';}
+      DIR_DETAIL_CACHE.set(cacheKey,{at:Date.now(),html:html});
+      if(DIR_DETAIL_CACHE.size>80)DIR_DETAIL_CACHE.delete(DIR_DETAIL_CACHE.keys().next().value);
+      body.innerHTML=html;
+    }catch(error){
+      if(request===DIR_DETAIL_REQUEST){
+        body.insertAdjacentHTML("beforeend",'<div class="warning" role="alert">อัปเดตยอด/ประวัติไม่สำเร็จ: '+escapeHtml(String(error.message||error))+' — ข้อมูลด้านบนเป็นข้อมูลจากรายชื่อที่โหลดไว้</div>');
+      }
+    }
   }
   function closeCustomerDetail(){
     DIR_DETAIL_REQUEST++;byId("dirDetailModal").classList.add("hidden");

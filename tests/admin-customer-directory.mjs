@@ -12,6 +12,21 @@ for(const literal of [
  'id="dirAllCount"','id="dirMatchCount"','id="dirRows"'
 ])assert.ok(index.includes(literal),literal);
 assert.match(index,/function openCustomerDetail\(/);
+assert.match(index,/dir-open-detail/,"each roster item has an explicit view-details button");
+assert.match(index,/function dirInstantDetail\(/,"show existing roster fields without waiting for history");
+assert.match(index,/DIR_DETAIL_CACHE\.clear\(\)/,"roster refresh invalidates detail cache");
+assert.match(index,/DIR_DETAIL_CACHE\.set\(cacheKey/,"successful detail reads are cached briefly");
+const instantDetailSource=index.slice(index.indexOf("async function openCustomerDetail("),index.indexOf("function closeCustomerDetail()",index.indexOf("async function openCustomerDetail(")));
+assert.ok(instantDetailSource.indexOf('modal.classList.remove("hidden")')>=0 &&
+  instantDetailSource.indexOf('modal.classList.remove("hidden")')<instantDetailSource.indexOf('await fetch('),
+  "modal opens before the detail network fetch resolves");
+assert.ok(instantDetailSource.indexOf('dirInstantDetail(source,sheet,queue)')>=0 &&
+  instantDetailSource.indexOf('dirInstantDetail(source,sheet,queue)')<instantDetailSource.indexOf('await fetch('),
+  "customer name/status/due date render synchronously");
+assert.match(instantDetailSource,/Date\.now\(\)-cached\.at<30000/,"complete detail cache expires quickly");
+assert.match(instantDetailSource,/request!==DIR_DETAIL_REQUEST/,"out-of-order detail requests cannot overwrite another customer");
+assert.match(index,/insertAdjacentHTML\("beforeend".*อัปเดตยอด/,"if backend fails retain immediate roster summary");
+
 assert.match(index,/function loadDirectory\(/);
 assert.match(index,/data-dir-source=/,"inline due rows clickable");
 assert.match(index,/document\.createElement\("button"\)/,"directory button rendered safely");
