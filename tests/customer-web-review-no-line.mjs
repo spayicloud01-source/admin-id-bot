@@ -12,6 +12,8 @@ assert.match(adminPage, /resolveReviewQueue/);
 const calls = [];
 const seen = new Map();
 globalThis.__ownerSlipAlertMock=async data=>{calls.push({type:"ownerSlipAlert",data});};
+const delayedTasks=[];
+globalThis.__waitUntilMock=promise=>{delayedTasks.push(promise);};
 globalThis.__putMock = async (path, contents) => {
   calls.push({type:"blob", path, contents:Buffer.from(contents).toString()});
   return {url:"https://test.public.blob.vercel-storage.com/"+path};
@@ -40,6 +42,7 @@ globalThis.fetch=async()=>{fetchCalls++;throw Error("Unexpected outbound network
 const injected=source
   .replace('import { put } from "@vercel/blob";','const put=globalThis.__putMock;')
   .replace('import { recordSlipSubmission } from "./ownerSlipPush.js";','const recordSlipSubmission=globalThis.__ownerSlipAlertMock;')
+  .replace('import { waitUntil } from "@vercel/functions";','const waitUntil=globalThis.__waitUntilMock;')
   .replace('import { callSheetsBridge } from "./sheetsBridge.js";','const callSheetsBridge=globalThis.__bridgeMock;')
   .replace(/import \{\s*customerExactPayload,[\s\S]*?\} from "\.\/customerPortal\.js";/, 'const {customerExactPayload,money,revalidatePortalCustomer,sessionFromCustomerRequest}=globalThis.__portalMock;');
 assert.doesNotMatch(injected, /from "\.\/customerPortal\.js"/);
@@ -82,6 +85,8 @@ assert.equal(finePayload.amount,50);
 assert.equal(fine.body.notification.sent,0);
 assert.equal(fetchCalls,0);
 assert.equal(calls.filter(x=>x.type==="bridge").length,4);
+await Promise.all(delayedTasks);
+assert.equal(delayedTasks.length,3,"background notifications scheduled only for new review queue rows");
 const alerts=calls.filter(x=>x.type==="ownerSlipAlert");
 assert.equal(alerts.length,3,"send owner notification only for new review queue rows, not duplicates");
 assert.deepEqual(alerts.map(x=>x.data.rowNo),[first.body.rowNo,second.body.rowNo,fine.body.rowNo]);
