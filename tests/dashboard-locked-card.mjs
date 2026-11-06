@@ -65,5 +65,7 @@ const route=readFileSync(new URL("../api/web/summary.js",import.meta.url),"utf8"
 assert.match(route,/mode === "locked"/);
 assert.match(route,/action:"listAllCustomers"/);
 assert.match(route,/currentOwnerSessionFromRequest\(req\)/);
+assert.match(route,/mode === "locked" && !\(await validOwnerSession\(req\)\)/,
+ "only a currently authorized owner may view a cached locked roster");
 assert.doesNotMatch(route,/appendRow|setValues|pushMessage|resolveReviewQueue/);
 console.log("PASS dashboard locked status: owner-only V3/V6 listing, no pending/closed rows, safe count and UI removal");
