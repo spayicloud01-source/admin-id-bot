@@ -1,5 +1,6 @@
 import { callSheetsBridge } from "../../lib/sheetsBridge.js";
 import { currentOwnerSessionFromRequest } from "../../lib/webAuth.js";
+import { validOwnerSession } from "../../lib/adminAccountsApi.js";
 
 const summaryCache = new Map();
 const SUMMARY_CACHE_MS = 90 * 1000;
@@ -96,6 +97,10 @@ export default async function handler(req, res) {
     if (!session) return res.status(401).json({ ok: false, error: "กรุณาเข้าเว็บผ่าน LINE OA ใหม่" });
 
     const mode = String(req.query?.mode || "").trim();
+    // A locked roster may include customers without LINE. Re-check live owner
+    // privileges even for cached results, not just the signed web session.
+    if (mode === "locked" && !(await validOwnerSession(req)))
+      return res.status(403).json({ ok:false,error:"เฉพาะเจ้าของเท่านั้น" });
     if (["today","upcoming","overdue","deleted","pending_lock","sold","fraud","installment","locked"].includes(mode)) {
       // A locked customer list is restricted to the authenticated owner.
       const cacheKey = mode === "locked" ? mode+":"+session.sub : mode;
