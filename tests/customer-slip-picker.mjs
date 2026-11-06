@@ -68,6 +68,14 @@ const fallbackOutput=await fallback.compress({size:16000,type:"image/heic"});
 assert.ok(fallbackOutput.startsWith("data:image/jpeg;base64,"));
 assert.equal(revocations,1,"temporary image object URL is released");
 
+const vercel=JSON.parse(readFileSync(new URL("../vercel.json",import.meta.url),"utf8"));
+const security=vercel.headers?.[0]?.headers?.find(h=>h.key==="Content-Security-Policy")?.value||"";
+assert.match(security,/img-src 'self' data: blob: https:/,
+  "iOS fallback previews with object URLs must be allowed by image CSP");
+assert.match(security,/script-src 'self' 'unsafe-inline'/,
+  "CSP script policy must remain unchanged");
+assert.match(security,/connect-src 'self'/,
+  "CSP network policy must remain unchanged");
 const server=readFileSync(new URL("../lib/customerPaymentApi.js",import.meta.url),"utf8");
 assert.match(server,/action: "queuePayment"/);
 assert.match(server,/action: "queueClose"/);
