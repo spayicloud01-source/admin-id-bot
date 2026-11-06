@@ -196,21 +196,21 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   <div class="sectionhead"><h2>รายชื่อลูกค้าและตัวกรอง</h2><button id="dirRefresh" class="btn soft" type="button">รีเฟรชรายชื่อ</button></div>
   <p class="hint">กดที่ชื่อลูกค้าเพื่อดูรายละเอียดแบบเว็บลูกค้า โดยไม่ต้องล็อกอินแทนลูกค้า</p>
   <div class="dir-stats">
-    <div class="dir-stat"><small>รายชื่อที่ผูก LINE</small><strong id="dirAllCount">—</strong></div>
+    <div class="dir-stat"><small>ลูกค้าทั้งหมดใน V3/V6</small><strong id="dirAllCount">—</strong></div>
     <div class="dir-stat"><small>ตรงตามตัวกรอง</small><strong id="dirMatchCount">—</strong></div>
   </div>
   <div class="dir-toolbar">
     <div class="field"><label>ค้นหาเลขคิวหรือชื่อ</label><input id="dirSearch" placeholder="เช่น 310-5 หรือชื่อลูกค้า" autocomplete="off"></div>
     <div class="field"><label>แหล่งข้อมูล</label><select id="dirSource"><option value="all">ทุกแหล่ง</option><option value="v3">V3</option><option value="v6">V6</option></select></div>
     <div class="field"><label>กลุ่มสถานะ</label><select id="dirMode">
-      <option value="all">ทั้งหมดที่ผูก LINE</option><option value="closed">ปิดยอด</option><option value="deleted">ลบ</option>
+      <option value="all">ทุกสถานะ</option><option value="closed">ปิดยอด</option><option value="deleted">ลบ</option>
       <option value="pending_lock">รอล็อค</option><option value="sold">ขาย</option>
       <option value="fraud">โกง</option><option value="installment">ผ่อน</option></select></div>
     <div class="field"><label>วันครบกำหนด</label><select id="dirDue"><option value="all">ทุกวัน</option>
       <option value="today">ครบกำหนดวันนี้</option><option value="upcoming">ยังไม่ถึงกำหนด</option>
       <option value="overdue">เกินกำหนด</option><option value="unknown">ไม่มีวันครบกำหนด</option></select></div>
   </div>
-  <div id="dirWarning" class="dir-notice">อ่านเฉพาะ v3/10-69 และ V6/10-69 ที่ผูก LINE แล้ว รวมคิวปิดยอดที่ยังมีการผูกบัญชี แต่ยังไม่รวมลูกค้าที่ยังไม่ได้ผูก LINE</div>
+  <div id="dirWarning" class="dir-notice">อ่านข้อมูลจากสองชีต v3/10-69 และ V6/10-69 โดยตรง รวมลูกค้าที่ไม่ผูก LINE และคิวปิดยอด</div>
   <div id="dirInfo" class="hint" role="status">กดรีเฟรชเพื่อโหลดรายชื่อ</div>
   <div id="dirRows" class="dir-list"></div>
   <div id="dirMore" class="dir-more"></div>
@@ -997,6 +997,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     var search=byId("dirSearch").value.trim().toLowerCase(),source=byId("dirSource").value,due=byId("dirDue").value;
     var filtered=DIR_ITEMS.filter(function(x){
       if(source!=="all"&&dirCategory(x)!==source)return false;
+      if(byId("dirMode").value!=="all"&&x.statusClass!==byId("dirMode").value)return false;
       if(search && (String(x.queue||"")+" "+String(x.name||"")).toLowerCase().indexOf(search)<0)return false;
       var delta=x.daysDelta;
       if(due==="today"&&delta!==0)return false;
@@ -1028,20 +1029,47 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   }
   async function loadDirectory(){
     var request=++DIR_REQUEST,button=byId("dirRefresh");
-    button.disabled=true;byId("dirInfo").textContent="กำลังโหลดรายชื่อจาก Google Sheets…";
+    button.disabled=true;DIR_ITEMS=[];DIR_LOADED=false;
+    byId("dirInfo").textContent="กำลังโหลดรายชื่อจาก V3 และ V6…";
+    var seen=new Set(),warnings=[],page=0,finished=false;
     try{
-      var params=new URLSearchParams({mode:byId("dirMode").value});
-      var response=await fetch("/api/web/customer-directory?"+params,{headers:authHeaders(),cache:"no-store"});
-      var data=await response.json();
+      while(page<22){
+        var params=new URLSearchParams({page:String(page)});
+        var response=await fetch("/api/web/customer-directory?"+params,{headers:authHeaders(),cache:"no-store"});
+        var data=await response.json();
+        if(request!==DIR_REQUEST)return;
+        if(!response.ok||!data.ok)throw new Error(data.error||"โหลดรายชื่อไม่สำเร็จ");
+        (Array.isArray(data.items)?data.items:[]).forEach(function(item){
+          var key=[item.source,item.sheet,item.row,item.queue].join("|");
+          if(seen.has(key))return;
+          seen.add(key);DIR_ITEMS.push(item);
+        });
+        if(Array.isArray(data.errors))warnings.push.apply(warnings,data.errors);
+        byId("dirInfo").textContent="กำลังโหลด… "+DIR_ITEMS.length+" รายชื่อ (หน้า "+(page+1)+")";
+        DIR_LOADED=true;renderDirectory();
+        if(data.nextPage===null||data.nextPage===undefined){
+          finished=data.complete===true&&!warnings.length;
+          break;
+        }
+        if(!Number.isInteger(data.nextPage)||data.nextPage<=page||data.nextPage>99)throw new Error("เลขหน้าถัดไปไม่ถูกต้อง");
+        page=data.nextPage;
+      }
       if(request!==DIR_REQUEST)return;
-      if(!response.ok||!data.ok)throw new Error(data.error||"โหลดรายชื่อไม่สำเร็จ");
-      DIR_ITEMS=Array.isArray(data.items)?data.items:[];DIR_LOADED=true;
-      byId("dirInfo").textContent="โหลดล่าสุด "+new Date(data.asOf||Date.now()).toLocaleTimeString("th-TH")+" · สามารถกดชื่อเพื่อดูรายละเอียด";
-      byId("dirWarning").textContent=data.partialNote||"";
-      byId("dirWarning").classList.toggle("hidden",!data.partialNote);
-      renderDirectory();
-    }catch(error){if(request===DIR_REQUEST){byId("dirInfo").textContent="ผิดพลาด: "+String(error.message||error);DIR_LOADED=false;DIR_ITEMS=[];renderDirectory();}}
-    finally{if(request===DIR_REQUEST)button.disabled=false;}
+      var partial=!finished||warnings.length>0;
+      byId("dirWarning").textContent=partial?
+        "รายชื่อยังอ่านไม่ครบ: "+(warnings.join("; ")||"ระบบมีหน้าข้อมูลมากกว่าที่รองรับ กรุณาตรวจสอบ"):
+        "รายชื่อครบจาก V6/10-69 และ v3/10-69 รวมทั้งผู้ที่ยังไม่ผูก LINE; ไม่มีการแก้ไขข้อมูลในชีต";
+      byId("dirWarning").classList.toggle("hidden",false);
+      byId("dirInfo").textContent=(partial?"โหลดข้อมูลได้บางส่วน ":"โหลดข้อมูลสำเร็จ ")+DIR_ITEMS.length+" รายชื่อ · "+new Date().toLocaleTimeString("th-TH");
+      DIR_LOADED=true;renderDirectory();
+    }catch(error){
+      if(request===DIR_REQUEST){
+        byId("dirInfo").textContent="โหลดรายชื่อไม่สำเร็จ: "+String(error.message||error);
+        byId("dirWarning").textContent="ยังไม่สามารถยืนยันรายชื่อลูกค้าทั้งหมดจากชีตได้ กรุณาตรวจการเปิดใช้ GAS ฉบับใหม่";
+        byId("dirWarning").classList.remove("hidden");
+        DIR_LOADED=DIR_ITEMS.length>0;renderDirectory();
+      }
+    }finally{if(request===DIR_REQUEST)button.disabled=false;}
   }
   function dirMetric(label,value){
     return '<div class="dir-metric"><small>'+escapeHtml(label)+'</small><strong>'+escapeHtml(String(value==null?"—":value))+'</strong></div>';
@@ -1091,7 +1119,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   byId("dirDetailClose").onclick=closeCustomerDetail;
   byId("dirDetailModal").onclick=function(event){if(event.target===this)closeCustomerDetail();};
   byId("dirRefresh").onclick=loadDirectory;
-  byId("dirMode").onchange=loadDirectory;
+  byId("dirMode").onchange=renderDirectory;
   byId("dirSearch").oninput=renderDirectory;
   byId("dirSource").onchange=renderDirectory;
   byId("dirDue").onchange=renderDirectory;

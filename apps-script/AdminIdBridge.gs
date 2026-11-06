@@ -234,6 +234,8 @@ function doPost(e) {
         result = auditSourceSchemas_(body); break;
       case 'auditSourceWriteCapabilities':
         result = auditSourceWriteCapabilities_(body); break;
+      case 'listAllCustomers':
+        result = listAllCustomers_(body); break;
       case 'listDueCustomers':
         result = listDueCustomers_(body); break;
       case 'getHistory':
@@ -3264,6 +3266,91 @@ function getCalculatedSummary_(body) {
       name: selfSummary.name,
       calculatedAt: Utilities.formatDate(new Date(), 'Asia/Bangkok', 'dd/MM/yyyy HH:mm')
     }
+  };
+}
+
+/**
+ * Owner-only, paginated, READ-ONLY roster from exactly the two active contract tabs.
+ * Does not consult the LINE-binding table: unlinked and closed clients are included.
+ * Each call scans <=150 rows per tab and only the columns needed for the roster.
+ */
+function listAllCustomers_(body) {
+  const access = checkAccess_({
+    lineUserId: body.lineUserId, sourceType: body.sourceType, groupId: body.groupId,
+    permission: 'ดูรายงาน'
+  });
+  if (!access.allowed || String(access.role || '').trim() !== 'เจ้าของ') {
+    return { ok: false, error: 'เฉพาะเจ้าของเท่านั้น' };
+  }
+
+  const pageNumber = Number(body.page);
+  if (!Number.isInteger(pageNumber) || pageNumber < 0 || pageNumber > 99) {
+    return { ok: false, error: 'เลขหน้าไม่ถูกต้อง' };
+  }
+  const PAGE_ROWS = 150;
+  const targets = [
+    { source: 'v1/v3', sheet: 'v3/10-69' },
+    { source: 'v6', sheet: 'V6/10-69' }
+  ];
+  const backend = backendSpreadsheet_();
+  const sourceSheet = backend.getSheetByName(CONFIG.SOURCE_SHEET);
+  if (!sourceSheet) throw new Error('ไม่พบทะเบียนแหล่งข้อมูล');
+  const sources = sourceSheet.getLastRow() >= 2 ?
+    sourceSheet.getRange(2, 1, sourceSheet.getLastRow() - 1, 3).getValues() : [];
+  const items = [];
+  const problems = [];
+  let hasMore = false;
+
+  for (let i = 0; i < targets.length; i++) {
+    const target = targets[i];
+    const config = sources.find(function(row) {
+      return normalizeGeneral_(row[0]) === normalizeGeneral_(target.source) && isTrue_(row[2]);
+    });
+    if (!config || !config[1]) {
+      problems.push(target.sheet + ': ไม่พบแหล่งข้อมูลที่เปิดใช้งาน');
+      continue;
+    }
+    try {
+      const spreadsheetId = extractSpreadsheetId_(config[1]);
+      if (!spreadsheetId) throw new Error('ลิงก์ชีตไม่ถูกต้อง');
+      const book = SpreadsheetApp.openById(spreadsheetId);
+      const sh = book.getSheetByName(target.sheet);
+      if (!sh || sh.isSheetHidden()) throw new Error('ไม่พบชีตที่ใช้งาน');
+      const h = detectHeaders_(sh);
+      if (!h || !h.queue || !h.name) throw new Error('ไม่พบหัวตารางคิวหรือชื่อ');
+      const totalRows = Math.min(
+        Math.max(0, sh.getLastRow() - h.headerRow),
+        CONFIG.MAX_ROWS_PER_TAB
+      );
+      const offset = pageNumber * PAGE_ROWS;
+      if (offset >= totalRows) continue;
+      const count = Math.min(PAGE_ROWS, totalRows - offset);
+      const needed = [h.queue, h.name, h.status, h.dueDate, h.fee]
+        .filter(function(n) { return Number(n) > 0; });
+      const width = Math.max.apply(null, needed);
+      const rows = sh.getRange(h.headerRow + 1 + offset, 1, count, width).getDisplayValues();
+      for (let j = 0; j < rows.length; j++) {
+        const row = rows[j];
+        const queue = getCell_(row, h.queue);
+        const name = getCell_(row, h.name);
+        if (!queue || !name || /^[-–—]+$/.test(name)) continue;
+        items.push({
+          source: target.source, sheet: target.sheet, row: h.headerRow + 1 + offset + j,
+          queue: queue, name: name, status: getCell_(row, h.status),
+          dueDate: getCell_(row, h.dueDate), fee: getCell_(row, h.fee)
+        });
+      }
+      if (offset + count < totalRows) hasMore = true;
+    } catch (err) {
+      problems.push(target.sheet + ': ' + String(err && err.message || err).slice(0, 90));
+    }
+  }
+
+  return {
+    ok: true, items: items, page: pageNumber,
+    nextPage: hasMore ? pageNumber + 1 : null,
+    complete: problems.length === 0 && !hasMore,
+    errors: problems
   };
 }
 
