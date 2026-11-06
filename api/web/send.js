@@ -10,6 +10,7 @@ import customerActivityHandler from "../../lib/customerActivityApi.js";
 import adminCustomerDirectoryHandler from "../../lib/adminCustomerDirectoryApi.js";
 import adminPasswordLoginHandler from "../../lib/adminPasswordLoginApi.js";
 import adminAccountsHandler from "../../lib/adminAccountsApi.js";
+import ownerSlipAlertsHandler from "../../lib/ownerSlipAlertsApi.js";
 import staffWebHandler from "../../lib/adminStaffPortalApi.js";
 import crypto from "node:crypto";
 
@@ -268,6 +269,7 @@ export default async function handler(req, res) {
   if (req.query?.adminAuth === "users") return adminAccountsHandler(req, res);
   if (req.query?.adminAuth === "staff") return staffWebHandler(req, res);
   if (req.query?.adminAuth === "activity") return customerActivityHandler(req, res);
+  if (req.query?.adminAuth === "slip-alerts") return ownerSlipAlertsHandler(req, res);
   if (req.query?.adminAuth === "customer-directory") return adminCustomerDirectoryHandler(req, res);
   if (req.query?.adminAuth === "activity-maintenance") return customerActivityHandler(req, res);
   const customerRoute = String(req.query?.customerRoute || "");

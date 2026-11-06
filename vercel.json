@@ -47,6 +47,10 @@
       "destination": "/api/web/send?adminAuth=staff"
     },
     {
+      "source": "/api/web/slip-alerts",
+      "destination": "/api/web/send?adminAuth=slip-alerts"
+    },
+    {
       "source": "/api/web/customer-activity",
       "destination": "/api/web/send?adminAuth=activity"
     },

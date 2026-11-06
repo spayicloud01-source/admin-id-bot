@@ -3,6 +3,11 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#0b1220">
 <title>Admin ID — หลังบ้าน</title>
+<link rel="manifest" href="/admin-manifest.webmanifest">
+<link rel="icon" href="/admin-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/admin-icon.svg">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Admin ID">
 <style>
 :root{--bg:#f4f7fb;--card:#fff;--ink:#111827;--muted:#6b7280;--line:#e5e7eb;--nav:#0b1220;--blue:#2563eb;--green:#16a34a;--orange:#ea580c;--red:#dc2626;--shadow:0 8px 28px rgba(15,23,42,.08)}
 *{box-sizing:border-box}body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans Thai",sans-serif;background:var(--bg);color:var(--ink)}button,select,input{font:inherit}
@@ -110,6 +115,20 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 #overview{min-width:0}
 @media(max-width:760px){.dashboard-tabs{top:64px;margin-bottom:10px;padding:7px;border-radius:13px}.dashboard-tabs .tab{padding:10px 12px}}
 
+/* Owner slip-alert controls are visible above all main pages. */
+.slip-alert-bar{background:#fff;border:1px solid #e0e7ef;border-radius:15px;
+ padding:11px 13px;margin:-5px 0 13px;box-shadow:0 4px 14px rgba(15,23,42,.05)}
+.slip-alert-main{display:flex;align-items:center;justify-content:space-between;gap:9px;flex-wrap:wrap}
+.slip-alert-actions{display:flex;gap:7px;flex-wrap:wrap}
+.slip-alert-actions .btn{min-height:36px;padding:7px 10px;font-size:12px}
+.slip-badge{display:inline-flex;min-width:19px;height:19px;justify-content:center;align-items:center;
+ border-radius:12px;background:#c62828;color:#fff;font-size:11px;font-weight:900;padding:0 5px;margin-left:5px}
+.slip-alert-status{font-size:12px;color:#64748b}
+.slip-recent{display:grid;gap:8px;margin:10px 0}
+.slip-recent-entry{border:1px solid #e5eaf0;border-radius:11px;padding:9px 11px;
+ display:flex;align-items:center;justify-content:space-between;gap:9px;flex-wrap:wrap}
+.slip-recent-entry small{display:block;color:#64748b;margin-top:3px}
+@media(max-width:760px){.slip-alert-actions{width:100%}.slip-alert-actions .btn{flex:1}.slip-alert-status{width:100%}}
 /* Customer directory — owner-only, read-only */
 .dir-toolbar{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:10px;margin-top:14px}
 .dir-stats{display:flex;gap:10px;flex-wrap:wrap;margin:12px 0}
@@ -180,11 +199,22 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 <button class="tab" type="button" data-view="customerDirectory">รายชื่อลูกค้า</button>
 <button class="tab" type="button" data-view="notify">ส่งแจ้งเตือน</button>
 <button class="tab" type="button" data-view="customerTools">ลูกค้า</button>
-<button class="tab" type="button" data-view="reviewTools">คิวตรวจสอบ</button>
+<button class="tab" type="button" data-view="reviewTools">คิวตรวจสอบ<span id="slipAlertBadge" class="slip-badge hidden" aria-label="สลิปใหม่"></span></button>
 <button class="tab" type="button" data-view="staffTools">เจ้าหน้าที่</button>
 <button class="tab" type="button" data-view="activityTools">ติดตามการเข้าเว็บ</button>
 <button class="tab" type="button" data-view="system">สถานะระบบ</button>
 </nav>
+<div id="slipAlertBar" class="slip-alert-bar" aria-live="polite">
+  <div class="slip-alert-main">
+    <span id="slipAlertStatus" class="slip-alert-status">กำลังตรวจสลิปที่เข้ามาใหม่…</span>
+    <div class="slip-alert-actions">
+      <button id="slipSoundToggle" class="btn soft" type="button">เปิดเสียงแจ้งเตือน</button>
+      <button id="slipPushEnable" class="btn green" type="button">เปิดแจ้งเตือนมือถือ</button>
+      <button id="slipPushDisable" class="btn soft hidden" type="button">ปิดแจ้งเตือนมือถือ</button>
+    </div>
+  </div>
+  <p id="slipPushHint" class="hint" style="margin:8px 0 0">iPhone: เพิ่มเว็บไปที่หน้าจอโฮมก่อน แล้วเปิดแอปเพื่ออนุญาตการแจ้งเตือน</p>
+</div>
 <div id="overview" class="view active">
 <section class="cards">
 <div class="card clickable" id="cardCustomers"><div class="label">ลูกค้าที่ผูก LINE</div><div id="customerCount" class="metric">—</div><div id="customerSub" class="sub">รวมทุกชีต</div></div>
@@ -268,6 +298,11 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 
 <div id="reviewTools" class="view">
 <div class="sectionhead"><h2>คิวตรวจสอบ</h2><button id="refreshReview" class="btn soft">โหลดคิวรอตรวจ</button></div>
+<div class="action" style="margin-bottom:12px">
+  <div class="sectionhead"><b>สลิปใหม่จากเว็บลูกค้า</b><button type="button" id="slipAcknowledge" class="btn soft">รับทราบแล้ว</button></div>
+  <p class="hint">แจ้งเตือนเมื่อสลิปเข้าคิว ไม่ใช่การยืนยันว่าโอนเงินสำเร็จ • กดเลือกคิวเพื่อเปิดตรวจหลักฐาน</p>
+  <div id="slipRecentEntries" class="slip-recent"><span class="hint">ยังไม่โหลดรายการ</span></div>
+</div>
 <div class="action"><div class="field"><label>เลขแถวคิวตรวจสอบ</label><input id="reviewRow" inputmode="numeric" placeholder="เช่น 2"></div><br><div class="actionbuttons"><button class="btn soft" data-review-action="getReviewQueueItem">ดูคิว</button><button class="btn green" data-review-action="resolveReviewQueue" data-decision="ผ่าน">ผ่าน</button><button class="btn red" data-review-action="resolveReviewQueue" data-decision="ไม่ผ่าน">ไม่ผ่าน</button><button class="btn red" data-review-action="cancelReviewQueue">ยกเลิกคิวรอตรวจ</button><button class="btn red" data-review-action="rollbackReviewQueue">ยกเลิกรายการที่ผ่านแล้ว</button></div></div>
 <div class="action" style="margin-top:12px"><div class="sectionhead"><b>ลูกค้ารออนุมัติผูก LINE</b><button id="pendingCustomerBtn" class="btn soft">โหลดรายการ</button></div><div class="field"><label>เลขแถวคำขอ</label><input id="customerBindingRow" inputmode="numeric" placeholder="เลือกจากรายการหรือระบุเลขแถว"></div><br><div class="actionbuttons"><button class="btn green" data-binding-decision="อนุมัติ">อนุมัติลูกค้า</button><button class="btn red" data-binding-decision="ไม่อนุมัติ">ไม่อนุมัติลูกค้า</button></div></div>
 <div id="reviewToolResult" class="toolresult"></div>
@@ -464,6 +499,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   function showApp(){
     byId("login").classList.add("hidden");
     byId("app").classList.remove("hidden");
+    if(TOKEN)setTimeout(startOwnerSlipAlerts,0);
   }
   function escapeHtml(s){
     return String(s==null?"":s).replace(/[&<>"']/g,function(c){
@@ -1208,6 +1244,203 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     openCustomerDetail(btn.getAttribute("data-dir-source"),btn.getAttribute("data-dir-sheet"),btn.getAttribute("data-dir-queue"));
   }
   ["dueList","todayInlineList","upcomingInlineList","overdueInlineList"].forEach(function(id){byId(id).addEventListener("click",dirDetailDelegated);});
+
+  // Owner slip alert UI: read-only event polling, optional sound, and explicit
+  // mobile Web Push permission. These actions never approve or record payments.
+  var slipAlertsStarted=false,slipAlertBusy=false,slipLatestAt=0,slipLastKnownAt=0;
+  var slipPublicKey="",slipSoundEnabled=false,slipAudioContext=null;
+  try{
+    slipSoundEnabled=localStorage.getItem("adminIdSlipSound")==="on";
+    slipLastKnownAt=Number(localStorage.getItem("adminIdSlipLastSoundAt")||0)||0;
+  }catch(e){}
+  byId("slipSoundToggle").textContent=slipSoundEnabled?"ปิดเสียงแจ้งเตือน":"เปิดเสียงแจ้งเตือน";
+  function slipSound(){
+    if(!slipSoundEnabled)return;
+    try{
+      var AudioCtx=window.AudioContext||window.webkitAudioContext;
+      if(!AudioCtx)return;
+      if(!slipAudioContext)slipAudioContext=new AudioCtx();
+      if(slipAudioContext.state==="suspended")slipAudioContext.resume().catch(function(){});
+      [0,.16].forEach(function(delay){
+        var osc=slipAudioContext.createOscillator(),gain=slipAudioContext.createGain();
+        osc.type="sine";osc.frequency.value=delay?840:640;
+        gain.gain.setValueAtTime(.0001,slipAudioContext.currentTime+delay);
+        gain.gain.exponentialRampToValueAtTime(.08,slipAudioContext.currentTime+delay+.025);
+        gain.gain.exponentialRampToValueAtTime(.0001,slipAudioContext.currentTime+delay+.14);
+        osc.connect(gain);gain.connect(slipAudioContext.destination);
+        osc.start(slipAudioContext.currentTime+delay);
+        osc.stop(slipAudioContext.currentTime+delay+.15);
+      });
+    }catch(e){}
+  }
+  byId("slipSoundToggle").onclick=function(){
+    slipSoundEnabled=!slipSoundEnabled;
+    try{localStorage.setItem("adminIdSlipSound",slipSoundEnabled?"on":"off")}catch(e){}
+    this.textContent=slipSoundEnabled?"ปิดเสียงแจ้งเตือน":"เปิดเสียงแจ้งเตือน";
+    if(slipSoundEnabled)slipSound();
+  };
+  function slipCount(count){
+    var badge=byId("slipAlertBadge"),num=Math.max(0,Math.min(999,Number(count)||0));
+    badge.textContent=num>99?"99+":String(num);
+    badge.classList.toggle("hidden",!num);
+    byId("slipAlertStatus").textContent=num?
+      "มีสลิปใหม่ "+num+" รายการ • เปิดคิวตรวจสอบเพื่อดู":"ยังไม่มีสลิปใหม่ที่ยังไม่ได้รับทราบ";
+    if(typeof navigator.setAppBadge==="function"){
+      Promise.resolve(num?navigator.setAppBadge(num):navigator.clearAppBadge()).catch(function(){});
+    }
+  }
+  function renderOwnerSlips(items){
+    var box=byId("slipRecentEntries");
+    if(!Array.isArray(items)||!items.length){
+      box.innerHTML='<span class="hint">ยังไม่มีสลิปที่เข้ามาใน 14 วันที่ผ่านมา</span>';return;
+    }
+    box.innerHTML=items.map(function(x){
+      var when=Number(x.at)?new Date(x.at).toLocaleString("th-TH"):"";
+      return '<div class="slip-recent-entry"><div><b>คิว '+escapeHtml(x.queue||"-")+' · '+escapeHtml(x.name||"-")+'</b>'
+        +'<small>'+escapeHtml(when)+' · '+escapeHtml(x.kind||"ชำระยอด")
+        +' · '+Number(x.amount||0).toLocaleString("th-TH")+' บาท</small></div>'
+        +'<button type="button" class="btn soft" data-slip-row="'+escapeHtml(x.rowNo)+'">ดูคิว #'+escapeHtml(x.rowNo)+'</button></div>';
+    }).join("");
+  }
+  byId("slipRecentEntries").onclick=function(event){
+    var btn=event.target.closest?event.target.closest("[data-slip-row]"):null;
+    if(!btn)return;
+    var row=btn.getAttribute("data-slip-row");
+    if(!/^\d{1,8}$/.test(row))return;
+    byId("reviewRow").value=row;
+    runWebAction({action:"getReviewQueueItem",query:row},"reviewToolResult",null);
+  };
+  function slipCall(method,payload){
+    var headers=authHeaders();
+    if(method==="POST")headers["Content-Type"]="application/json";
+    return fetch("/api/web/slip-alerts",{
+      method:method,headers:headers,cache:"no-store",
+      ...(method==="POST"?{body:JSON.stringify(payload)}:{})
+    }).then(function(r){
+      return r.json().catch(function(){return {}}).then(function(data){
+        if(!r.ok||!data.ok)throw new Error(data.error||"ระบบแจ้งเตือนไม่พร้อม");
+        return data;
+      });
+    });
+  }
+  async function refreshOwnerSlips(){
+    if(!TOKEN||slipAlertBusy||document.visibilityState==="hidden")return;
+    slipAlertBusy=true;
+    try{
+      var data=await slipCall("GET");
+      slipPublicKey=data.pushPublicKey||"";
+      var newest=Number(data.newestAt||0);
+      slipCount(data.unread);
+      renderOwnerSlips(data.latest||[]);
+      if(slipLastKnownAt&&newest>slipLastKnownAt&&Number(data.unread)>0)slipSound();
+      if(newest>slipLastKnownAt){
+        slipLastKnownAt=newest;
+        try{localStorage.setItem("adminIdSlipLastSoundAt",String(newest))}catch(e){}
+      }
+      slipLatestAt=newest;
+      if(data.hasMore)byId("slipAlertStatus").textContent+=" · แสดงข้อมูลย้อนหลังบางส่วน";
+      await updatePushButtonState();
+    }catch(error){
+      byId("slipAlertStatus").textContent="ยังตรวจสลิปใหม่ไม่ได้: "+String(error.message||"กรุณาลองใหม่");
+    }finally{slipAlertBusy=false}
+  }
+  function startOwnerSlipAlerts(){
+    if(slipAlertsStarted||!TOKEN)return;
+    slipAlertsStarted=true;
+    refreshOwnerSlips();
+    setInterval(function(){if(document.visibilityState==="visible")refreshOwnerSlips()},30000);
+    document.addEventListener("visibilitychange",function(){
+      if(document.visibilityState==="visible")refreshOwnerSlips();
+    });
+    try{
+      var fromLink=new URLSearchParams(location.search).get("tab");
+      if(fromLink==="reviewTools"){
+        var nav=document.querySelector('.dashboard-tabs .tab[data-view="reviewTools"]');
+        if(nav)nav.click();
+      }
+    }catch(e){}
+  }
+  async function updatePushButtonState(){
+    var available=("serviceWorker"in navigator)&&("PushManager"in window)&&("Notification"in window);
+    if(!available){
+      byId("slipPushEnable").disabled=true;
+      byId("slipPushHint").textContent="อุปกรณ์หรือเบราว์เซอร์นี้ยังไม่รองรับ Web Push";
+      return;
+    }
+    if(!slipPublicKey){
+      byId("slipPushEnable").disabled=true;
+      byId("slipPushHint").textContent="ระบบ Web Push ยังไม่ได้ตั้งค่าบนเซิร์ฟเวอร์";
+      return;
+    }
+    if(Notification.permission==="denied"){
+      byId("slipPushEnable").disabled=true;
+      byId("slipPushHint").textContent="การแจ้งเตือนถูกปฏิเสธ กรุณาอนุญาตผ่านการตั้งค่าอุปกรณ์";
+      return;
+    }
+    try{
+      var reg=await navigator.serviceWorker.getRegistration("/");
+      var active=reg?await reg.pushManager.getSubscription():null;
+      byId("slipPushEnable").classList.toggle("hidden",!!active);
+      byId("slipPushDisable").classList.toggle("hidden",!active);
+      byId("slipPushHint").textContent=active?"โทรศัพท์นี้สมัครรับการแจ้งเตือนแล้ว":
+        "iPhone: เปิดเว็บจากไอคอนบนหน้าจอโฮม แล้วกดเปิดแจ้งเตือนมือถือ";
+    }catch(e){}
+  }
+  function pushKeyBytes(key){
+    var base64=String(key||"").replace(/-/g,"+").replace(/_/g,"/");
+    var raw=atob(base64.padEnd(Math.ceil(base64.length/4)*4,"="));
+    return Uint8Array.from(raw,function(x){return x.charCodeAt(0)});
+  }
+  byId("slipPushEnable").onclick=async function(){
+    if(!("serviceWorker"in navigator)||!("PushManager"in window)||!("Notification"in window)){
+      byId("slipPushHint").textContent="อุปกรณ์นี้ยังไม่รองรับ Web Push";return;
+    }
+    this.disabled=true;
+    try{
+      // iOS requires the permission prompt to originate from a direct tap.
+      var permission=Notification.permission;
+      if(permission==="default")permission=await Notification.requestPermission();
+      if(permission!=="granted")throw new Error("ยังไม่ได้อนุญาตการแจ้งเตือน");
+      if(!slipPublicKey){
+        var data=await slipCall("GET");slipPublicKey=data.pushPublicKey||"";
+      }
+      if(!slipPublicKey)throw new Error("เซิร์ฟเวอร์ยังไม่ได้ตั้งค่า Web Push");
+      var reg=await navigator.serviceWorker.register("/admin-sw.js",{scope:"/"});
+      await navigator.serviceWorker.ready;
+      var subscription=await reg.pushManager.getSubscription();
+      if(!subscription)subscription=await reg.pushManager.subscribe({
+        userVisibleOnly:true,applicationServerKey:pushKeyBytes(slipPublicKey)
+      });
+      await slipCall("POST",{action:"subscribe",subscription:subscription.toJSON()});
+      byId("slipPushHint").textContent="เปิดแจ้งเตือนมือถือสำเร็จ";
+      await updatePushButtonState();
+    }catch(error){
+      byId("slipPushHint").textContent="เปิดแจ้งเตือนไม่สำเร็จ: "+String(error.message||error)
+        +" · iPhone ต้องเพิ่มเว็บไปหน้าจอโฮมก่อน";
+    }finally{this.disabled=false}
+  };
+  byId("slipPushDisable").onclick=async function(){
+    this.disabled=true;
+    try{
+      var reg=await navigator.serviceWorker.getRegistration("/");
+      var subscription=reg?await reg.pushManager.getSubscription():null;
+      if(subscription){
+        await slipCall("POST",{action:"unsubscribe",endpoint:subscription.endpoint});
+        await subscription.unsubscribe();
+      }
+      byId("slipPushHint").textContent="ปิดแจ้งเตือนมือถือแล้ว";
+      await updatePushButtonState();
+    }catch(error){byId("slipPushHint").textContent="ปิดแจ้งเตือนไม่สำเร็จ: "+String(error.message||error)}
+    finally{this.disabled=false}
+  };
+  byId("slipAcknowledge").onclick=async function(){
+    this.disabled=true;
+    try{
+      await slipCall("POST",{action:"seen",through:slipLatestAt});
+      await refreshOwnerSlips();
+    }catch(error){byId("slipAlertStatus").textContent="รับทราบไม่สำเร็จ: "+String(error.message||error)}
+    finally{this.disabled=false}
+  };
 
   var tabs=document.querySelectorAll(".dashboard-tabs .tab"), i;
   for(i=0;i<tabs.length;i++){tabs[i].onclick=function(){

@@ -1,0 +1,19 @@
+{
+  "name": "Admin ID — หลังบ้าน",
+  "short_name": "Admin ID",
+  "id": "/admin-id-owner",
+  "start_url": "/?tab=overview",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f8fc",
+  "theme_color": "#0f172a",
+  "lang": "th",
+  "icons": [
+    {
+      "src": "/admin-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
