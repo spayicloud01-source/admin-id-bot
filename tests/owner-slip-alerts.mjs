@@ -36,8 +36,9 @@ assert.match(api,/validOwnerSession\(req\)/,"owner session is revalidated on eve
 assert.match(api,/sameOrigin\(req\)/,"cross-origin pushes are denied");
 const payment=readFileSync(new URL("../lib/customerPaymentApi.js",import.meta.url),"utf8");
 assert.match(payment,/if \(result\.queued && !result\.duplicate\)/);
-assert.match(payment,/await recordSlipSubmission\(/);
-assert.match(payment,/catch \(alertError\)/,"failed notifications may not fail financial submission");
+assert.match(payment,/const notificationTask = recordSlipSubmission\(/);
+assert.match(payment,/waitUntil\(notificationTask\)/,"alert dispatch is nonblocking");
+assert.match(payment,/notificationTask = recordSlipSubmission\([\s\S]*?\.catch\(alertError =>/,"failed notifications may not fail financial submission");
 const allowed=[
  "https://webpush.push.apple.com/AAABBB",
  "https://fcm.googleapis.com/fcm/send/ABCD",
