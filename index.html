@@ -50,7 +50,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 .card:after{content:"";position:absolute;right:-18px;top:-22px;width:70px;height:70px;border-radius:50%;background:rgba(148,163,184,.08)}
 .card.clickable{transition:.16s ease}.card.clickable:hover{transform:translateY(-2px);box-shadow:0 10px 24px rgba(15,23,42,.08)}
 .card .label{font-size:12px;color:#64748b}.card .metric{font-size:30px;line-height:1;margin-top:11px;letter-spacing:-.7px}.card .sub{font-size:11px}
-#cardToday{border-left:4px solid #3b82f6}#cardUpcoming{border-left:4px solid #8b5cf6}#cardOverdue{border-left:4px solid #f59e0b}#cardCustomers{border-left:4px solid #10b981}.card.deleted{border:0;border-left:4px solid #ef4444}.card.lock{border:0;border-left:4px solid #eab308}#cardSold{border-left:4px solid #06b6d4}#cardFraud{border-left:4px solid #b91c1c}#cardInstallment{border-left:4px solid #14b8a6}
+#cardToday{border-left:4px solid #3b82f6}#cardUpcoming{border-left:4px solid #8b5cf6}#cardOverdue{border-left:4px solid #f59e0b}#cardCustomers{border-left:4px solid #10b981}.card.lock{border:0;border-left:4px solid #eab308}#cardSold{border-left:4px solid #06b6d4}#cardInstallment{border-left:4px solid #14b8a6}
 .panel{border:0;border-radius:20px;box-shadow:var(--shadow)}
 .tabs{gap:6px;padding:10px 12px;background:#fbfcfe;scrollbar-width:none}.tabs::-webkit-scrollbar{display:none}
 .tab{padding:10px 13px;border-radius:11px;font-size:13px}.tab.active{background:#eaf2ff;color:#1d4ed8;box-shadow:inset 0 0 0 1px #dbeafe}
@@ -167,10 +167,8 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
 <div class="card clickable" id="cardToday"><div class="label">ครบกำหนดวันนี้</div><div id="todayCount" class="metric">0</div><div class="sub">ทุกแหล่งที่ระบบอ่านได้</div></div>
 <div class="card clickable" id="cardUpcoming"><div class="label">ใกล้ครบกำหนด</div><div id="upcomingCount" class="metric">0</div><div class="sub">จากระบบแจ้งเตือน</div></div>
 <div class="card clickable" id="cardOverdue"><div class="label">ค้างชำระ</div><div id="overdueCount" class="metric">0</div><div class="sub">ไม่รวม ล็อค / รอล็อค / ปิด / ลบ / ขาย / โกง / ผ่อน</div></div>
-<div class="card clickable deleted" id="cardDeleted"><div class="label">สถานะลบ</div><div id="deletedCount" class="metric">0</div><div class="sub">แยกจากค้างชำระ</div></div>
-<div class="card clickable lock" id="cardPendingLock"><div class="label">รอล็อค</div><div id="pendingLockCount" class="metric">0</div><div class="sub">รายการติดตามแยก</div></div>
+<div class="card clickable lock" id="cardLocked"><div class="label">สถานะล็อค</div><div id="lockedCount" class="metric">—</div><div class="sub">ล็อคแล้วเท่านั้น ไม่รวมรอล็อค</div></div>
 <div class="card clickable" id="cardSold"><div class="label">ขาย</div><div id="soldCount" class="metric">0</div><div class="sub">แยกจากค้างชำระ</div></div>
-<div class="card clickable" id="cardFraud"><div class="label">โกง</div><div id="fraudCount" class="metric">0</div><div class="sub">แยกจากค้างชำระ</div></div>
 <div class="card clickable" id="cardInstallment"><div class="label">ผ่อน</div><div id="installmentCount" class="metric">0</div><div class="sub">แยกจากค้างชำระ</div></div>
 </section>
 
@@ -401,7 +399,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         items:ITEMS,
         owner:owner||"",
         selectedTargets:SELECTED_TARGETS.map(function(x){return {source:x.source,sheet:x.sheet};}),
-        counts:{today:byId("todayCount").textContent,upcoming:byId("upcomingCount").textContent,overdue:byId("overdueCount").textContent,deleted:byId("deletedCount").textContent,pendingLock:byId("pendingLockCount").textContent,sold:byId("soldCount").textContent,fraud:byId("fraudCount").textContent,installment:byId("installmentCount").textContent}
+        counts:{today:byId("todayCount").textContent,upcoming:byId("upcomingCount").textContent,overdue:byId("overdueCount").textContent,locked:byId("lockedCount").textContent,sold:byId("soldCount").textContent,installment:byId("installmentCount").textContent}
       }));
     }catch(e){}
   }
@@ -430,10 +428,8 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         if(cache.counts.today&&cache.counts.today!=="—")byId("todayCount").textContent=cache.counts.today;
         if(cache.counts.upcoming&&cache.counts.upcoming!=="—")byId("upcomingCount").textContent=cache.counts.upcoming;
         if(cache.counts.overdue&&cache.counts.overdue!=="—")byId("overdueCount").textContent=cache.counts.overdue;
-        if(cache.counts.deleted&&cache.counts.deleted!=="—")byId("deletedCount").textContent=cache.counts.deleted;
-        if(cache.counts.pendingLock&&cache.counts.pendingLock!=="—")byId("pendingLockCount").textContent=cache.counts.pendingLock;
+        if(cache.counts.locked&&cache.counts.locked!=="—")byId("lockedCount").textContent=cache.counts.locked;
         if(cache.counts.sold&&cache.counts.sold!=="—")byId("soldCount").textContent=cache.counts.sold;
-        if(cache.counts.fraud&&cache.counts.fraud!=="—")byId("fraudCount").textContent=cache.counts.fraud;
         if(cache.counts.installment&&cache.counts.installment!=="—")byId("installmentCount").textContent=cache.counts.installment;
       }
       showApp();
@@ -559,7 +555,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     };}
     byId("dueModal").classList.remove("hidden");
   }
-  function dueLabel(mode){return mode==="today"?"ครบกำหนดวันนี้":mode==="upcoming"?"ใกล้ครบกำหนด":mode==="deleted"?"สถานะลบ":mode==="pending_lock"?"รอล็อค":mode==="sold"?"ขาย":mode==="fraud"?"โกง":mode==="installment"?"ผ่อน":"ค้างชำระ";}
+  function dueLabel(mode){return mode==="today"?"ครบกำหนดวันนี้":mode==="upcoming"?"ใกล้ครบกำหนด":mode==="locked"?"สถานะล็อค":mode==="deleted"?"สถานะลบ":mode==="pending_lock"?"รอล็อค":mode==="sold"?"ขาย":mode==="fraud"?"โกง":mode==="installment"?"ผ่อน":"ค้างชำระ";}
   function openDue(mode){
     byId("dueTitle").textContent=dueLabel(mode);
     byId("dueList").innerHTML='<div class="empty"><b>กำลังโหลด…</b><p>กำลังอ่านข้อมูลจากชีต</p></div>';
@@ -570,7 +566,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         if(x.r.status===401){forgetOwnerToken(); location.reload();return;}
         if(!x.r.ok||!x.j.ok) throw new Error(x.j.error||"โหลดข้อมูลไม่ได้");
         var items=x.j.items||[];
-        var countIds={today:"todayCount",upcoming:"upcomingCount",overdue:"overdueCount",deleted:"deletedCount",pending_lock:"pendingLockCount",sold:"soldCount",fraud:"fraudCount",installment:"installmentCount"};
+        var countIds={today:"todayCount",upcoming:"upcomingCount",overdue:"overdueCount",locked:"lockedCount",sold:"soldCount",installment:"installmentCount"};
         if(countIds[mode]&&byId(countIds[mode]))byId(countIds[mode]).textContent=items.length;
         if(mode==="today"||mode==="upcoming"||mode==="overdue")renderInlineDue(mode,items);
         saveDashboardCache();
@@ -578,7 +574,7 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
         var out="",i,item,deltaText;
         for(i=0;i<items.length;i++){
           item=items[i];
-          deltaText=mode==="overdue"?("เกิน "+Math.abs(Number(item.daysDelta||0))+" วัน"):mode==="upcoming"?("อีก "+Number(item.daysDelta||0)+" วัน"):mode==="deleted"?"แยกออกจากยอดค้าง":mode==="pending_lock"?"รอดำเนินการล็อค":mode==="sold"?"แยกสถานะขาย":mode==="fraud"?"แยกสถานะโกง":mode==="installment"?"แยกสถานะผ่อน":"วันนี้";
+          deltaText=mode==="overdue"?("เกิน "+Math.abs(Number(item.daysDelta||0))+" วัน"):mode==="upcoming"?("อีก "+Number(item.daysDelta||0)+" วัน"):mode==="locked"?"ล็อคแล้ว ไม่รวมค้างชำระ":mode==="deleted"?"แยกออกจากยอดค้าง":mode==="pending_lock"?"รอดำเนินการล็อค":mode==="sold"?"แยกสถานะขาย":mode==="fraud"?"แยกสถานะโกง":mode==="installment"?"แยกสถานะผ่อน":"วันนี้";
           var amountText=item.fee||item.principal||"-";
           if(mode==="today"||mode==="upcoming"){
             out+='<div class="item duecompact"><div class="duegrid">'
@@ -753,7 +749,8 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
     var modes=[
       {mode:"today",id:"todayCount"},
       {mode:"upcoming",id:"upcomingCount"},
-      {mode:"overdue",id:"overdueCount"}
+      {mode:"overdue",id:"overdueCount"},
+      {mode:"locked",id:"lockedCount"}
     ];
     function next(i){
       if(i>=modes.length){saveDashboardCache();return;}
@@ -1210,10 +1207,8 @@ body{background:linear-gradient(180deg,#f8fafc 0,#f5f7fb 260px,#f6f8fc 100%);lin
   byId("cardToday").onclick=function(){openDue("today");};
   byId("cardUpcoming").onclick=function(){openDue("upcoming");};
   byId("cardOverdue").onclick=function(){openDue("overdue");};
-  byId("cardDeleted").onclick=function(){openDue("deleted");};
-  byId("cardPendingLock").onclick=function(){openDue("pending_lock");};
+  byId("cardLocked").onclick=function(){openDue("locked");};
   byId("cardSold").onclick=function(){openDue("sold");};
-  byId("cardFraud").onclick=function(){openDue("fraud");};
   byId("cardInstallment").onclick=function(){openDue("installment");};
   byId("closeDue").onclick=function(){byId("dueModal").classList.add("hidden");};
   byId("dueModal").onclick=function(e){if(e.target===byId("dueModal"))byId("dueModal").classList.add("hidden");};
