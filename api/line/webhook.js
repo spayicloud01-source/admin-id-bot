@@ -711,7 +711,10 @@ async function broadcastStaffSubmittedSlip(event) {
       sourceType: "user",
       permission: "ดูข้อมูลลูกค้า",
     });
-    if (!access?.allowed || !allowedRoles.has(access.role)) continue;
+    // Owner does not receive LINE slip copies from staff. Other authorized
+    // staff continue receiving their review messages and action buttons.
+    if (!access?.allowed || !allowedRoles.has(access.role) || access.role === "เจ้าของ" ||
+        (process.env.OWNER_LINE_USER_ID && String(to) === String(process.env.OWNER_LINE_USER_ID))) continue;
 
     const payment = await callSheetsBridge({
       action: "checkAccess",
@@ -980,7 +983,7 @@ async function handleEvent(event) {
       const alert = await notifyCustomerSlip(event);
       if (alert.handled) {
         await replyMessage(event.replyToken, [{ type: "text", text: alert.sent
-          ? "ได้รับรูปแล้ว แจ้งแอดมิน/เจ้าของให้ตรวจสอบแล้วครับ\nยังไม่ยืนยันยอดชำระจนกว่าจะตรวจสอบเรียบร้อย"
+          ? "ได้รับรูปแล้ว แจ้งเจ้าหน้าที่ให้ตรวจสอบแล้วครับ\nยังไม่ยืนยันยอดชำระจนกว่าจะตรวจสอบเรียบร้อย"
           : "ได้รับรูปแล้ว แต่ยังแจ้งผู้ตรวจสอบไม่สำเร็จ กรุณาติดต่อแอดมินครับ" }]);
         return;
       }
